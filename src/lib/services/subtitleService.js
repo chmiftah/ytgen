@@ -72,20 +72,73 @@ export const SUBTITLE_STYLES = {
 };
 
 /**
- * Generate word timings if ElevenLabs timestamps are not available
+ * Calculate precise word timings synchronized to an audio recording
+ * Uses character-weighting and punctuation pauses so words naturally align with human speech tempo
  */
-export function generateSyntheticWordTimings(words, totalDuration, isChapterScene = false) {
+export function calculateAudioSyncedWordTimings(words, totalDuration, options = {}) {
 	if (!words || words.length === 0) return [];
-	const startOffset = isChapterScene ? 3.5 : 0;
-	const availableDuration = Math.max(0.5, totalDuration - startOffset);
-	const timePerWord = availableDuration / words.length;
 
-	return words.map((word, index) => {
-		const start = Number((startOffset + (index * timePerWord)).toFixed(2));
-		const end = Number((startOffset + ((index + 1) * timePerWord)).toFixed(2));
+	const isChapterScene = Boolean(options.isChapterScene);
+	const timingOffset = Number(options.timingOffset) || 0;
+
+	// Determine speech boundaries
+	let startBound = typeof options.speechStart === 'number'
+		? Math.max(0, options.speechStart)
+		: (isChapterScene ? 3.5 : 0.12);
+
+	let endBound = typeof options.speechEnd === 'number'
+		? Math.min(totalDuration, options.speechEnd)
+		: Math.max(startBound + 0.5, totalDuration - 0.15);
+
+	// Apply manual timing offset
+	startBound = Math.max(0, startBound + timingOffset);
+	endBound = Math.max(startBound + 0.4, Math.min(totalDuration, endBound + timingOffset));
+
+	const speechSpan = Math.max(0.4, endBound - startBound);
+
+	// Calculate word weights based on character length + punctuation breath pauses
+	const weights = words.map((w) => {
+		const clean = w.replace(/[^a-zA-Z0-9]/g, '');
+		let wt = Math.max(2, clean.length);
+		// Add breath pause weight for punctuation
+		if (/[.,!?;:]$/.test(w)) {
+			wt += 2.8;
+		}
+		return wt;
+	});
+
+	const totalWeight = weights.reduce((sum, val) => sum + val, 0);
+
+	let currentCursor = startBound;
+	return words.map((word, idx) => {
+		const wordDuration = (weights[idx] / totalWeight) * speechSpan;
+		const start = Number(currentCursor.toFixed(2));
+		const end = Number((currentCursor + wordDuration).toFixed(2));
+		currentCursor += wordDuration;
 		return { word, start, end };
 	});
 }
+
+/**
+ * Generate synthetic word timings if ElevenLabs timestamps are not available
+ */
+export function generateSyntheticWordTimings(words, totalDuration, isChapterScene = false) {
+	return calculateAudioSyncedWordTimings(words, totalDuration, { isChapterScene });
+}
+
+/**
+ * Apply a manual nudge offset (in seconds) to existing word timings
+ */
+export function applyTimingOffsetToWords(wordTimings, offsetSec, maxDuration = 9999) {
+	if (!wordTimings || wordTimings.length === 0) return [];
+	const offset = Number(offsetSec) || 0;
+	return wordTimings.map((wt) => {
+		const start = Math.max(0, Number((wt.start + offset).toFixed(2)));
+		const end = Math.min(maxDuration, Math.max(start + 0.1, Number((wt.end + offset).toFixed(2))));
+		return { ...wt, start, end };
+	});
+}
+
 
 /**
  * Align ElevenLabs character timestamps to words

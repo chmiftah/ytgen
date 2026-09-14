@@ -149,7 +149,7 @@ async function makeTTSAudio(text, destPath, durationSec) {
 		);
 
 		await runFFmpeg(
-			['-i', aiffPath, '-codec:a', 'libmp3lame', '-q:a', '4', '-y', destPath],
+			['-i', aiffPath, '-codec:a', 'libmp3lame', '-ar', '44100', '-ac', '2', '-q:a', '4', '-y', destPath],
 			20000
 		);
 
@@ -353,6 +353,10 @@ export async function POST({ request }) {
 							'aac',
 							'-b:a',
 							'128k',
+							'-ar',
+							'44100',
+							'-ac',
+							'2',
 							'-y',
 							sceneOutput
 						],
@@ -440,7 +444,7 @@ export async function POST({ request }) {
 				ffmpegArgs.push('-stream_loop', '-1', '-i', bgmAudioPath);
 				ffmpegArgs.push(
 					'-filter_complex',
-					`[0:v]subtitles='${safeAssPath}'[v];[1:a]${bgmFilterExpr}[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]`,
+					`[0:v]subtitles='${safeAssPath}'[v];[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a0];[1:a]${bgmFilterExpr},aformat=sample_rates=44100:channel_layouts=stereo[bgm];[a0][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]`,
 					'-map',
 					'[v]',
 					'-map',
@@ -449,11 +453,11 @@ export async function POST({ request }) {
 			} else {
 				ffmpegArgs.push(
 					'-filter_complex',
-					`[0:v]subtitles='${safeAssPath}'[v]`,
+					`[0:v]subtitles='${safeAssPath}'[v];[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a]`,
 					'-map',
 					'[v]',
 					'-map',
-					'0:a'
+					'[a]'
 				);
 			}
 
@@ -482,6 +486,10 @@ export async function POST({ request }) {
 				'aac',
 				'-b:a',
 				'192k',
+				'-ar',
+				'44100',
+				'-ac',
+				'2',
 				'-movflags',
 				'+faststart',
 				'-y',

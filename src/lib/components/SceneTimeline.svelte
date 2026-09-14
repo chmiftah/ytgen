@@ -1,13 +1,46 @@
 <script>
-	import { Film, Mic, Trash2, ChevronUp, ChevronDown, Plus, Replace, Volume2, CheckCircle2, Bookmark } from 'lucide-svelte';
+	import { onDestroy } from 'svelte';
+	import {
+		Film,
+		Mic,
+		Trash2,
+		ChevronUp,
+		ChevronDown,
+		Plus,
+		Replace,
+		Volume2,
+		CheckCircle2,
+		Bookmark,
+		Upload,
+		Square,
+		Play,
+		FolderUp
+	} from 'lucide-svelte';
+	import { VoiceRecorder } from '$lib/services/audioAnalysisService.js';
 
 	let {
 		scenes = $bindable([]),
 		activeSceneIndex = $bindable(0),
 		onOpenFootagePicker,
 		onRegenerateVoice,
-		onAddScene
+		onAddScene,
+		onUploadAudio,
+		onBatchUploadAudio,
+		onRecordAudio,
+		onAdjustTimingOffset
 	} = $props();
+
+	let batchFileInput = $state(null);
+
+	// In-browser recording state
+	let recorder = null;
+	let recordingSceneIndex = $state(-1);
+	let recordingSeconds = $state(0);
+	let recordingInterval = null;
+
+	// In-card mini audio preview state
+	let previewAudio = null;
+	let previewPlayingIndex = $state(-1);
 
 	function selectScene(index) {
 		activeSceneIndex = index;
@@ -31,7 +64,7 @@
 	}
 
 	function addChapter(index) {
-		const existingChapters = scenes.slice(0, index).filter(s => s.chapter).length;
+		const existingChapters = scenes.slice(0, index).filter((s) => s.chapter).length;
 		const num = existingChapters + 1;
 		scenes[index].chapter = {
 			number: num,
@@ -45,6 +78,111 @@
 	function removeChapter(index) {
 		scenes[index].chapter = null;
 	}
+
+	function handleSingleFileChange(index, e) {
+		const file = e.target.files?.[0];
+		if (!file) return;
+		if (onUploadAudio) {
+			onUploadAudio(index, file);
+		}
+		e.target.value = '';
+	}
+
+	function handleBatchFileChange(e) {
+		const files = Array.from(e.target.files || []);
+		if (files.length === 0) return;
+		if (onBatchUploadAudio) {
+			onBatchUploadAudio(files);
+		}
+		e.target.value = '';
+	}
+
+	function adjustOffset(index, delta) {
+		if (onAdjustTimingOffset) {
+			onAdjustTimingOffset(index, delta);
+		}
+	}
+
+	async function startRecordingVoice(index) {
+		try {
+			if (recorder) {
+				await recorder.stop().catch(() => {});
+			}
+			recorder = new VoiceRecorder();
+			await recorder.start();
+			recordingSceneIndex = index;
+			recordingSeconds = 0;
+			if (recordingInterval) clearInterval(recordingInterval);
+			recordingInterval = setInterval(() => {
+				recordingSeconds += 1;
+			}, 1000);
+		} catch (err) {
+			alert('Tidak dapat mengakses mikrofon: ' + err.message);
+		}
+	}
+
+	async function stopRecordingVoice(index) {
+		if (!recorder) return;
+		if (recordingInterval) clearInterval(recordingInterval);
+		try {
+			const audioBlob = await recorder.stop();
+			recordingSceneIndex = -1;
+			if (onRecordAudio) {
+				onRecordAudio(index, audioBlob);
+			}
+		} catch (err) {
+			console.error('Stop recording error:', err);
+			recordingSceneIndex = -1;
+		}
+	}
+
+	function cancelRecordingVoice() {
+		if (recorder) {
+			recorder.stop().catch(() => {});
+		}
+		if (recordingInterval) clearInterval(recordingInterval);
+		recordingSceneIndex = -1;
+	}
+
+	function togglePreviewAudio(index, url) {
+		if (previewPlayingIndex === index) {
+			if (previewAudio) {
+				previewAudio.pause();
+				previewAudio = null;
+			}
+			previewPlayingIndex = -1;
+			return;
+		}
+
+		if (previewAudio) {
+			previewAudio.pause();
+		}
+
+		previewPlayingIndex = index;
+		previewAudio = new Audio(url);
+		previewAudio.onended = () => {
+			previewPlayingIndex = -1;
+			previewAudio = null;
+		};
+		previewAudio.play().catch(() => {
+			previewPlayingIndex = -1;
+			previewAudio = null;
+		});
+	}
+
+	function formatDuration(sec) {
+		const m = Math.floor(sec / 60);
+		const s = Math.floor(sec % 60);
+		return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+	}
+
+	onDestroy(() => {
+		if (recordingInterval) clearInterval(recordingInterval);
+		if (previewAudio) {
+			previewAudio.pause();
+			previewAudio = null;
+		}
+	});
 </script>
 
 <div class="storyboard-panel glass-panel">
@@ -55,14 +193,34 @@
 			</div>
 			<div>
 				<h3 class="panel-title">2. Storyboard Adegan ({scenes.length} Scene)</h3>
-				<p class="panel-desc">Sesuaikan footage video, naskah per scene, atau re-generate voiceover jika diperlukan.</p>
+				<p class="panel-desc">Sesuaikan footage video, naskah per scene, atau upload audio rekaman sendiri.</p>
 			</div>
 		</div>
 
-		<button class="btn btn-secondary btn-sm" onclick={onAddScene}>
-			<Plus size={15} />
-			<span>Tambah Scene</span>
-		</button>
+		<div class="header-actions">
+			<button 
+				type="button" 
+				class="btn btn-secondary btn-sm btn-batch" 
+				onclick={() => batchFileInput?.click()}
+				title="Upload banyak file audio rekaman sekaligus untuk semua scene"
+			>
+				<FolderUp size={14} color="var(--accent-cyan)" />
+				<span>Batch Upload Audio</span>
+			</button>
+			<input
+				type="file"
+				bind:this={batchFileInput}
+				accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.webm"
+				multiple
+				class="hidden-input"
+				onchange={handleBatchFileChange}
+			/>
+
+			<button class="btn btn-secondary btn-sm" onclick={onAddScene}>
+				<Plus size={15} />
+				<span>Tambah Scene</span>
+			</button>
+		</div>
 	</div>
 
 	<!-- Scene Cards List -->
@@ -170,6 +328,125 @@
 							onclick={(e) => e.stopPropagation()}
 							placeholder="Teks narasi untuk adegan ini..."
 						></textarea>
+
+						<!-- Audio & Subtitle Sync Strip -->
+						<div class="scene-audio-strip" onclick={(e) => e.stopPropagation()}>
+							<input
+								type="file"
+								id={`audio-file-${index}`}
+								accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.webm"
+								class="hidden-input"
+								onchange={(e) => handleSingleFileChange(index, e)}
+							/>
+
+							{#if recordingSceneIndex === index}
+								<!-- Live recording state -->
+								<div class="recording-active-bar">
+									<span class="pulse-rec-dot"></span>
+									<span class="rec-text">Merekam Suara: {formatDuration(recordingSeconds)}</span>
+									<button 
+										type="button" 
+										class="btn-rec-action save" 
+										onclick={() => stopRecordingVoice(index)}
+										title="Selesai merekam dan simpan"
+									>
+										<Square size={11} fill="#fff" />
+										<span>Stop & Simpan</span>
+									</button>
+									<button 
+										type="button" 
+										class="btn-rec-action cancel" 
+										onclick={cancelRecordingVoice}
+										title="Batalkan rekaman ini"
+									>
+										Batal
+									</button>
+								</div>
+							{:else if scene.isCustomAudio || (scene.voiceAudioUrl && !scene.isRealVoice)}
+								<!-- Custom Audio Pill -->
+								<div class="custom-audio-pill">
+									<div class="pill-left">
+										<span class="pill-badge">🎧 Rekaman</span>
+										<span class="pill-name" title={scene.audioFileName || 'Audio Rekaman'}>
+											{scene.audioFileName || 'audio-rekaman.mp3'}
+										</span>
+										<span class="pill-duration">
+											{(scene.audioDuration || 5).toFixed(1)}s
+										</span>
+									</div>
+
+									<div class="pill-right">
+										<!-- Mini Player Preview -->
+										<button
+											type="button"
+											class="btn-mini-play"
+											class:playing={previewPlayingIndex === index}
+											onclick={() => togglePreviewAudio(index, scene.voiceAudioUrl)}
+											title={previewPlayingIndex === index ? 'Stop Preview' : 'Dengarkan Audio'}
+										>
+											{#if previewPlayingIndex === index}
+												<Square size={10} fill="var(--accent-cyan)" />
+											{:else}
+												<Play size={10} fill="var(--text-primary)" />
+											{/if}
+										</button>
+
+										<!-- Timing Offset Nudge -->
+										<div class="offset-group" title="Geser kemunculan subtitle maju/mundur untuk sinkronisasi sempurna">
+											<button
+												type="button"
+												class="btn-offset"
+												onclick={() => adjustOffset(index, -0.1)}
+												title="Subtitle muncul 0.1 detik lebih cepat"
+											>
+												-0.1s
+											</button>
+											<span class="offset-val">
+												{(scene.timingOffset || 0) > 0 ? '+' : ''}{(scene.timingOffset || 0).toFixed(1)}s
+											</span>
+											<button
+												type="button"
+												class="btn-offset"
+												onclick={() => adjustOffset(index, 0.1)}
+												title="Subtitle muncul 0.1 detik lebih lambat"
+											>
+												+0.1s
+											</button>
+										</div>
+
+										<!-- Replace File -->
+										<label for={`audio-file-${index}`} class="btn-audio-tag" title="Ganti file audio rekaman ini">
+											<Upload size={11} />
+											<span>Ganti</span>
+										</label>
+									</div>
+								</div>
+							{:else}
+								<!-- Default Upload Prompt -->
+								<div class="audio-prompt-row">
+									<label for={`audio-file-${index}`} class="btn-audio-prompt" title="Unggah file rekaman (.mp3, .wav, .m4a)">
+										<Upload size={12} color="var(--accent-cyan)" />
+										<span>Upload Audio</span>
+									</label>
+
+									<button
+										type="button"
+										class="btn-audio-prompt"
+										onclick={() => startRecordingVoice(index)}
+										title="Rekam suara langsung dengan mikrofon MacBook / PC Anda"
+									>
+										<Mic size={12} color="#f43f5e" />
+										<span>Rekam Mic</span>
+									</button>
+
+									{#if scene.voiceAudioUrl}
+										<span class="ai-voice-indicator" title="Audio disiapkan dari ElevenLabs AI">
+											🤖 ElevenLabs Ready ({(scene.audioDuration || 5).toFixed(1)}s)
+										</span>
+									{/if}
+								</div>
+							{/if}
+						</div>
 					</div>
 
 					<!-- Right: Actions -->
@@ -586,6 +863,264 @@
 		color: #10b981;
 	}
 
+	/* Audio Strip & Controls */
+	.header-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.btn-batch {
+		background: rgba(6, 182, 212, 0.08);
+		border: 1px solid rgba(6, 182, 212, 0.25);
+		color: var(--text-primary);
+	}
+
+	.btn-batch:hover {
+		background: rgba(6, 182, 212, 0.18);
+		border-color: rgba(6, 182, 212, 0.5);
+	}
+
+	.hidden-input {
+		display: none;
+	}
+
+	.scene-audio-strip {
+		margin-top: 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.audio-prompt-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+
+	.btn-audio-prompt {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 3px 10px;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px dashed rgba(255, 255, 255, 0.15);
+		border-radius: 6px;
+		font-size: 0.72rem;
+		font-weight: 500;
+		color: var(--text-secondary);
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.btn-audio-prompt:hover {
+		background: rgba(255, 255, 255, 0.08);
+		border-color: var(--accent-cyan);
+		color: var(--text-primary);
+	}
+
+	.ai-voice-indicator {
+		font-size: 0.7rem;
+		color: #38bdf8;
+		background: rgba(56, 189, 248, 0.1);
+		border: 1px solid rgba(56, 189, 248, 0.2);
+		padding: 2px 7px;
+		border-radius: 4px;
+	}
+
+	/* Custom Audio Pill */
+	.custom-audio-pill {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 5px 10px;
+		background: rgba(15, 23, 42, 0.75);
+		border: 1px solid rgba(16, 185, 129, 0.35);
+		border-radius: 8px;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+	}
+
+	.pill-left {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
+		overflow: hidden;
+	}
+
+	.pill-badge {
+		font-size: 0.68rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		background: rgba(16, 185, 129, 0.2);
+		color: #34d399;
+		padding: 2px 6px;
+		border-radius: 4px;
+		flex-shrink: 0;
+	}
+
+	.pill-name {
+		font-size: 0.72rem;
+		color: var(--text-primary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 140px;
+	}
+
+	.pill-duration {
+		font-size: 0.7rem;
+		color: var(--text-muted);
+		flex-shrink: 0;
+	}
+
+	.pill-right {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-shrink: 0;
+	}
+
+	.btn-mini-play {
+		width: 22px;
+		height: 22px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.08);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		color: var(--text-primary);
+		transition: all 0.2s ease;
+	}
+
+	.btn-mini-play:hover {
+		background: rgba(6, 182, 212, 0.2);
+		border-color: var(--accent-cyan);
+	}
+
+	.btn-mini-play.playing {
+		background: rgba(6, 182, 212, 0.25);
+		border-color: var(--accent-cyan);
+		box-shadow: 0 0 8px var(--accent-cyan);
+	}
+
+	.offset-group {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		background: rgba(0, 0, 0, 0.4);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 4px;
+		padding: 1px 3px;
+	}
+
+	.btn-offset {
+		background: transparent;
+		border: none;
+		color: var(--text-muted);
+		font-size: 0.65rem;
+		padding: 1px 4px;
+		cursor: pointer;
+		border-radius: 2px;
+		transition: all 0.15s ease;
+	}
+
+	.btn-offset:hover {
+		background: rgba(255, 255, 255, 0.12);
+		color: var(--text-primary);
+	}
+
+	.offset-val {
+		font-size: 0.65rem;
+		font-family: monospace;
+		color: #38bdf8;
+		padding: 0 2px;
+	}
+
+	.btn-audio-tag {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		padding: 2px 6px;
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid var(--border-subtle);
+		border-radius: 4px;
+		font-size: 0.68rem;
+		color: var(--text-secondary);
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.btn-audio-tag:hover {
+		background: rgba(255, 255, 255, 0.1);
+		border-color: rgba(255, 255, 255, 0.25);
+		color: var(--text-primary);
+	}
+
+	/* Recording Active Bar */
+	.recording-active-bar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 5px 10px;
+		background: rgba(244, 63, 94, 0.12);
+		border: 1px solid rgba(244, 63, 94, 0.4);
+		border-radius: 6px;
+	}
+
+	.pulse-rec-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: #f43f5e;
+		box-shadow: 0 0 10px #f43f5e;
+		animation: pulseGlow 1.2s infinite ease-in-out;
+	}
+
+	.rec-text {
+		font-size: 0.74rem;
+		font-weight: 600;
+		color: #fda4af;
+		flex: 1;
+	}
+
+	.btn-rec-action {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 3px 8px;
+		border-radius: 4px;
+		font-size: 0.68rem;
+		font-weight: 600;
+		cursor: pointer;
+		border: none;
+		transition: all 0.2s ease;
+	}
+
+	.btn-rec-action.save {
+		background: #f43f5e;
+		color: #fff;
+	}
+
+	.btn-rec-action.save:hover {
+		background: #e11d48;
+	}
+
+	.btn-rec-action.cancel {
+		background: rgba(255, 255, 255, 0.1);
+		color: var(--text-secondary);
+	}
+
+	.btn-rec-action.cancel:hover {
+		background: rgba(255, 255, 255, 0.2);
+		color: var(--text-primary);
+	}
+
 	@media (max-width: 640px) {
 		.scene-card {
 			flex-direction: column;
@@ -593,6 +1128,10 @@
 		.card-thumbnail-wrap {
 			width: 100%;
 			height: 120px;
+		}
+		.custom-audio-pill {
+			flex-direction: column;
+			align-items: flex-start;
 		}
 	}
 </style>

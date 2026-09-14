@@ -12,6 +12,8 @@
 
 	import { analyzeScript, SCRIPT_PRESETS, getSpokenVoiceoverText } from '$lib/services/scriptAnalyzer.js';
 	import { findMatchingStockVideo } from '$lib/services/stockLibrary.js';
+	import { analyzeAudioFile } from '$lib/services/audioAnalysisService.js';
+	import { calculateAudioSyncedWordTimings, generateSyntheticWordTimings } from '$lib/services/subtitleService.js';
 
 	// Main App State
 	let script = $state(SCRIPT_PRESETS[0].text);
@@ -31,6 +33,7 @@
 	let pexelsApiKey = $state('');
 	let elevenLabsApiKey = $state('');
 	let selectedVoiceId = $state('pNInz6obpgDQGcFmaJgB'); // Adam
+	let voiceMode = $state('custom_upload'); // 'custom_upload' | 'elevenlabs'
 
 	// Modals State
 	let showSettingsModal = $state(false);
@@ -66,6 +69,7 @@
 			localStorage.setItem('yt_deepseek_key', deepseekApiKey || 'sk-0802f45e1d4e41c8ae8d46396c97b746');
 			localStorage.setItem('yt_karaoke_enabled', String(karaokeEnabled));
 			localStorage.setItem('yt_subtitle_fontsize', String(subtitleFontSize));
+			localStorage.setItem('yt_voice_mode', voiceMode);
 		}
 	});
 
@@ -124,23 +128,26 @@
 				// 2. Fetch Voiceover / Audio Timestamps (ElevenLabs or fallback)
 				let voiceData = null;
 				elevenLabsError = '';
-				try {
-					const ttsRes = await fetch('/api/elevenlabs', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							text: getSpokenVoiceoverText(sc),
-							voiceId: selectedVoiceId,
-							apiKey: elevenLabsApiKey
-						})
-					});
-					voiceData = await ttsRes.json();
-					if (voiceData && !voiceData.success && voiceData.error) {
-						elevenLabsError = voiceData.error;
-						voiceData = null; // treat as no audio
+
+				if (voiceMode === 'elevenlabs') {
+					try {
+						const ttsRes = await fetch('/api/elevenlabs', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({
+								text: getSpokenVoiceoverText(sc),
+								voiceId: selectedVoiceId,
+								apiKey: elevenLabsApiKey
+							})
+						});
+						voiceData = await ttsRes.json();
+						if (voiceData && !voiceData.success && voiceData.error) {
+							elevenLabsError = voiceData.error;
+							voiceData = null; // treat as no audio
+						}
+					} catch (e) {
+						console.warn('ElevenLabs API error, using fallback:', e);
 					}
-				} catch (e) {
-					console.warn('ElevenLabs API error, using fallback:', e);
 				}
 
 				sc.footage = chosenFootage;
@@ -148,6 +155,7 @@
 					sc.voiceAudioUrl = voiceData.audioUrl;
 					sc.wordTimings = voiceData.wordTimings || [];
 					sc.audioDuration = voiceData.duration || sc.estimatedDuration;
+					sc.isCustomAudio = false;
 
 					// If real ElevenLabs audio, save to server disk to avoid huge JSON in render request
 					if (voiceData.isRealVoice && voiceData.audioUrl) {
@@ -168,6 +176,12 @@
 							console.warn('Could not save audio to server, will use base64 fallback:', e);
 						}
 					}
+				} else {
+					// Custom upload mode baseline or fallback
+					sc.voiceAudioUrl = null;
+					sc.isCustomAudio = false;
+					const words = (sc.narration || sc.words?.join(' ') || '').trim().split(/\s+/).filter(Boolean);
+					sc.wordTimings = generateSyntheticWordTimings(words, sc.estimatedDuration, !!sc.chapter);
 				}
 
 				populatedScenes.push(sc);
@@ -264,6 +278,102 @@
 		scenes = [...scenes, newScene];
 		activeSceneIndex = scenes.length - 1;
 	}
+
+	async function handleUploadAudio(sceneIndex, file) {
+		const targetScene = scenes[sceneIndex];
+		if (!targetScene) return;
+
+		try {
+			const analysis = await analyzeAudioFile(file);
+			const words = (targetScene.narration || targetScene.words?.join(' ') || '')
+				.trim()
+				.split(/\s+/)
+				.filter(Boolean);
+
+			const wordTimings = calculateAudioSyncedWordTimings(words, analysis.duration, {
+				speechStart: analysis.speechStart,
+				speechEnd: analysis.speechEnd,
+				isChapterScene: !!targetScene.chapter,
+				timingOffset: targetScene.timingOffset || 0
+			});
+
+			targetScene.audioDuration = analysis.duration;
+			targetScene.estimatedDuration = analysis.duration;
+			targetScene.voiceAudioUrl = analysis.blobUrl;
+			targetScene.wordTimings = wordTimings;
+			targetScene.isCustomAudio = true;
+			targetScene.audioFileName = file.name || 'rekaman-suara.mp3';
+			targetScene.speechBoundaries = {
+				speechStart: analysis.speechStart,
+				speechEnd: analysis.speechEnd
+			};
+
+			// Save to server cache for FFmpeg rendering
+			try {
+				const saveRes = await fetch('/api/audio-save', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						audioBase64: analysis.dataUrl,
+						sceneId: targetScene.id || `scene-${sceneIndex}`
+					})
+				});
+				const saveData = await saveRes.json();
+				if (saveData.success) {
+					targetScene.serverAudioPath = saveData.serverAudioPath;
+				}
+			} catch (err) {
+				console.warn('Failed to cache uploaded audio on server:', err);
+			}
+
+			scenes = [...scenes];
+		} catch (err) {
+			console.error('Error handling audio upload:', err);
+			alert('Gagal memproses audio: ' + err.message);
+		}
+	}
+
+	async function handleBatchUploadAudio(files) {
+		if (!files || files.length === 0) return;
+		const sorted = [...files].sort((a, b) =>
+			a.name.localeCompare(b.name, undefined, { numeric: true })
+		);
+
+		let uploadedCount = 0;
+		for (let i = 0; i < sorted.length && i < scenes.length; i++) {
+			await handleUploadAudio(i, sorted[i]);
+			uploadedCount++;
+		}
+		alert(`Berhasil sinkronisasi ${uploadedCount} file audio ke ${uploadedCount} adegan!`);
+	}
+
+	async function handleRecordAudio(sceneIndex, audioBlob) {
+		const file = new File([audioBlob], `rekaman-scene-${sceneIndex + 1}.webm`, {
+			type: audioBlob.type
+		});
+		await handleUploadAudio(sceneIndex, file);
+	}
+
+	function handleAdjustTimingOffset(sceneIndex, delta) {
+		const targetScene = scenes[sceneIndex];
+		if (!targetScene) return;
+
+		targetScene.timingOffset = Number(((targetScene.timingOffset || 0) + delta).toFixed(2));
+		const words = (targetScene.narration || targetScene.words?.join(' ') || '')
+			.trim()
+			.split(/\s+/)
+			.filter(Boolean);
+
+		const dur = targetScene.audioDuration || targetScene.estimatedDuration || 5;
+		targetScene.wordTimings = calculateAudioSyncedWordTimings(words, dur, {
+			speechStart: targetScene.speechBoundaries?.speechStart,
+			speechEnd: targetScene.speechBoundaries?.speechEnd,
+			isChapterScene: !!targetScene.chapter,
+			timingOffset: targetScene.timingOffset
+		});
+
+		scenes = [...scenes];
+	}
 </script>
 
 <div class="studio-app">
@@ -292,12 +402,53 @@
 				onOpenScriptGenerator={() => showScriptGeneratorModal = true}
 			/>
 
+			<!-- Mode Voiceover Selector -->
+			<div class="voice-mode-banner glass-panel">
+				<div class="mode-info">
+					<span class="mode-icon">🎙️</span>
+					<div>
+						<div class="mode-title">Mode Voiceover & Narasi:</div>
+						<div class="mode-desc">
+							{voiceMode === 'custom_upload'
+								? 'Upload file audio rekaman sendiri atau rekam langsung via mic per adegan (ElevenLabs dimatikan, hemat kuota 100%).'
+								: 'Generate suara otomatis menggunakan ElevenLabs AI (membutuhkan kuota karakter ElevenLabs).'}
+						</div>
+					</div>
+				</div>
+
+				<div class="mode-options">
+					<button 
+						type="button" 
+						class="mode-pill-btn" 
+						class:active={voiceMode === 'custom_upload'} 
+						onclick={() => voiceMode = 'custom_upload'}
+					>
+						<span>🎧 Rekaman Sendiri</span>
+						<span class="badge-free">Hemat Kuota 100%</span>
+					</button>
+
+					<button 
+						type="button" 
+						class="mode-pill-btn" 
+						class:active={voiceMode === 'elevenlabs'} 
+						onclick={() => voiceMode = 'elevenlabs'}
+					>
+						<span>🤖 ElevenLabs AI</span>
+						<span class="badge-ai">Otomatis</span>
+					</button>
+				</div>
+			</div>
+
 			<SceneTimeline
 				bind:scenes={scenes}
 				bind:activeSceneIndex={activeSceneIndex}
 				onOpenFootagePicker={openFootagePicker}
 				onRegenerateVoice={handleRegenerateVoice}
 				onAddScene={handleAddScene}
+				onUploadAudio={handleUploadAudio}
+				onBatchUploadAudio={handleBatchUploadAudio}
+				onRecordAudio={handleRecordAudio}
+				onAdjustTimingOffset={handleAdjustTimingOffset}
 			/>
 		</section>
 
@@ -505,6 +656,91 @@
 
 	.tips-card strong {
 		color: var(--text-primary);
+	}
+
+	/* Voice Mode Selector Banner */
+	.voice-mode-banner {
+		padding: 14px 18px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		flex-wrap: wrap;
+		background: rgba(15, 23, 42, 0.6);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+	}
+
+	.mode-info {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.mode-icon {
+		font-size: 1.4rem;
+	}
+
+	.mode-title {
+		font-size: 0.88rem;
+		font-weight: 700;
+		color: var(--text-primary);
+	}
+
+	.mode-desc {
+		font-size: 0.76rem;
+		color: var(--text-secondary);
+		margin-top: 2px;
+	}
+
+	.mode-options {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.mode-pill-btn {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 14px;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid var(--border-subtle);
+		border-radius: 8px;
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--text-secondary);
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.mode-pill-btn:hover {
+		background: rgba(255, 255, 255, 0.07);
+		color: var(--text-primary);
+	}
+
+	.mode-pill-btn.active {
+		background: rgba(6, 182, 212, 0.15);
+		border-color: var(--accent-cyan);
+		color: #fff;
+		box-shadow: 0 0 12px rgba(6, 182, 212, 0.25);
+	}
+
+	.badge-free {
+		font-size: 0.65rem;
+		font-weight: 700;
+		padding: 2px 6px;
+		border-radius: 4px;
+		background: rgba(16, 185, 129, 0.2);
+		color: #34d399;
+	}
+
+	.badge-ai {
+		font-size: 0.65rem;
+		font-weight: 700;
+		padding: 2px 6px;
+		border-radius: 4px;
+		background: rgba(56, 189, 248, 0.2);
+		color: #38bdf8;
 	}
 
 	@media (max-width: 1100px) {
