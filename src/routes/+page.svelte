@@ -22,6 +22,11 @@
 		DEFAULT_ELEVEN_VOICE_ID, 
 		isEdgeVoice 
 	} from '$lib/services/voiceService.js';
+	import {
+		AUDIO_EFFECT_PRESETS,
+		DEFAULT_AUDIO_EFFECT_ID,
+		getAudioEffectById
+	} from '$lib/services/audioEffectService.js';
 
 	// Main App State
 	let script = $state(SCRIPT_PRESETS[0].text);
@@ -36,12 +41,13 @@
 	let selectedBgmId = $state('ambient-focus');
 	let bgmVolume = $state(0.15);
 
-	// API Keys & Voices
+	// API Keys, Voices & Audio Effects
 	let deepseekApiKey = $state('sk-0802f45e1d4e41c8ae8d46396c97b746');
 	let pexelsApiKey = $state('');
 	let elevenLabsApiKey = $state('');
 	let selectedVoiceId = $state(DEFAULT_EDGE_VOICE_ID); // Default to id-ID-GadisNeural
 	let voiceMode = $state('edge_tts'); // 'edge_tts' | 'custom_upload' | 'elevenlabs'
+	let selectedAudioEffect = $state(DEFAULT_AUDIO_EFFECT_ID); // Default: Studio Podcast Warmth/Bass/Compressor
 
 	// Modals State
 	let showSettingsModal = $state(false);
@@ -88,6 +94,9 @@
 			const savedMode = localStorage.getItem('yt_voice_mode');
 			if (savedMode) voiceMode = savedMode;
 
+			const savedEffect = localStorage.getItem('yt_audio_effect');
+			if (savedEffect) selectedAudioEffect = savedEffect;
+
 			const savedKaraoke = localStorage.getItem('yt_karaoke_enabled');
 			if (savedKaraoke !== null) karaokeEnabled = savedKaraoke === 'true';
 
@@ -103,6 +112,7 @@
 			localStorage.setItem('yt_karaoke_enabled', String(karaokeEnabled));
 			localStorage.setItem('yt_subtitle_fontsize', String(subtitleFontSize));
 			localStorage.setItem('yt_voice_mode', voiceMode);
+			localStorage.setItem('yt_audio_effect', selectedAudioEffect);
 		}
 	});
 
@@ -161,6 +171,8 @@
 				const sceneNum = i + 1;
 				const total = parsedScenes.length;
 
+				sc.audioEffect = selectedAudioEffect;
+
 				genProgress.currentScene = sceneNum;
 				genProgress.activeQuery = sc.visualQuery;
 				const spokenText = getSpokenVoiceoverText(sc);
@@ -206,14 +218,16 @@
 				elevenLabsError = '';
 
 				if (voiceMode === 'edge_tts') {
-					addGenLog('EDGE-TTS', `[Adegan ${sceneNum}] Men-generate suara Edge TTS (${selectedVoiceId})...`, 'info');
+					const effectObj = getAudioEffectById(sc.audioEffect || selectedAudioEffect);
+					addGenLog('EDGE-TTS', `[Adegan ${sceneNum}] Men-generate Edge TTS (${selectedVoiceId}) + Filter "${effectObj.name}"...`, 'info');
 					try {
 						const ttsRes = await fetch('/api/edge-tts', {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({
 								text: spokenText,
-								voiceId: selectedVoiceId || DEFAULT_EDGE_VOICE_ID
+								voiceId: selectedVoiceId || DEFAULT_EDGE_VOICE_ID,
+								audioEffect: sc.audioEffect || selectedAudioEffect
 							})
 						});
 						voiceData = await ttsRes.json();
@@ -265,22 +279,26 @@
 					sc.isCustomAudio = false;
 					sc.voiceProvider = voiceData.provider || (voiceMode === 'edge_tts' ? 'edge_tts' : 'elevenlabs');
 
-					// If real audio, save to server disk to avoid huge JSON in render request
+					// If real audio, save to server disk with FFmpeg audio filter applied
 					if (voiceData.isRealVoice && voiceData.audioUrl) {
-						addGenLog('FFMPEG', `[Adegan ${sceneNum}] Normalisasi audio ke 44.1kHz Stereo via FFmpeg...`, 'info');
+						addGenLog('FFMPEG', `[Adegan ${sceneNum}] Normalisasi & Filter Vokal FFmpeg (${getAudioEffectById(sc.audioEffect || selectedAudioEffect).name})...`, 'info');
 						try {
 							const saveRes = await fetch('/api/audio-save', {
 								method: 'POST',
 								headers: { 'Content-Type': 'application/json' },
 								body: JSON.stringify({
 									audioBase64: voiceData.audioUrl,
-									sceneId: sc.id || `scene-${i}`
+									sceneId: sc.id || `scene-${i}`,
+									audioEffect: sc.audioEffect || selectedAudioEffect
 								})
 							});
 							const saveData = await saveRes.json();
 							if (saveData.success) {
 								sc.serverAudioPath = saveData.serverAudioPath;
-								addGenLog('CACHE', `✓ [Adegan ${sceneNum}] Audio tersimpan: ${saveData.audioFileKey}`, 'success');
+								if (saveData.audioUrl) {
+									sc.voiceAudioUrl = saveData.audioUrl;
+								}
+								addGenLog('CACHE', `✓ [Adegan ${sceneNum}] Audio tersimpan: ${saveData.audioFileKey} (${saveData.audioEffectName || 'Filter Aktif'})`, 'success');
 							}
 						} catch (e) {
 							console.warn('Could not save audio to server, will use base64 fallback:', e);
@@ -323,9 +341,14 @@
 		}
 	}
 
-	async function handleRegenerateVoice(sceneIndex) {
+	async function handleRegenerateVoice(sceneIndex, overrideEffect) {
 		const targetScene = scenes[sceneIndex];
 		if (!targetScene) return;
+
+		if (overrideEffect) {
+			targetScene.audioEffect = overrideEffect;
+		}
+		const effectToUse = targetScene.audioEffect || selectedAudioEffect;
 
 		try {
 			const isEdge = (voiceMode === 'edge_tts' || targetScene.voiceProvider === 'edge_tts' || isEdgeVoice(selectedVoiceId));
@@ -333,7 +356,8 @@
 			const payload = isEdge
 				? {
 					text: getSpokenVoiceoverText(targetScene),
-					voiceId: selectedVoiceId || DEFAULT_EDGE_VOICE_ID
+					voiceId: selectedVoiceId || DEFAULT_EDGE_VOICE_ID,
+					audioEffect: effectToUse
 				}
 				: {
 					text: getSpokenVoiceoverText(targetScene),
@@ -361,12 +385,16 @@
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({
 								audioBase64: data.audioUrl,
-								sceneId: targetScene.id || `scene-${sceneIndex}`
+								sceneId: targetScene.id || `scene-${sceneIndex}`,
+								audioEffect: effectToUse
 							})
 						});
 						const saveData = await saveRes.json();
 						if (saveData.success) {
 							targetScene.serverAudioPath = saveData.serverAudioPath;
+							if (saveData.audioUrl) {
+								targetScene.voiceAudioUrl = saveData.audioUrl;
+							}
 						}
 					} catch (e) {
 						console.warn('Could not save regenerated audio to server:', e);
@@ -377,6 +405,57 @@
 			}
 		} catch (err) {
 			console.error('Error regenerating voice:', err);
+		}
+	}
+
+	async function handleChangeSceneEffect(sceneIndex, effectId) {
+		const targetScene = scenes[sceneIndex];
+		if (!targetScene) return;
+		targetScene.audioEffect = effectId;
+
+		if (targetScene.voiceAudioUrl) {
+			if (targetScene.isCustomAudio) {
+				try {
+					const saveRes = await fetch('/api/audio-save', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							audioBase64: targetScene.voiceAudioUrl,
+							sceneId: targetScene.id || `scene-${sceneIndex}`,
+							audioEffect: effectId
+						})
+					});
+					const saveData = await saveRes.json();
+					if (saveData.success) {
+						targetScene.serverAudioPath = saveData.serverAudioPath;
+						if (saveData.audioUrl) {
+							targetScene.voiceAudioUrl = saveData.audioUrl;
+						}
+					}
+				} catch (e) {
+					console.warn('Gagal memproses ulang filter custom audio:', e);
+				}
+			} else {
+				await handleRegenerateVoice(sceneIndex, effectId);
+			}
+		}
+		scenes = [...scenes];
+	}
+
+	async function handleApplyEffectToAll(effectId) {
+		selectedAudioEffect = effectId;
+		if (typeof window !== 'undefined') {
+			localStorage.setItem('yt_audio_effect', effectId);
+		}
+		for (let i = 0; i < scenes.length; i++) {
+			scenes[i].audioEffect = effectId;
+		}
+		scenes = [...scenes];
+
+		for (let i = 0; i < scenes.length; i++) {
+			if (scenes[i].voiceAudioUrl) {
+				await handleChangeSceneEffect(i, effectId);
+			}
 		}
 	}
 
@@ -392,6 +471,7 @@
 			audioDuration: 4.0,
 			footage: findMatchingStockVideo('technology'),
 			voiceAudioUrl: null,
+			audioEffect: selectedAudioEffect,
 			wordTimings: [
 				{ word: 'Tulis', start: 0, end: 0.6 },
 				{ word: 'kalimat', start: 0.6, end: 1.2 },
@@ -434,19 +514,23 @@
 				speechEnd: analysis.speechEnd
 			};
 
-			// Save to server cache for FFmpeg rendering
+			// Save to server cache for FFmpeg rendering with audio filter applied
 			try {
 				const saveRes = await fetch('/api/audio-save', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
 						audioBase64: analysis.dataUrl,
-						sceneId: targetScene.id || `scene-${sceneIndex}`
+						sceneId: targetScene.id || `scene-${sceneIndex}`,
+						audioEffect: targetScene.audioEffect || selectedAudioEffect
 					})
 				});
 				const saveData = await saveRes.json();
 				if (saveData.success) {
 					targetScene.serverAudioPath = saveData.serverAudioPath;
+					if (saveData.audioUrl) {
+						targetScene.voiceAudioUrl = saveData.audioUrl;
+					}
 				}
 			} catch (err) {
 				console.warn('Failed to cache uploaded audio on server:', err);
@@ -627,13 +711,41 @@
 						</div>
 					</div>
 				{/if}
+
+				<!-- Quick Vocal Effect Filter Bar (Full Video / Default) -->
+				<div class="quick-effect-bar">
+					<div class="quick-effect-header">
+						<span class="quick-effect-label">🎛️ Filter Suara / Karakter Vokal (Default Video):</span>
+						<span class="quick-effect-hint">Pilih preset untuk 1 video full atau atur per adegan di bawah</span>
+					</div>
+					<div class="quick-effect-chips">
+						{#each AUDIO_EFFECT_PRESETS as eff}
+							<button
+								type="button"
+								class="quick-effect-chip"
+								class:active={selectedAudioEffect === eff.id}
+								onclick={() => handleApplyEffectToAll(eff.id)}
+								title="{eff.name}: {eff.description}"
+							>
+								<span class="chip-eff-emoji">{eff.emoji}</span>
+								<span class="chip-eff-name">{eff.name.split(' (')[0]}</span>
+								{#if eff.tag}
+									<span class="chip-eff-tag">{eff.tag}</span>
+								{/if}
+							</button>
+						{/each}
+					</div>
+				</div>
 			</div>
 
 			<SceneTimeline
 				bind:scenes={scenes}
 				bind:activeSceneIndex={activeSceneIndex}
+				selectedAudioEffect={selectedAudioEffect}
 				onOpenFootagePicker={openFootagePicker}
 				onRegenerateVoice={handleRegenerateVoice}
+				onChangeSceneEffect={handleChangeSceneEffect}
+				onApplyEffectToAll={handleApplyEffectToAll}
 				onAddScene={handleAddScene}
 				onUploadAudio={handleUploadAudio}
 				onBatchUploadAudio={handleBatchUploadAudio}
@@ -663,9 +775,9 @@
 				<div class="tips-card glass-panel">
 					<h4>🚀 Tips Optimasi YouTube Long:</h4>
 					<ul>
+						<li><strong>Filter Vokal:</strong> Aktifkan <em>Studio Podcast</em> atau <em>Suara Berat</em> agar vokal narasi terdengar empuk & berbobot seperti rekaman studio profesional!</li>
 						<li><strong>Gaya Subtitle:</strong> Sesuaikan ukuran font & aktif/nonaktifkan animasi karaoke melalui tombol "Gaya Subtitle".</li>
 						<li><strong>Footage Relevan:</strong> Ganti clip adegan dengan mengklik tombol "Ganti" pada tiap scene card.</li>
-						<li><strong>ElevenLabs Voice:</strong> Masukkan API key di menu "API Settings" untuk voiceover AI ultra-realistis.</li>
 					</ul>
 				</div>
 			</div>
@@ -706,6 +818,7 @@
 		bind:elevenLabsApiKey={elevenLabsApiKey}
 		bind:selectedVoiceId={selectedVoiceId}
 		bind:voiceMode={voiceMode}
+		bind:selectedAudioEffect={selectedAudioEffect}
 		onClose={() => showSettingsModal = false}
 	/>
 
@@ -1002,6 +1115,97 @@
 	.chip-gender {
 		font-size: 0.75rem;
 		opacity: 0.7;
+	}
+
+	/* Quick Vocal Effect Bar */
+	.quick-effect-bar {
+		width: 100%;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding-top: 10px;
+		margin-top: 6px;
+		border-top: 1px solid rgba(255, 255, 255, 0.06);
+	}
+
+	.quick-effect-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		flex-wrap: wrap;
+	}
+
+	.quick-effect-label {
+		font-size: 0.75rem;
+		font-weight: 700;
+		color: #e2e8f0;
+		letter-spacing: 0.02em;
+	}
+
+	.quick-effect-hint {
+		font-size: 0.7rem;
+		color: var(--text-muted);
+	}
+
+	.quick-effect-chips {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+
+	.quick-effect-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 11px;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 9999px;
+		font-size: 0.74rem;
+		color: var(--text-secondary);
+		cursor: pointer;
+		transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+	}
+
+	.quick-effect-chip:hover {
+		background: rgba(255, 255, 255, 0.08);
+		border-color: rgba(255, 255, 255, 0.2);
+		color: var(--text-primary);
+		transform: translateY(-1px);
+	}
+
+	.quick-effect-chip.active {
+		background: linear-gradient(135deg, rgba(6, 182, 212, 0.22) 0%, rgba(59, 130, 246, 0.18) 100%);
+		border-color: var(--accent-cyan);
+		color: #ffffff;
+		font-weight: 600;
+		box-shadow: 0 0 14px rgba(6, 182, 212, 0.3);
+	}
+
+	.chip-eff-emoji {
+		font-size: 0.85rem;
+	}
+
+	.chip-eff-name {
+		font-size: 0.74rem;
+	}
+
+	.chip-eff-tag {
+		font-size: 0.6rem;
+		font-weight: 700;
+		padding: 1px 5px;
+		border-radius: 4px;
+		background: rgba(6, 182, 212, 0.25);
+		color: var(--accent-cyan);
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+
+	.quick-effect-chip.active .chip-eff-tag {
+		background: var(--accent-cyan);
+		color: #041018;
 	}
 
 	@media (max-width: 1100px) {

@@ -1,5 +1,134 @@
 [
   {
+    "id": "local-cinematic-1",
+    "title": "Cinematic",
+    "fileName": "cinematic-1.mp4",
+    "videoUrl": "/footage/cinematic-1.mp4",
+    "thumbnail": "",
+    "query": "cinematic",
+    "tags": [
+      "cinematic"
+    ],
+    "sourceUrl": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+    "source": "local",
+    "createdAt": "2026-09-14T11:58:38.148Z"
+  },
+  {
+    "id": "local-climate-crisis-protest-political-polarization-4k-c-1",
+    "title": "Climate Crisis Protest, Political Polarization, 4k Cinematic",
+    "fileName": "climate-crisis-protest-political-polarization-4k-c-1.mp4",
+    "videoUrl": "/footage/climate-crisis-protest-political-polarization-4k-c-1.mp4",
+    "thumbnail": "/footage/climate-crisis-protest-political-polarization-4k-c-1.jpg",
+    "query": "climate crisis protest, political polarization, 4k cinematic",
+    "tags": [
+      "climate",
+      "crisis",
+      "protest,",
+      "political",
+      "polarization,",
+      "cinematic"
+    ],
+    "sourceUrl": "https://videos.pexels.com/video-files/7103584/7103584-hd_1920_1080_25fps.mp4",
+    "source": "local",
+    "createdAt": "2026-09-14T11:57:55.009Z"
+  },
+  {
+    "id": "local-economic-inequality-gap-rich-vs-poor-4k-cinematic-1",
+    "title": "Economic Inequality Gap, Rich Vs Poor, 4k Cinematic",
+    "fileName": "economic-inequality-gap-rich-vs-poor-4k-cinematic-1.mp4",
+    "videoUrl": "/footage/economic-inequality-gap-rich-vs-poor-4k-cinematic-1.mp4",
+    "thumbnail": "/footage/economic-inequality-gap-rich-vs-poor-4k-cinematic-1.jpg",
+    "query": "economic inequality gap, rich vs poor, 4k cinematic",
+    "tags": [
+      "economic",
+      "inequality",
+      "gap,",
+      "rich",
+      "poor,",
+      "cinematic"
+    ],
+    "sourceUrl": "https://videos.pexels.com/video-files/10319858/10319858-hd_1920_1080_25fps.mp4",
+    "source": "local",
+    "createdAt": "2026-09-14T11:57:51.248Z"
+  },
+  {
+    "id": "local-three-warning-signs-collapse-symptoms-4k-cinematic-1",
+    "title": "Three Warning Signs, Collapse Symptoms, 4k Cinematic",
+    "fileName": "three-warning-signs-collapse-symptoms-4k-cinematic-1.mp4",
+    "videoUrl": "/footage/three-warning-signs-collapse-symptoms-4k-cinematic-1.mp4",
+    "thumbnail": "/footage/three-warning-signs-collapse-symptoms-4k-cinematic-1.jpg",
+    "query": "three warning signs, collapse symptoms, 4k cinematic",
+    "tags": [
+      "three",
+      "warning",
+      "signs,",
+      "collapse",
+      "symptoms,",
+      "cinematic"
+    ],
+    "sourceUrl": "https://videos.pexels.com/video-files/39416014/16783834_640_360_50fps.mp4",
+    "source": "local",
+    "createdAt": "2026-09-14T11:57:44.266Z"
+  },
+  {
+    "id": "local-elite-ruling-class-ignored-protests-4k-cinematic-1",
+    "title": "Elite Ruling Class, Ignored Protests, 4k Cinematic",
+    "fileName": "elite-ruling-class-ignored-protests-4k-cinematic-1.mp4",
+    "videoUrl": "/footage/elite-ruling-class-ignored-protests-4k-cinematic-1.mp4",
+    "thumbnail": "/footage/elite-ruling-class-ignored-protests-4k-cinematic-1.jpg",
+    "query": "elite ruling class, ignored protests, 4k cinematic",
+    "tags": [
+      "elite",
+      "ruling",
+      "class,",
+      "ignored",
+      "protests,",
+      "cinematic"
+    ],
+    "sourceUrl": "https://videos.pexels.com/video-files/4848259/4848259-hd_1366_720_24fps.mp4",
+    "source": "local",
+    "createdAt": "2026-09-14T11:57:43.802Z"
+  },
+  {
+    "id": "local-roman-citizens-crowd-divided-loyalty-4k-cinematic-1",
+    "title": "Roman Citizens Crowd, Divided Loyalty, 4k Cinematic",
+    "fileName": "roman-citizens-crowd-divided-loyalty-4k-cinematic-1.mp4",
+    "videoUrl": "/footage/roman-citizens-crowd-divided-loyalty-4k-cinematic-1.mp4",
+    "thumbnail": "/footage/roman-citizens-crowd-divided-loyalty-4k-cinematic-1.jpg",
+    "query": "roman citizens crowd, divided loyalty, 4k cinematic",
+    "tags": [
+      "roman",
+      "citizens",
+      "crowd,",
+      "divided",
+      "loyalty,",
+      "cinematic"
+    ],
+    "sourceUrl": "https://videos.pexels.com/video-files/31553551/13447379_640_360_25fps.mp4",
+    "source": "local",
+    "createdAt": "2026-09-14T11:57:41.196Z"
+  },
+  {
+    "id": "local-roman-empire-map-ancient-rome-aerial-4k-cinematic-1",
+    "title": "Roman Empire Map, Ancient Rome Aerial, 4k Cinematic",
+    "fileName": "roman-empire-map-ancient-rome-aerial-4k-cinematic-1.mp4",
+    "videoUrl": "/footage/roman-empire-map-ancient-rome-aerial-4k-cinematic-1.mp4",
+    "thumbnail": "/footage/roman-empire-map-ancient-rome-aerial-4k-cinematic-1.jpg",
+    "query": "roman empire map, ancient rome aerial, 4k cinematic",
+    "tags": [
+      "roman",
+      "empire",
+      "map,",
+      "ancient",
+      "rome",
+      "aerial,",
+      "cinematic"
+    ],
+    "sourceUrl": "https://videos.pexels.com/video-files/36097843/15308644_640_360_25fps.mp4",
+    "source": "local",
+    "createdAt": "2026-09-14T11:57:38.550Z"
+  },
+  {
     "id": "local-mindset-chess-strategy-planning-3",
     "title": "Mindset Chess Strategy Planning 3",
     "fileName": "mindset-chess-strategy-planning-3.mp4",

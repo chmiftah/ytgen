@@ -16,8 +16,11 @@
 		deepseekApiKey = $bindable('sk-0802f45e1d4e41c8ae8d46396c97b746'),
 		selectedVoiceId = $bindable('id-ID-GadisNeural'),
 		voiceMode = $bindable('edge_tts'),
+		selectedAudioEffect = $bindable('studio_podcast'),
 		onClose
 	} = $props();
+
+	import { AUDIO_EFFECT_PRESETS, DEFAULT_AUDIO_EFFECT_ID } from '$lib/services/audioEffectService.js';
 
 	let showDeepseekKey = $state(false);
 	let showPexelsKey = $state(false);
@@ -60,6 +63,7 @@
 		const savedEleven = localStorage.getItem('yt_eleven_key');
 		const savedVoice = localStorage.getItem('yt_voice_id');
 		const savedProvider = localStorage.getItem('yt_voice_provider');
+		const savedEffect = localStorage.getItem('yt_audio_effect');
 
 		if (savedDeepseek) deepseekApiKey = savedDeepseek;
 		if (savedPexels) pexelsApiKey = savedPexels;
@@ -68,6 +72,7 @@
 			fetchElevenLabsVoices(savedEleven);
 		}
 		if (savedVoice) selectedVoiceId = savedVoice;
+		if (savedEffect) selectedAudioEffect = savedEffect;
 		if (savedProvider) {
 			selectedVoiceEngine = savedProvider;
 		} else if (isEdgeVoice(selectedVoiceId)) {
@@ -184,6 +189,7 @@
 		localStorage.setItem('yt_eleven_key', elevenLabsApiKey || '');
 		localStorage.setItem('yt_voice_provider', selectedVoiceEngine);
 		localStorage.setItem('yt_voice_id', selectedVoiceId || (selectedVoiceEngine === 'edge_tts' ? DEFAULT_EDGE_VOICE_ID : DEFAULT_ELEVEN_VOICE_ID));
+		localStorage.setItem('yt_audio_effect', selectedAudioEffect || DEFAULT_AUDIO_EFFECT_ID);
 		
 		if (voiceMode !== 'custom_upload') {
 			voiceMode = selectedVoiceEngine;
@@ -481,6 +487,42 @@
 						{/if}
 					</div>
 				{/if}
+
+				<!-- Audio Effect Preset Selector -->
+				<div class="field-group">
+					<div class="field-header">
+						<label>Efek Master Suara / Vocal Filter (Default Seluruh Video)
+							<span class="label-hint">— memberi karakter bass hangat, berat, atau misterius</span>
+						</label>
+					</div>
+
+					<div class="effect-grid">
+						{#each AUDIO_EFFECT_PRESETS as eff}
+							<div
+								class="effect-card"
+								class:selected={selectedAudioEffect === eff.id}
+								onclick={() => selectedAudioEffect = eff.id}
+								role="button"
+								tabindex="0"
+								onkeydown={(e) => e.key === 'Enter' && (selectedAudioEffect = eff.id)}
+							>
+								<div class="effect-card-header">
+									<span class="effect-emoji">{eff.emoji}</span>
+									<div class="effect-title-wrap">
+										<span class="effect-name">{eff.name}</span>
+										<span class="effect-tag">{eff.tag}</span>
+									</div>
+									{#if selectedAudioEffect === eff.id}
+										<span class="selected-badge">
+											<Check size={11} />
+										</span>
+									{/if}
+								</div>
+								<p class="effect-desc">{eff.description}</p>
+							</div>
+						{/each}
+					</div>
+				</div>
 
 				<!-- DeepSeek Key -->
 				<div class="field-group">
@@ -794,6 +836,76 @@
 		display: grid;
 		grid-template-columns: 1fr 1fr;
 		gap: 10px;
+	}
+
+	/* ── Audio Effect Presets Grid ── */
+	.effect-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 10px;
+	}
+
+	.effect-card {
+		padding: 11px 13px;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1.5px solid var(--border-subtle);
+		border-radius: var(--radius-lg);
+		cursor: pointer;
+		transition: all 0.18s ease;
+		user-select: none;
+	}
+
+	.effect-card:hover {
+		background: rgba(99, 102, 241, 0.07);
+		border-color: rgba(99, 102, 241, 0.35);
+	}
+
+	.effect-card.selected {
+		background: rgba(99, 102, 241, 0.14);
+		border-color: var(--primary);
+		box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.22);
+	}
+
+	.effect-card-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 5px;
+	}
+
+	.effect-emoji {
+		font-size: 1.2rem;
+		flex-shrink: 0;
+	}
+
+	.effect-title-wrap {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.effect-name {
+		display: block;
+		font-size: 0.84rem;
+		font-weight: 700;
+		color: var(--text-primary);
+	}
+
+	.effect-tag {
+		display: inline-block;
+		font-size: 0.65rem;
+		font-weight: 700;
+		padding: 1px 6px;
+		border-radius: 4px;
+		background: rgba(99, 102, 241, 0.2);
+		color: #a5b4fc;
+		margin-top: 1px;
+	}
+
+	.effect-desc {
+		font-size: 0.71rem;
+		color: var(--text-muted);
+		line-height: 1.35;
+		margin: 0;
 	}
 
 	.voice-card {

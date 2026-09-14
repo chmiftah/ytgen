@@ -1,5 +1,5 @@
 <script>
-	import { onDestroy } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import {
 		Film,
 		Mic,
@@ -14,15 +14,24 @@
 		Upload,
 		Square,
 		Play,
-		FolderUp
+		FolderUp,
+		Sliders
 	} from 'lucide-svelte';
 	import { VoiceRecorder } from '$lib/services/audioAnalysisService.js';
+	import {
+		AUDIO_EFFECT_PRESETS,
+		DEFAULT_AUDIO_EFFECT_ID,
+		getAudioEffectById
+	} from '$lib/services/audioEffectService.js';
 
 	let {
 		scenes = $bindable([]),
 		activeSceneIndex = $bindable(0),
+		selectedAudioEffect = DEFAULT_AUDIO_EFFECT_ID,
 		onOpenFootagePicker,
 		onRegenerateVoice,
+		onChangeSceneEffect,
+		onApplyEffectToAll,
 		onAddScene,
 		onUploadAudio,
 		onBatchUploadAudio,
@@ -31,6 +40,7 @@
 	} = $props();
 
 	let batchFileInput = $state(null);
+	let activeEffectDropdownIndex = $state(-1);
 
 	// In-browser recording state
 	let recorder = null;
@@ -176,7 +186,18 @@
 		return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 	}
 
+	let windowClickHandler = null;
+	onMount(() => {
+		windowClickHandler = () => {
+			activeEffectDropdownIndex = -1;
+		};
+		window.addEventListener('click', windowClickHandler);
+	});
+
 	onDestroy(() => {
+		if (windowClickHandler && typeof window !== 'undefined') {
+			window.removeEventListener('click', windowClickHandler);
+		}
 		if (recordingInterval) clearInterval(recordingInterval);
 		if (previewAudio) {
 			previewAudio.pause();
@@ -302,8 +323,74 @@
 							<span class="query-badge" title="Pexels Search Query">
 								🔍 {scene.visualQuery || 'Cinematic'}
 							</span>
+
+							<!-- Audio Vocal Effect Pill Dropdown -->
+							<div class="effect-dropdown-wrap" onclick={(e) => e.stopPropagation()}>
+								<button
+									type="button"
+									class="effect-pill-btn"
+									class:active-filter={(scene.audioEffect || selectedAudioEffect) !== 'natural'}
+									onclick={() => activeEffectDropdownIndex = activeEffectDropdownIndex === index ? -1 : index}
+									title="Ubah filter vokal adegan ini (suara berat, studio podcast, reverb dingin, dll)"
+								>
+									<span class="eff-icon">{getAudioEffectById(scene.audioEffect || selectedAudioEffect).emoji}</span>
+									<span class="eff-name">{getAudioEffectById(scene.audioEffect || selectedAudioEffect).name.split(' (')[0]}</span>
+									<ChevronDown size={11} class="eff-arrow" />
+								</button>
+
+								{#if activeEffectDropdownIndex === index}
+									<div class="effect-dropdown-menu">
+										<div class="dropdown-head">
+											<span class="dropdown-title">🎙️ Filter Suara Adegan {index + 1}</span>
+											<button type="button" class="close-btn" onclick={() => activeEffectDropdownIndex = -1}>&times;</button>
+										</div>
+										<div class="dropdown-list">
+											{#each AUDIO_EFFECT_PRESETS as eff}
+												<button
+													type="button"
+													class="effect-option-row"
+													class:active-opt={(scene.audioEffect || selectedAudioEffect) === eff.id}
+													onclick={() => {
+														activeEffectDropdownIndex = -1;
+														if (onChangeSceneEffect) onChangeSceneEffect(index, eff.id);
+													}}
+												>
+													<span class="opt-emoji">{eff.emoji}</span>
+													<div class="opt-content">
+														<div class="opt-title-line">
+															<span class="opt-name">{eff.name}</span>
+															{#if eff.tag}
+																<span class="opt-tag">{eff.tag}</span>
+															{/if}
+														</div>
+														<div class="opt-desc">{eff.description}</div>
+													</div>
+													{#if (scene.audioEffect || selectedAudioEffect) === eff.id}
+														<CheckCircle2 size={13} color="var(--accent-cyan)" />
+													{/if}
+												</button>
+											{/each}
+										</div>
+										<div class="dropdown-foot">
+											<button
+												type="button"
+												class="apply-all-action-btn"
+												onclick={() => {
+													const chosen = scene.audioEffect || selectedAudioEffect;
+													activeEffectDropdownIndex = -1;
+													if (onApplyEffectToAll) onApplyEffectToAll(chosen);
+												}}
+												title="Terapkan filter suara ini ke seluruh adegan di video"
+											>
+												⚡ Terapkan "{getAudioEffectById(scene.audioEffect || selectedAudioEffect).name.split(' (')[0]}" ke SEMUA Adegan
+											</button>
+										</div>
+									</div>
+								{/if}
+							</div>
+
 							{#if scene.voiceAudioUrl}
-								<span class="voice-ready-badge" title="Audio voiceover siap">
+								<span class="voice-ready-badge" title="Audio voiceover siap ({getAudioEffectById(scene.audioEffect || selectedAudioEffect).name})">
 									<CheckCircle2 size={12} color="var(--highlight-green)" />
 									<span>Voice Ready</span>
 								</span>
@@ -366,7 +453,7 @@
 								<!-- Custom Audio Pill -->
 								<div class="custom-audio-pill">
 									<div class="pill-left">
-										<span class="pill-badge">🎧 Rekaman</span>
+										<span class="pill-badge">🎧 Rekaman • {getAudioEffectById(scene.audioEffect || selectedAudioEffect).name.split(' (')[0]}</span>
 										<span class="pill-name" title={scene.audioFileName || 'Audio Rekaman'}>
 											{scene.audioFileName || 'audio-rekaman.mp3'}
 										</span>
@@ -441,12 +528,12 @@
 
 									{#if scene.voiceAudioUrl}
 										{#if scene.voiceProvider === 'edge_tts'}
-											<span class="ai-voice-indicator edge" title="Audio disiapkan dari Microsoft Edge TTS (Gratis, Subtitle Sinkron)">
-												🌐 Edge TTS Ready ({(scene.audioDuration || 5).toFixed(1)}s)
+											<span class="ai-voice-indicator edge" title="Audio disiapkan dari Microsoft Edge TTS + Filter {getAudioEffectById(scene.audioEffect || selectedAudioEffect).name}">
+												🌐 Edge TTS Ready ({(scene.audioDuration || 5).toFixed(1)}s) • {getAudioEffectById(scene.audioEffect || selectedAudioEffect).emoji} {getAudioEffectById(scene.audioEffect || selectedAudioEffect).name.split(' (')[0]}
 											</span>
 										{:else}
-											<span class="ai-voice-indicator" title="Audio disiapkan dari ElevenLabs AI">
-												🤖 ElevenLabs Ready ({(scene.audioDuration || 5).toFixed(1)}s)
+											<span class="ai-voice-indicator" title="Audio disiapkan dari ElevenLabs AI + Filter {getAudioEffectById(scene.audioEffect || selectedAudioEffect).name}">
+												🤖 ElevenLabs Ready ({(scene.audioDuration || 5).toFixed(1)}s) • {getAudioEffectById(scene.audioEffect || selectedAudioEffect).emoji} {getAudioEffectById(scene.audioEffect || selectedAudioEffect).name.split(' (')[0]}
 											</span>
 										{/if}
 									{/if}
@@ -675,6 +762,202 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	/* Effect Dropdown Pill & Flyout Menu */
+	.effect-dropdown-wrap {
+		position: relative;
+		display: inline-block;
+	}
+
+	.effect-pill-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 2px 8px;
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: var(--radius-full);
+		font-size: 0.7rem;
+		color: var(--text-secondary);
+		cursor: pointer;
+		transition: all 0.18s ease;
+	}
+
+	.effect-pill-btn:hover {
+		background: rgba(255, 255, 255, 0.1);
+		border-color: rgba(255, 255, 255, 0.25);
+		color: var(--text-primary);
+	}
+
+	.effect-pill-btn.active-filter {
+		background: rgba(6, 182, 212, 0.15);
+		border-color: rgba(6, 182, 212, 0.4);
+		color: #38bdf8;
+		font-weight: 600;
+	}
+
+	.eff-icon {
+		font-size: 0.75rem;
+		line-height: 1;
+	}
+
+	.eff-name {
+		font-size: 0.69rem;
+	}
+
+	.eff-arrow {
+		color: var(--text-muted);
+		transition: transform 0.2s ease;
+	}
+
+	.effect-dropdown-menu {
+		position: absolute;
+		top: calc(100% + 6px);
+		left: 0;
+		width: 320px;
+		background: #090e1a;
+		border: 1px solid rgba(6, 182, 212, 0.35);
+		border-radius: 12px;
+		box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(6, 182, 212, 0.15);
+		z-index: 1000;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+		animation: menuIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+	}
+
+	@keyframes menuIn {
+		from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+		to { opacity: 1; transform: translateY(0) scale(1); }
+	}
+
+	.dropdown-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 10px 14px;
+		background: rgba(255, 255, 255, 0.03);
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+	}
+
+	.dropdown-title {
+		font-size: 0.78rem;
+		font-weight: 700;
+		color: #f1f5f9;
+	}
+
+	.close-btn {
+		background: none;
+		border: none;
+		color: var(--text-muted);
+		font-size: 1.1rem;
+		cursor: pointer;
+		line-height: 1;
+		padding: 0;
+	}
+
+	.close-btn:hover {
+		color: #fff;
+	}
+
+	.dropdown-list {
+		display: flex;
+		flex-direction: column;
+		padding: 6px;
+		gap: 2px;
+		max-height: 260px;
+		overflow-y: auto;
+	}
+
+	.effect-option-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 8px 10px;
+		border-radius: 8px;
+		background: transparent;
+		border: 1px solid transparent;
+		cursor: pointer;
+		text-align: left;
+		transition: all 0.15s ease;
+		color: var(--text-secondary);
+	}
+
+	.effect-option-row:hover {
+		background: rgba(255, 255, 255, 0.06);
+		color: var(--text-primary);
+	}
+
+	.effect-option-row.active-opt {
+		background: rgba(6, 182, 212, 0.14);
+		border-color: rgba(6, 182, 212, 0.35);
+		color: #fff;
+	}
+
+	.opt-emoji {
+		font-size: 1.1rem;
+		flex-shrink: 0;
+	}
+
+	.opt-content {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.opt-title-line {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.opt-name {
+		font-size: 0.77rem;
+		font-weight: 700;
+		color: #f8fafc;
+	}
+
+	.opt-tag {
+		font-size: 0.58rem;
+		font-weight: 800;
+		padding: 1px 5px;
+		border-radius: 4px;
+		background: rgba(6, 182, 212, 0.2);
+		color: var(--accent-cyan);
+		text-transform: uppercase;
+	}
+
+	.opt-desc {
+		font-size: 0.68rem;
+		color: var(--text-muted);
+		margin-top: 2px;
+		line-height: 1.3;
+	}
+
+	.dropdown-foot {
+		padding: 8px 10px;
+		background: rgba(15, 23, 42, 0.8);
+		border-top: 1px solid rgba(255, 255, 255, 0.06);
+	}
+
+	.apply-all-action-btn {
+		width: 100%;
+		padding: 7px 10px;
+		border-radius: 6px;
+		background: linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%);
+		border: 1px solid rgba(6, 182, 212, 0.4);
+		color: #38bdf8;
+		font-size: 0.72rem;
+		font-weight: 700;
+		cursor: pointer;
+		transition: all 0.18s ease;
+		text-align: center;
+	}
+
+	.apply-all-action-btn:hover {
+		background: linear-gradient(135deg, rgba(6, 182, 212, 0.35) 0%, rgba(59, 130, 246, 0.35) 100%);
+		color: #ffffff;
+		box-shadow: 0 0 12px rgba(6, 182, 212, 0.3);
 	}
 
 	.voice-ready-badge {

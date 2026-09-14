@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { EDGE_TTS_VOICES, DEFAULT_EDGE_VOICE_ID } from '$lib/services/voiceService.js';
 import { generateSyntheticWordTimings } from '$lib/services/subtitleService.js';
+import { getAudioEffectById } from '$lib/services/audioEffectService.js';
 
 export async function GET() {
 	return json({
@@ -13,7 +14,13 @@ export async function GET() {
 export async function POST({ request }) {
 	let tts = null;
 	try {
-		const { text, voiceId = DEFAULT_EDGE_VOICE_ID, rate = '0%', pitch = '0Hz' } = await request.json();
+		const { 
+			text, 
+			voiceId = DEFAULT_EDGE_VOICE_ID, 
+			rate, 
+			pitch, 
+			audioEffect = 'studio_podcast' 
+		} = await request.json();
 
 		if (!text || !text.trim()) {
 			return json({ success: false, error: 'Teks voiceover wajib diisi' }, { status: 400 });
@@ -22,14 +29,18 @@ export async function POST({ request }) {
 		const cleanText = text.trim();
 		const words = cleanText.split(/\s+/).filter(Boolean);
 
+		const effectPreset = getAudioEffectById(audioEffect);
+		const effectivePitch = pitch !== undefined && pitch !== null ? pitch : (effectPreset?.edgePitch || '0Hz');
+		const effectiveRate = rate !== undefined && rate !== null ? rate : (effectPreset?.edgeRate || '0%');
+
 		tts = new MsEdgeTTS();
 		await tts.setMetadata(voiceId, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3, {
 			wordBoundaryEnabled: true
 		});
 
 		const { audioStream, metadataStream } = tts.toStream(cleanText, {
-			rate: rate || '0%',
-			pitch: pitch || '0Hz'
+			rate: effectiveRate,
+			pitch: effectivePitch
 		});
 
 		const audioChunks = [];
@@ -97,7 +108,8 @@ export async function POST({ request }) {
 			duration,
 			isRealVoice: true,
 			provider: 'edge_tts',
-			voiceId
+			voiceId,
+			audioEffect: effectPreset.id
 		});
 	} catch (error) {
 		console.error('Edge TTS generation error:', error);
