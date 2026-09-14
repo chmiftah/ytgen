@@ -619,12 +619,13 @@
 	}
 
 	async function handleOpenExport() {
-		// Auto-resync any scenes where chapter text or narration was edited
+		// Auto-resync any scenes where chapter text or narration was edited or audio is out of sync
 		let syncCount = 0;
 		for (let i = 0; i < scenes.length; i++) {
 			const sc = scenes[i];
 			const currentSpoken = getSpokenVoiceoverText(sc).trim();
-			if (sc.lastSpokenText && sc.lastSpokenText.trim() !== currentSpoken && sc.voiceAudioUrl && !sc.isCustomAudio) {
+			const isOutOfSync = (!sc.lastSpokenText || sc.lastSpokenText.trim() !== currentSpoken);
+			if (isOutOfSync && sc.voiceAudioUrl && !sc.isCustomAudio) {
 				syncCount++;
 				await handleRegenerateVoice(i);
 			}

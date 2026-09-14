@@ -358,10 +358,10 @@ export async function POST({ request }) {
 					const currentSpokenText = (
 						getSpokenVoiceoverText(scene) || scene.narration || scene.words?.join(' ') || ''
 					).trim();
-					const isStaleAudio = Boolean(
-						scene.lastSpokenText &&
-						scene.lastSpokenText.trim() !== currentSpokenText &&
-						!scene.isCustomAudio
+					const isChapterScene = Boolean(scene.chapter);
+					const isStaleAudio = !scene.isCustomAudio && (
+						(isChapterScene && (!scene.lastSpokenText || scene.lastSpokenText.trim() !== currentSpokenText)) ||
+						(scene.lastSpokenText && scene.lastSpokenText.trim() !== currentSpokenText)
 					);
 
 					if (scene.serverAudioPath && !isStaleAudio) {

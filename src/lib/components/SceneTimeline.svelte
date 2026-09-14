@@ -86,11 +86,25 @@
 		};
 	}
 
-	function removeChapter(index) {
+	let regeneratingSceneIndices = $state(new Set());
+	let chapterDebounceTimers = {};
+
+	async function removeChapter(index) {
 		scenes[index].chapter = null;
+		scenes = [...scenes];
+		if (onRegenerateVoice && scenes[index].voiceAudioUrl && !scenes[index].isCustomAudio) {
+			try {
+				regeneratingSceneIndices.add(index);
+				regeneratingSceneIndices = new Set(regeneratingSceneIndices);
+				await onRegenerateVoice(index);
+			} finally {
+				regeneratingSceneIndices.delete(index);
+				regeneratingSceneIndices = new Set(regeneratingSceneIndices);
+			}
+		}
 	}
 
-	function setChapterPreset(scene, preset) {
+	async function setChapterPreset(scene, preset, index) {
 		if (!scene.chapter) return;
 		const num = scene.chapter.number || 1;
 		if (preset === 'bab') {
@@ -103,6 +117,39 @@
 			scene.chapter.tag = '';
 		}
 		scenes = [...scenes];
+
+		// Automatically auto-regenerate voice for this scene if speech is already generated
+		if (onRegenerateVoice && scene.voiceAudioUrl && !scene.isCustomAudio) {
+			try {
+				regeneratingSceneIndices.add(index);
+				regeneratingSceneIndices = new Set(regeneratingSceneIndices);
+				await onRegenerateVoice(index);
+			} finally {
+				regeneratingSceneIndices.delete(index);
+				regeneratingSceneIndices = new Set(regeneratingSceneIndices);
+			}
+		}
+	}
+
+	function handleChapterTextEdit(index) {
+		const sc = scenes[index];
+		if (!sc) return;
+		if (chapterDebounceTimers[index]) clearTimeout(chapterDebounceTimers[index]);
+
+		chapterDebounceTimers[index] = setTimeout(async () => {
+			if (onRegenerateVoice && sc.voiceAudioUrl && !sc.isCustomAudio) {
+				const currentSpoken = getSpokenVoiceoverText(sc).trim();
+				if (sc.lastSpokenText && sc.lastSpokenText.trim() === currentSpoken) return;
+				try {
+					regeneratingSceneIndices.add(index);
+					regeneratingSceneIndices = new Set(regeneratingSceneIndices);
+					await onRegenerateVoice(index);
+				} finally {
+					regeneratingSceneIndices.delete(index);
+					regeneratingSceneIndices = new Set(regeneratingSceneIndices);
+				}
+			}
+		}, 1000);
 	}
 
 	function handleSingleFileChange(index, e) {
@@ -281,6 +328,8 @@
 										class="chapter-tag-input" 
 										bind:value={scene.chapter.tag} 
 										placeholder="Tanpa Tag"
+										oninput={() => handleChapterTextEdit(index)}
+										onchange={() => handleChapterTextEdit(index)}
 										title="Tag/Label Bab (cth: BAB 01, BAGIAN 1, PART 1, atau kosongkan untuk langsung hanya judul)"
 									/>
 									<div class="chapter-tag-pills">
@@ -288,28 +337,28 @@
 											type="button" 
 											class="tag-pill-btn" 
 											class:active={scene.chapter.tag === `BAB ${String(scene.chapter.number || 1).padStart(2, '0')}`}
-											onclick={() => setChapterPreset(scene, 'bab')}
+											onclick={() => setChapterPreset(scene, 'bab', index)}
 											title="Set format BAB"
 										>BAB</button>
 										<button 
 											type="button" 
 											class="tag-pill-btn" 
 											class:active={scene.chapter.tag === `BAGIAN ${scene.chapter.number || 1}`}
-											onclick={() => setChapterPreset(scene, 'bagian')}
+											onclick={() => setChapterPreset(scene, 'bagian', index)}
 											title="Set format BAGIAN"
 										>BAGIAN</button>
 										<button 
 											type="button" 
 											class="tag-pill-btn" 
 											class:active={scene.chapter.tag === `PART ${scene.chapter.number || 1}`}
-											onclick={() => setChapterPreset(scene, 'part')}
+											onclick={() => setChapterPreset(scene, 'part', index)}
 											title="Set format PART"
 										>PART</button>
 										<button 
 											type="button" 
 											class="tag-pill-btn empty-tag" 
 											class:active={!scene.chapter.tag}
-											onclick={() => setChapterPreset(scene, 'none')}
+											onclick={() => setChapterPreset(scene, 'none', index)}
 											title="Hanya Judul Bab Saja (Tanpa awalan Bab/Part)"
 										>Hanya Judul</button>
 									</div>
@@ -322,6 +371,8 @@
 									class="chapter-title-input" 
 									bind:value={scene.chapter.title} 
 									placeholder="Judul Bab (contoh: AWAL MULA REVOLUSI)"
+									oninput={() => handleChapterTextEdit(index)}
+									onchange={() => handleChapterTextEdit(index)}
 									title="Klik untuk edit Judul Bab"
 								/>
 							</div>
@@ -362,7 +413,12 @@
 							</div>
 
 							<div class="chapter-voice-sync-actions">
-								{#if scene.lastSpokenText && scene.lastSpokenText.trim() !== getSpokenVoiceoverText(scene).trim()}
+								{#if regeneratingSceneIndices.has(index)}
+									<span class="sync-loading-badge">
+										<span class="spinner-dot"></span>
+										Membuat suara...
+									</span>
+								{:else if scene.lastSpokenText && scene.lastSpokenText.trim() !== getSpokenVoiceoverText(scene).trim()}
 									<span class="sync-needed-badge">⚠️ Teks Bab Diubah</span>
 									<button 
 										type="button" 
@@ -373,13 +429,14 @@
 										🔄 Sinkron Suara
 									</button>
 								{:else if scene.voiceAudioUrl}
+									<span class="synced-ok-badge">✓ Suara Sesuai</span>
 									<button 
 										type="button" 
 										class="btn-chapter-resync"
 										onclick={() => onRegenerateVoice?.(index)}
 										title="Generate ulang suara adegan ini"
 									>
-										🔄 Update Suara
+										🔄 Re-sync
 									</button>
 								{/if}
 							</div>
@@ -532,6 +589,7 @@
 							bind:value={scene.narration}
 							rows={2}
 							onclick={(e) => e.stopPropagation()}
+							oninput={() => handleChapterTextEdit(index)}
 							placeholder="Teks narasi untuk adegan ini..."
 						></textarea>
 
@@ -1407,6 +1465,44 @@
 		border: 1px solid rgba(245, 158, 11, 0.4);
 		padding: 2px 7px;
 		border-radius: 4px;
+	}
+
+	.sync-loading-badge {
+		font-size: 0.65rem;
+		font-weight: 700;
+		background: rgba(56, 189, 248, 0.2);
+		color: #38bdf8;
+		border: 1px solid rgba(56, 189, 248, 0.4);
+		padding: 2px 8px;
+		border-radius: 4px;
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+	}
+
+	.synced-ok-badge {
+		font-size: 0.65rem;
+		font-weight: 600;
+		background: rgba(16, 185, 129, 0.15);
+		color: #34d399;
+		border: 1px solid rgba(16, 185, 129, 0.3);
+		padding: 2px 7px;
+		border-radius: 4px;
+	}
+
+	.spinner-dot {
+		width: 7px;
+		height: 7px;
+		border: 2px solid #38bdf8;
+		border-top-color: transparent;
+		border-radius: 50%;
+		animation: spinDot 0.8s linear infinite;
+	}
+
+	@keyframes spinDot {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	.btn-chapter-sync {

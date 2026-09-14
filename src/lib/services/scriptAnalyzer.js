@@ -100,9 +100,18 @@ export function extractVisualQuery(narrationText) {
 export function analyzeScript(rawScript) {
 	if (!rawScript || typeof rawScript !== 'string') return [];
 
-	// Check if script has explicit chapter blocks: e.g. [Bab 1: Title | Subtitle], [Bagian 1: Title], Part 1: Title, etc.
+	// Check if script has explicit chapter blocks:
+	// 1. Prefixed: e.g. [Bab 1: Title | Subtitle], [Bagian 1: Title], Part 1: Title, Episode 1: Title
+	// 2. Title-only brackets: e.g. [Fajar Baru | Era AI], [Awal Mula Sejarah]
+	// 3. Markdown headings: e.g. # Judul Bab, ## Judul Bab
 	const rawLines = rawScript.split(/\r?\n/);
-	const chapterHeaderRegex = /^(?:\[(bab|chapter|bagian|part|segmen|episode|eps)\s*(\d+)[:\s-]*([^\]|]+)(?:\|([^\]]+))?\]|(bab|chapter|bagian|part|segmen|episode|eps)\s*(\d+)[:\s-]*([^\n]+))/i;
+	const chapterHeaderRegex = /^(?:\[(bab|chapter|bagian|part|segmen|episode|eps)\s*(\d+)(?:[:\s-]*([^\]|]*))?(?:\|([^\]]+))?\]|(bab|chapter|bagian|part|segmen|episode|eps)\s*(\d+)(?:[:\s-]*([^\n]*))?)/i;
+	const titleOnlyBracketRegex = /^\[([^\]|]+)(?:\|([^\]]+))?\]$/;
+	const markdownHeadingRegex = /^#{1,3}\s+(.+)$/;
+
+	// Detect overall script vocabulary preference (does the user use "Bagian", "Part", or "Bab"?)
+	const scriptLower = rawScript.toLowerCase();
+	const defaultPrefix = scriptLower.includes('bagian') ? 'BAGIAN' : (scriptLower.includes('part') ? 'PART' : 'BAB');
 
 	const scenes = [];
 	let currentChunk = '';
@@ -116,16 +125,20 @@ export function analyzeScript(rawScript) {
 		const isFirstScene = scenes.length === 0;
 		let chapterForScene = pendingChapter;
 		
-		// If no explicit chapter, auto-assign chapter 1 to first scene
+		// If no explicit chapter, only assign a chapter if script mentions chapters or has multiple paragraphs
 		if (!chapterForScene && isFirstScene) {
-			chapterForScene = {
-				number: 1,
-				tag: 'BAB 01',
-				title: 'PENDAHULUAN',
-				subtitle: 'Pengantar dan latar belakang cerita',
-				style: 'center'
-			};
-			chapterCounter = 2;
+			const hasExplicitChaptersInScript = chapterHeaderRegex.test(rawScript) || titleOnlyBracketRegex.test(rawScript);
+			if (hasExplicitChaptersInScript) {
+				const tag = defaultPrefix === 'BAGIAN' ? 'BAGIAN 1' : (defaultPrefix === 'PART' ? 'PART 1' : 'BAB 01');
+				chapterForScene = {
+					number: 1,
+					tag,
+					title: 'PENDAHULUAN',
+					subtitle: 'Pengantar dan latar belakang cerita',
+					style: 'center'
+				};
+				chapterCounter = 2;
+			}
 		}
 
 		scenes.push(createSceneObject(scenes.length + 1, text, chapterForScene));
@@ -136,18 +149,18 @@ export function analyzeScript(rawScript) {
 		const line = rawLine.trim();
 		if (!line) continue;
 
-		// Check for chapter header
+		// 1. Check for prefixed chapter header (Bab 1, Bagian 1, Part 1, etc.)
 		const chMatch = line.match(chapterHeaderRegex);
 		if (chMatch) {
-			// Flush current scene before starting new chapter
 			if (currentChunk) {
 				pushScene(currentChunk);
 				currentChunk = '';
 				currentWordCount = 0;
 			}
-			const matchedPrefix = (chMatch[1] || chMatch[5] || 'BAB').toUpperCase();
+			const matchedPrefix = (chMatch[1] || chMatch[5] || defaultPrefix).toUpperCase();
 			const num = parseInt(chMatch[2] || chMatch[6] || chapterCounter, 10);
-			const title = (chMatch[3] || chMatch[7] || `${matchedPrefix} ${num}`).trim();
+			const rawTitle = (chMatch[3] || chMatch[7] || '').trim();
+			const title = rawTitle || `${matchedPrefix === 'BAGIAN' ? 'Bagian' : (matchedPrefix === 'PART' ? 'Part' : 'Bab')} ${num}`;
 			const subtitle = (chMatch[4] || 'Eksplorasi mendalam segmen ini').trim();
 
 			let tag = `${matchedPrefix} ${String(num).padStart(2, '0')}`;
@@ -165,6 +178,47 @@ export function analyzeScript(rawScript) {
 				style: 'center'
 			};
 			chapterCounter = num + 1;
+			continue;
+		}
+
+		// 2. Check for bracketed title-only header: e.g. [Awal Mula Sejarah | Subtitle]
+		const titleMatch = line.match(titleOnlyBracketRegex);
+		if (titleMatch && !line.includes('http')) {
+			if (currentChunk) {
+				pushScene(currentChunk);
+				currentChunk = '';
+				currentWordCount = 0;
+			}
+			const title = titleMatch[1].trim();
+			const subtitle = (titleMatch[2] || '').trim();
+			pendingChapter = {
+				number: chapterCounter,
+				tag: '', // Empty tag -> "Hanya Judul" (no "Bab" will be spoken or shown)
+				title,
+				subtitle,
+				style: 'center'
+			};
+			chapterCounter++;
+			continue;
+		}
+
+		// 3. Check for Markdown heading: e.g. # Judul Bab
+		const mdMatch = line.match(markdownHeadingRegex);
+		if (mdMatch) {
+			if (currentChunk) {
+				pushScene(currentChunk);
+				currentChunk = '';
+				currentWordCount = 0;
+			}
+			const title = mdMatch[1].trim();
+			pendingChapter = {
+				number: chapterCounter,
+				tag: '', // Empty tag -> "Hanya Judul"
+				title,
+				subtitle: '',
+				style: 'center'
+			};
+			chapterCounter++;
 			continue;
 		}
 
@@ -255,14 +309,14 @@ export function getSpokenVoiceoverText(scene) {
 
 	// Normalisasi tag yang diisi user (misal: "BAGIAN 01" -> "Bagian 1", "PART 1" -> "Part 1", "BAB 02" -> "Bab 2")
 	let spokenTag = rawTag;
-	if (/^BAB\s*0?(\d+)$/i.test(rawTag)) {
-		spokenTag = rawTag.replace(/^BAB\s*0?(\d+)$/i, 'Bab $1');
-	} else if (/^BAGIAN\s*0?(\d+)$/i.test(rawTag)) {
-		spokenTag = rawTag.replace(/^BAGIAN\s*0?(\d+)$/i, 'Bagian $1');
-	} else if (/^PART\s*0?(\d+)$/i.test(rawTag)) {
-		spokenTag = rawTag.replace(/^PART\s*0?(\d+)$/i, 'Part $1');
-	} else if (/^EPISODE\s*0?(\d+)$/i.test(rawTag)) {
-		spokenTag = rawTag.replace(/^EPISODE\s*0?(\d+)$/i, 'Episode $1');
+	if (/^BAB\s*0?(\d+)[:\s-]*$/i.test(rawTag)) {
+		spokenTag = rawTag.replace(/^BAB\s*0?(\d+)[:\s-]*$/i, 'Bab $1');
+	} else if (/^BAGIAN\s*0?(\d+)[:\s-]*$/i.test(rawTag)) {
+		spokenTag = rawTag.replace(/^BAGIAN\s*0?(\d+)[:\s-]*$/i, 'Bagian $1');
+	} else if (/^PART\s*0?(\d+)[:\s-]*$/i.test(rawTag)) {
+		spokenTag = rawTag.replace(/^PART\s*0?(\d+)[:\s-]*$/i, 'Part $1');
+	} else if (/^EPISODE\s*0?(\d+)[:\s-]*$/i.test(rawTag)) {
+		spokenTag = rawTag.replace(/^EPISODE\s*0?(\d+)[:\s-]*$/i, 'Episode $1');
 	}
 
 	// Format: "... Bagian 1, Fajar Kecerdasan Baru. ...\n\nNarasi..."
@@ -293,7 +347,7 @@ export function createSceneObject(index, text, chapter = null) {
 		wordTimings: [], // [ { word: "Kecerdasan", start: 0, end: 0.45 }, ... ]
 		chapter: chapter ? {
 			number: chapter.number || 1,
-			tag: chapter.tag || `BAB ${String(chapter.number || 1).padStart(2, '0')}`,
+			tag: (chapter.tag !== undefined && chapter.tag !== null) ? String(chapter.tag).trim() : `BAB ${String(chapter.number || 1).padStart(2, '0')}`,
 			title: chapter.title || 'Awal Mula Cerita',
 			subtitle: chapter.subtitle || 'Pengenalan dan latar belakang cerita',
 			style: chapter.style || 'center'

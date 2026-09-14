@@ -31,7 +31,14 @@ export async function POST({ request }) {
 								role: 'system',
 								content: `You are an elite YouTube video director and editor specializing in high-retention 16:9 YouTube Long videos.
 Your task is to analyze the user's script and break it down into sequential scenes (pacing: 12-25 words per scene, about 4-8 seconds each for maximum viewer retention).
-In addition, divide the script into 2 to 4 impactful narrative chapters (e.g. Bab 1: Hook & Pengenalan, Bab 2: Inti Masalah / Analisis, Bab 3: Solusi & Masa Depan).
+In addition, divide the script into 2 to 4 impactful narrative chapters.
+
+Chapter Tag Rules (CRITICAL):
+- If the user's script uses "Bagian 1", set "tag": "BAGIAN 1" (or "BAGIAN 2", etc.).
+- If the user's script uses "Part 1", set "tag": "PART 1" (or "PART 2", etc.).
+- If the user's script provides only chapter titles without "Bab" or "Part", or requests only title, set "tag": "" (empty string).
+- If the user's script uses "Bab 1", set "tag": "BAB 01".
+- DO NOT force "BAB" if the user specifically wrote "Bagian" or "Part" or only chapter titles.
 
 For EACH scene, output:
 1. "narration": The spoken text preserved in the script's exact original language (Indonesian, English, etc.).
@@ -40,7 +47,7 @@ For EACH scene, output:
 4. "chapter": (Only for the FIRST scene of each chapter; null for subsequent scenes in that chapter):
    {
      "number": 1,
-     "tag": "BAB 01",
+     "tag": "BAGIAN 1" or "PART 1" or "BAB 01" or "" (match user preference),
      "title": "Short Punchy Chapter Title in Indonesian",
      "subtitle": "One sentence intriguing context"
    }
@@ -52,7 +59,7 @@ Return strictly valid JSON in this structure:
       "narration": "text here...",
       "pexels_query": "english keywords here...",
       "mood": "tech",
-      "chapter": { "number": 1, "tag": "BAB 01", "title": "Awal Mula", "subtitle": "Pengantar cerita" }
+      "chapter": { "number": 1, "tag": "BAGIAN 1", "title": "Awal Mula", "subtitle": "Pengantar cerita" }
     },
     {
       "narration": "second scene text...",
@@ -78,9 +85,42 @@ Return strictly valid JSON in this structure:
 					if (content) {
 						const parsed = JSON.parse(content);
 						if (parsed.scenes && Array.isArray(parsed.scenes) && parsed.scenes.length > 0) {
+							const userWantsBagian = /\bbagian\s*\d+/i.test(cleanScript);
+							const userWantsPart = /\bpart\s*\d+/i.test(cleanScript);
+							const userWantsBab = /\bbab\s*\d+/i.test(cleanScript);
+							const userWantsOnlyTitle = /\b(hanya judul|tanpa bab|tanpa tag)\b/i.test(cleanScript);
+
 							const mappedScenes = parsed.scenes.map((sc, idx) => {
 								const words = (sc.narration || '').split(/\s+/).filter(Boolean);
 								const estimatedDuration = Math.max(3.5, Number((words.length * 0.45).toFixed(1)));
+
+								let chapterObj = null;
+								if (sc.chapter) {
+									const chNum = sc.chapter.number || 1;
+									let tag = (sc.chapter.tag !== undefined && sc.chapter.tag !== null) 
+										? String(sc.chapter.tag).trim() 
+										: `BAB ${String(chNum).padStart(2, '0')}`;
+
+									// Align tag with user's explicit wording in script
+									if (userWantsOnlyTitle) {
+										tag = '';
+									} else if (userWantsBagian && !userWantsBab) {
+										tag = tag.replace(/^BAB\s*0?(\d+)/i, 'BAGIAN $1');
+										if (!/^BAGIAN/i.test(tag)) tag = `BAGIAN ${chNum}`;
+									} else if (userWantsPart && !userWantsBab) {
+										tag = tag.replace(/^BAB\s*0?(\d+)/i, 'PART $1');
+										if (!/^PART/i.test(tag)) tag = `PART ${chNum}`;
+									}
+
+									chapterObj = {
+										number: chNum,
+										tag,
+										title: sc.chapter.title || 'Judul Bab',
+										subtitle: sc.chapter.subtitle || '',
+										style: 'center'
+									};
+								}
+
 								return {
 									id: `scene-${idx + 1}-${Date.now()}`,
 									index: idx + 1,
@@ -93,13 +133,7 @@ Return strictly valid JSON in this structure:
 									footage: null,
 									voiceAudioUrl: null,
 									wordTimings: [],
-									chapter: sc.chapter ? {
-										number: sc.chapter.number || 1,
-										tag: sc.chapter.tag || `BAB ${String(sc.chapter.number || 1).padStart(2, '0')}`,
-										title: sc.chapter.title || 'Judul Bab',
-										subtitle: sc.chapter.subtitle || '',
-										style: 'center'
-									} : null
+									chapter: chapterObj
 								};
 							});
 
