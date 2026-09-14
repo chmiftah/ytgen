@@ -309,6 +309,7 @@
 					sc.audioDuration = voiceData.duration || sc.estimatedDuration;
 					sc.isCustomAudio = false;
 					sc.voiceProvider = voiceData.provider || (voiceMode === 'edge_tts' ? 'edge_tts' : 'elevenlabs');
+					sc.lastSpokenText = spokenText;
 
 					// If real audio, save to server disk with FFmpeg audio filter applied
 					if (voiceData.isRealVoice && voiceData.audioUrl) {
@@ -408,6 +409,7 @@
 				targetScene.audioDuration = data.duration || targetScene.estimatedDuration;
 				targetScene.voiceProvider = data.provider || (isEdge ? 'edge_tts' : 'elevenlabs');
 				targetScene.isCustomAudio = false;
+				targetScene.lastSpokenText = getSpokenVoiceoverText(targetScene);
 
 				if (data.isRealVoice && data.audioUrl) {
 					try {
@@ -615,13 +617,30 @@
 
 		scenes = [...scenes];
 	}
+
+	async function handleOpenExport() {
+		// Auto-resync any scenes where chapter text or narration was edited
+		let syncCount = 0;
+		for (let i = 0; i < scenes.length; i++) {
+			const sc = scenes[i];
+			const currentSpoken = getSpokenVoiceoverText(sc).trim();
+			if (sc.lastSpokenText && sc.lastSpokenText.trim() !== currentSpoken && sc.voiceAudioUrl && !sc.isCustomAudio) {
+				syncCount++;
+				await handleRegenerateVoice(i);
+			}
+		}
+		if (syncCount > 0) {
+			console.log(`Auto-synchronized voice for ${syncCount} modified scene(s) before export`);
+		}
+		showExportModal = true;
+	}
 </script>
 
 <div class="studio-app">
 	<Navbar
 		onOpenSettings={() => showSettingsModal = true}
 		onOpenSubtitleStyle={() => showSubtitleModal = true}
-		onOpenExport={() => showExportModal = true}
+		onOpenExport={handleOpenExport}
 	/>
 
 	{#if elevenLabsError}

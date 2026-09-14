@@ -331,14 +331,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 		if (scene.chapter) {
 			const chStart = cumulativeTime;
 			const chEnd = cumulativeTime + Math.min(3.5, sceneDuration);
-			const chTag = scene.chapter.tag || `BAB ${String(scene.chapter.number || 1).padStart(2, '0')}`;
+			const rawTag = (scene.chapter.tag !== undefined && scene.chapter.tag !== null)
+				? String(scene.chapter.tag).trim()
+				: '';
 			const chTitle = (scene.chapter.title || '').toUpperCase();
 			const chSub = scene.chapter.subtitle || '';
 
-			ass += `Dialogue: 1,${formatASSTime(chStart)},${formatASSTime(chEnd)},ChapterTag,,0,0,0,,{\\fad(350,350)\\an5\\pos(960,450)}${chTag}\n`;
-			ass += `Dialogue: 1,${formatASSTime(chStart)},${formatASSTime(chEnd)},ChapterTitle,,0,0,0,,{\\fad(350,350)\\an5\\pos(960,520)}${chTitle}\n`;
+			if (rawTag) {
+				ass += `Dialogue: 1,${formatASSTime(chStart)},${formatASSTime(chEnd)},ChapterTag,,0,0,0,,{\\fad(350,350)\\an5\\pos(960,450)}${rawTag}\n`;
+				ass += `Dialogue: 1,${formatASSTime(chStart)},${formatASSTime(chEnd)},ChapterTitle,,0,0,0,,{\\fad(350,350)\\an5\\pos(960,520)}${chTitle}\n`;
+			} else {
+				// Hanya judul bab saja (posisi vertikal seimbang di tengah)
+				ass += `Dialogue: 1,${formatASSTime(chStart)},${formatASSTime(chEnd)},ChapterTitle,,0,0,0,,{\\fad(350,350)\\an5\\pos(960,490)}${chTitle}\n`;
+			}
 			if (chSub) {
-				ass += `Dialogue: 1,${formatASSTime(chStart)},${formatASSTime(chEnd)},ChapterSub,,0,0,0,,{\\fad(350,350)\\an5\\pos(960,580)}${chSub}\n`;
+				ass += `Dialogue: 1,${formatASSTime(chStart)},${formatASSTime(chEnd)},ChapterSub,,0,0,0,,{\\fad(350,350)\\an5\\pos(960,570)}${chSub}\n`;
 			}
 		}
 

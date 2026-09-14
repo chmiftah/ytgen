@@ -100,9 +100,9 @@ export function extractVisualQuery(narrationText) {
 export function analyzeScript(rawScript) {
 	if (!rawScript || typeof rawScript !== 'string') return [];
 
-	// Check if script has explicit chapter blocks: e.g. [Bab 1: Title | Subtitle] or Bab 1: Title
+	// Check if script has explicit chapter blocks: e.g. [Bab 1: Title | Subtitle], [Bagian 1: Title], Part 1: Title, etc.
 	const rawLines = rawScript.split(/\r?\n/);
-	const chapterHeaderRegex = /^(?:\[(?:bab|chapter)\s*(\d+)[:\s-]*([^\]|]+)(?:\|([^\]]+))?\]|(?:bab|chapter)\s*(\d+)[:\s-]*([^\n]+))/i;
+	const chapterHeaderRegex = /^(?:\[(bab|chapter|bagian|part|segmen|episode|eps)\s*(\d+)[:\s-]*([^\]|]+)(?:\|([^\]]+))?\]|(bab|chapter|bagian|part|segmen|episode|eps)\s*(\d+)[:\s-]*([^\n]+))/i;
 
 	const scenes = [];
 	let currentChunk = '';
@@ -145,13 +145,21 @@ export function analyzeScript(rawScript) {
 				currentChunk = '';
 				currentWordCount = 0;
 			}
-			const num = parseInt(chMatch[1] || chMatch[4] || chapterCounter, 10);
-			const title = (chMatch[2] || chMatch[5] || `Bab ${num}`).trim();
-			const subtitle = (chMatch[3] || 'Eksplorasi mendalam segmen ini').trim();
+			const matchedPrefix = (chMatch[1] || chMatch[5] || 'BAB').toUpperCase();
+			const num = parseInt(chMatch[2] || chMatch[6] || chapterCounter, 10);
+			const title = (chMatch[3] || chMatch[7] || `${matchedPrefix} ${num}`).trim();
+			const subtitle = (chMatch[4] || 'Eksplorasi mendalam segmen ini').trim();
+
+			let tag = `${matchedPrefix} ${String(num).padStart(2, '0')}`;
+			if (matchedPrefix === 'BAGIAN') {
+				tag = `BAGIAN ${num}`;
+			} else if (matchedPrefix === 'PART') {
+				tag = `PART ${num}`;
+			}
 
 			pendingChapter = {
 				number: num,
-				tag: `BAB ${String(num).padStart(2, '0')}`,
+				tag,
 				title,
 				subtitle,
 				style: 'center'
@@ -226,17 +234,38 @@ export function getSpokenVoiceoverText(scene) {
 		return scene.narration || '';
 	}
 
-	const num = scene.chapter.number || 1;
-	// Convert 'BAB 01' or 'BAB 1' to clean spoken 'Bab 1'
-	const spokenTag = scene.chapter.tag 
-		? scene.chapter.tag.replace(/^BAB\s*0?(\d+)/i, 'Bab $1') 
-		: `Bab ${num}`;
 	const title = (scene.chapter.title || '').trim();
+	const rawTag = (scene.chapter.tag !== undefined && scene.chapter.tag !== null) 
+		? String(scene.chapter.tag).trim() 
+		: '';
+
 	const titlePunct = /[.!?]$/.test(title) ? '' : '.';
 
-	// Format: "... Bab 1, Fajar Kecerdasan Baru. ...\n\nNarasi..."
-	// Leading ellipses provide breathing room ("jeda"), trailing ellipses and linebreaks
-	// produce the transition pause before narration begins.
+	// Cek apakah judul sendiri sudah diawali kata 'Bab', 'Bagian', 'Part', 'Segmen', 'Episode', 'Chapter'
+	// Contoh: title = "Bagian 1: Asal Mula" atau "Part 1 - The Beginning"
+	const titleHasChapterPrefix = /^(bab|bagian|part|segmen|episode|chapter|eps)\b/i.test(title);
+
+	// Jika tag dikosongkan (user ingin "hanya judul bab saja") ATAU judul sudah mengandung awalan:
+	if (!rawTag || titleHasChapterPrefix) {
+		if (title) {
+			return `... ${title}${titlePunct} ...\n\n${scene.narration || ''}`;
+		}
+		return scene.narration || '';
+	}
+
+	// Normalisasi tag yang diisi user (misal: "BAGIAN 01" -> "Bagian 1", "PART 1" -> "Part 1", "BAB 02" -> "Bab 2")
+	let spokenTag = rawTag;
+	if (/^BAB\s*0?(\d+)$/i.test(rawTag)) {
+		spokenTag = rawTag.replace(/^BAB\s*0?(\d+)$/i, 'Bab $1');
+	} else if (/^BAGIAN\s*0?(\d+)$/i.test(rawTag)) {
+		spokenTag = rawTag.replace(/^BAGIAN\s*0?(\d+)$/i, 'Bagian $1');
+	} else if (/^PART\s*0?(\d+)$/i.test(rawTag)) {
+		spokenTag = rawTag.replace(/^PART\s*0?(\d+)$/i, 'Part $1');
+	} else if (/^EPISODE\s*0?(\d+)$/i.test(rawTag)) {
+		spokenTag = rawTag.replace(/^EPISODE\s*0?(\d+)$/i, 'Episode $1');
+	}
+
+	// Format: "... Bagian 1, Fajar Kecerdasan Baru. ...\n\nNarasi..."
 	if (title) {
 		return `... ${spokenTag}, ${title}${titlePunct} ...\n\n${scene.narration || ''}`;
 	}

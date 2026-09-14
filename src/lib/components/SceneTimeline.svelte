@@ -23,6 +23,7 @@
 		DEFAULT_AUDIO_EFFECT_ID,
 		getAudioEffectById
 	} from '$lib/services/audioEffectService.js';
+	import { getSpokenVoiceoverText } from '$lib/services/scriptAnalyzer.js';
 
 	let {
 		scenes = $bindable([]),
@@ -87,6 +88,21 @@
 
 	function removeChapter(index) {
 		scenes[index].chapter = null;
+	}
+
+	function setChapterPreset(scene, preset) {
+		if (!scene.chapter) return;
+		const num = scene.chapter.number || 1;
+		if (preset === 'bab') {
+			scene.chapter.tag = `BAB ${String(num).padStart(2, '0')}`;
+		} else if (preset === 'bagian') {
+			scene.chapter.tag = `BAGIAN ${num}`;
+		} else if (preset === 'part') {
+			scene.chapter.tag = `PART ${num}`;
+		} else if (preset === 'none') {
+			scene.chapter.tag = '';
+		}
+		scenes = [...scenes];
 	}
 
 	function handleSingleFileChange(index, e) {
@@ -254,34 +270,119 @@
 			{#each scenes as scene, index (scene.id || index)}
 				{#if scene.chapter}
 					<div class="chapter-divider-banner">
-						<div class="chapter-banner-left">
-							<span class="chapter-banner-icon">🔖</span>
-							<span class="chapter-banner-tag">{scene.chapter.tag || `BAB ${String(scene.chapter.number || 1).padStart(2, '0')}`}</span>
-							<span class="chapter-banner-separator">—</span>
-							<input 
-								type="text" 
-								class="chapter-title-input" 
-								bind:value={scene.chapter.title} 
-								placeholder="Judul Bab (contoh: AWAL MULA REVOLUSI)"
-								title="Klik untuk edit Judul Bab"
-							/>
+						<div class="chapter-banner-main">
+							<div class="chapter-banner-left">
+								<span class="chapter-banner-icon">🔖</span>
+
+								<!-- Editable Tag & Preset Pills -->
+								<div class="chapter-tag-control">
+									<input 
+										type="text" 
+										class="chapter-tag-input" 
+										bind:value={scene.chapter.tag} 
+										placeholder="Tanpa Tag"
+										title="Tag/Label Bab (cth: BAB 01, BAGIAN 1, PART 1, atau kosongkan untuk langsung hanya judul)"
+									/>
+									<div class="chapter-tag-pills">
+										<button 
+											type="button" 
+											class="tag-pill-btn" 
+											class:active={scene.chapter.tag === `BAB ${String(scene.chapter.number || 1).padStart(2, '0')}`}
+											onclick={() => setChapterPreset(scene, 'bab')}
+											title="Set format BAB"
+										>BAB</button>
+										<button 
+											type="button" 
+											class="tag-pill-btn" 
+											class:active={scene.chapter.tag === `BAGIAN ${scene.chapter.number || 1}`}
+											onclick={() => setChapterPreset(scene, 'bagian')}
+											title="Set format BAGIAN"
+										>BAGIAN</button>
+										<button 
+											type="button" 
+											class="tag-pill-btn" 
+											class:active={scene.chapter.tag === `PART ${scene.chapter.number || 1}`}
+											onclick={() => setChapterPreset(scene, 'part')}
+											title="Set format PART"
+										>PART</button>
+										<button 
+											type="button" 
+											class="tag-pill-btn empty-tag" 
+											class:active={!scene.chapter.tag}
+											onclick={() => setChapterPreset(scene, 'none')}
+											title="Hanya Judul Bab Saja (Tanpa awalan Bab/Part)"
+										>Hanya Judul</button>
+									</div>
+								</div>
+
+								<span class="chapter-banner-separator">—</span>
+
+								<input 
+									type="text" 
+									class="chapter-title-input" 
+									bind:value={scene.chapter.title} 
+									placeholder="Judul Bab (contoh: AWAL MULA REVOLUSI)"
+									title="Klik untuk edit Judul Bab"
+								/>
+							</div>
+
+							<div class="chapter-banner-right">
+								<input 
+									type="text" 
+									class="chapter-sub-input" 
+									bind:value={scene.chapter.subtitle} 
+									placeholder="Subtitle / Ringkasan bab..."
+									title="Klik untuk edit Subtitle Bab"
+								/>
+								<button 
+									type="button" 
+									class="chapter-remove-btn" 
+									onclick={() => removeChapter(index)}
+									title="Hapus Penanda Bab ini"
+								>
+									&times;
+								</button>
+							</div>
 						</div>
-						<div class="chapter-banner-right">
-							<input 
-								type="text" 
-								class="chapter-sub-input" 
-								bind:value={scene.chapter.subtitle} 
-								placeholder="Subtitle / Ringkasan bab..."
-								title="Klik untuk edit Subtitle Bab"
-							/>
-							<button 
-								type="button" 
-								class="chapter-remove-btn" 
-								onclick={() => removeChapter(index)}
-								title="Hapus Penanda Bab ini"
-							>
-								&times;
-							</button>
+
+						<!-- Pronunciation Preview & Audio Sync Bar -->
+						<div class="chapter-banner-footer">
+							<div class="spoken-preview-bar">
+								<span class="spoken-indicator">🎙️ Pengucapan Suara:</span>
+								{#if !scene.chapter.tag && !/^(bab|bagian|part|segmen|episode|chapter|eps)\b/i.test(scene.chapter.title || '')}
+									<span class="spoken-phrase highlight-title">
+										"{scene.chapter.title || 'Judul Bab'}"
+									</span>
+									<span class="spoken-mode-tag">Hanya Judul (Tanpa Bab)</span>
+								{:else}
+									<span class="spoken-phrase">
+										"{getSpokenVoiceoverText(scene).split('\n\n')[0].replace(/^\.\.\.\s*|\s*\.\.\.$/g, '')}"
+									</span>
+								{/if}
+							</div>
+
+							<div class="chapter-voice-sync-actions">
+								{#if scene.lastSpokenText && scene.lastSpokenText.trim() !== getSpokenVoiceoverText(scene).trim()}
+									<span class="sync-needed-badge">⚠️ Teks Bab Diubah</span>
+									<button 
+										type="button" 
+										class="btn-chapter-sync pulse"
+										onclick={() => onRegenerateVoice?.(index)}
+										title="Sinkronkan audio suara adegan ini agar membacakan teks bab yang baru ini"
+									>
+										🔄 Sinkron Suara
+									</button>
+								{:else if scene.voiceAudioUrl}
+									<button 
+										type="button" 
+										class="btn-chapter-resync"
+										onclick={() => onRegenerateVoice?.(index)}
+										title="Generate ulang suara adegan ini"
+									>
+										🔄 Update Suara
+									</button>
+								{/if}
+							</div>
 						</div>
 					</div>
 				{/if}
@@ -1066,24 +1167,30 @@
 	/* Chapter Divider Banner */
 	.chapter-divider-banner {
 		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin-top: 14px;
+		margin-bottom: 8px;
+		padding: 10px 14px;
+		background: linear-gradient(90deg, rgba(16, 185, 129, 0.16) 0%, rgba(16, 185, 129, 0.04) 100%);
+		border: 1px solid rgba(16, 185, 129, 0.32);
+		border-left: 4px solid #10b981;
+		border-radius: var(--radius-md);
+		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+	}
+
+	.chapter-banner-main {
+		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		gap: 12px;
-		margin-top: 14px;
-		margin-bottom: 6px;
-		padding: 8px 14px;
-		background: linear-gradient(90deg, rgba(16, 185, 129, 0.14) 0%, rgba(16, 185, 129, 0.03) 100%);
-		border: 1px solid rgba(16, 185, 129, 0.28);
-		border-left: 4px solid #10b981;
-		border-radius: var(--radius-md);
-		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
 	}
 
 	.chapter-banner-left {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		flex: 1;
+		flex: 1.4;
 		min-width: 0;
 	}
 
@@ -1092,16 +1199,78 @@
 		flex-shrink: 0;
 	}
 
-	.chapter-banner-tag {
-		font-family: var(--font-mono);
-		font-size: 0.72rem;
-		font-weight: 700;
-		color: #10b981;
-		background: rgba(16, 185, 129, 0.18);
-		padding: 2px 7px;
-		border-radius: 4px;
-		letter-spacing: 0.05em;
+	.chapter-tag-control {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		background: rgba(0, 0, 0, 0.35);
+		border: 1px solid rgba(16, 185, 129, 0.3);
+		border-radius: 6px;
+		padding: 2px 6px;
 		flex-shrink: 0;
+	}
+
+	.chapter-tag-input {
+		width: 75px;
+		background: transparent;
+		border: none;
+		font-family: var(--font-mono);
+		font-size: 0.74rem;
+		font-weight: 700;
+		color: #34d399;
+		outline: none;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+
+	.chapter-tag-input::placeholder {
+		color: rgba(255, 255, 255, 0.3);
+		font-size: 0.68rem;
+		text-transform: none;
+	}
+
+	.chapter-tag-pills {
+		display: flex;
+		align-items: center;
+		gap: 3px;
+		border-left: 1px solid rgba(255, 255, 255, 0.12);
+		padding-left: 6px;
+	}
+
+	.tag-pill-btn {
+		background: rgba(255, 255, 255, 0.06);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		color: rgba(255, 255, 255, 0.75);
+		font-size: 0.62rem;
+		font-weight: 600;
+		padding: 2px 5px;
+		border-radius: 4px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		white-space: nowrap;
+	}
+
+	.tag-pill-btn:hover {
+		background: rgba(16, 185, 129, 0.2);
+		color: #ffffff;
+		border-color: rgba(16, 185, 129, 0.4);
+	}
+
+	.tag-pill-btn.active {
+		background: #10b981;
+		color: #0b1120;
+		font-weight: 700;
+		border-color: #10b981;
+	}
+
+	.tag-pill-btn.empty-tag {
+		color: #94a3b8;
+	}
+
+	.tag-pill-btn.empty-tag.active {
+		background: #38bdf8;
+		color: #0b1120;
+		border-color: #38bdf8;
 	}
 
 	.chapter-banner-separator {
@@ -1134,7 +1303,7 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		flex: 1.2;
+		flex: 1;
 	}
 
 	.chapter-sub-input {
@@ -1173,6 +1342,121 @@
 	.chapter-remove-btn:hover {
 		background: rgba(239, 68, 68, 0.2);
 		color: #ef4444;
+	}
+
+	/* Pronunciation Footer Bar */
+	.chapter-banner-footer {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding-top: 6px;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+		font-size: 0.74rem;
+	}
+
+	.spoken-preview-bar {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		color: rgba(226, 232, 240, 0.85);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.spoken-indicator {
+		font-weight: 600;
+		color: #34d399;
+		flex-shrink: 0;
+	}
+
+	.spoken-phrase {
+		font-style: italic;
+		color: #ffffff;
+		font-weight: 600;
+	}
+
+	.spoken-phrase.highlight-title {
+		color: #38bdf8;
+		font-weight: 700;
+	}
+
+	.spoken-mode-tag {
+		font-size: 0.62rem;
+		background: rgba(56, 189, 248, 0.15);
+		color: #38bdf8;
+		border: 1px solid rgba(56, 189, 248, 0.3);
+		padding: 1px 6px;
+		border-radius: 3px;
+		font-weight: 600;
+		flex-shrink: 0;
+	}
+
+	.chapter-voice-sync-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-shrink: 0;
+	}
+
+	.sync-needed-badge {
+		font-size: 0.65rem;
+		font-weight: 700;
+		background: rgba(245, 158, 11, 0.2);
+		color: #fbbf24;
+		border: 1px solid rgba(245, 158, 11, 0.4);
+		padding: 2px 7px;
+		border-radius: 4px;
+	}
+
+	.btn-chapter-sync {
+		background: linear-gradient(135deg, #10b981, #059669);
+		color: #ffffff;
+		border: none;
+		padding: 3px 10px;
+		border-radius: 5px;
+		font-size: 0.7rem;
+		font-weight: 700;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+		transition: all 0.15s ease;
+	}
+
+	.btn-chapter-sync:hover {
+		filter: brightness(1.15);
+		transform: translateY(-1px);
+	}
+
+	.btn-chapter-sync.pulse {
+		animation: pulseSync 1.8s infinite;
+	}
+
+	@keyframes pulseSync {
+		0%, 100% {
+			box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+		}
+		50% {
+			box-shadow: 0 0 10px 3px rgba(16, 185, 129, 0.4);
+		}
+	}
+
+	.btn-chapter-resync {
+		background: rgba(255, 255, 255, 0.08);
+		color: rgba(255, 255, 255, 0.7);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		padding: 2px 8px;
+		border-radius: 4px;
+		font-size: 0.68rem;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.btn-chapter-resync:hover {
+		background: rgba(255, 255, 255, 0.15);
+		color: #ffffff;
 	}
 
 	.scene-card.has-chapter {

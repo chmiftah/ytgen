@@ -1,6 +1,9 @@
 import { exportToASS } from '$lib/services/subtitleService.js';
 import { getSpokenVoiceoverText } from '$lib/services/scriptAnalyzer.js';
 import { getLocalCatalog, saveLocalCatalog, generateGeneralFileName, extractThumbnail } from '$lib/services/localFootageService.js';
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+import { getAudioEffectById } from '$lib/services/audioEffectService.js';
+import { DEFAULT_EDGE_VOICE_ID } from '$lib/services/voiceService.js';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -196,6 +199,70 @@ async function makeTTSAudio(text, destPath, durationSec) {
 	}
 }
 
+async function makeEdgeTTSAudio(text, voiceId, audioEffect, destPath, durationSec) {
+	try {
+		const cleanText = (text || '').trim();
+		if (!cleanText) return false;
+
+		const effectPreset = getAudioEffectById(audioEffect || 'natural');
+		const voice = voiceId || DEFAULT_EDGE_VOICE_ID;
+		const effectivePitch = effectPreset?.edgePitch || '0Hz';
+		const effectiveRate = effectPreset?.edgeRate || '0%';
+
+		const tts = new MsEdgeTTS();
+		await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3, {
+			wordBoundaryEnabled: false
+		});
+
+		const { audioStream } = tts.toStream(cleanText, {
+			rate: effectiveRate,
+			pitch: effectivePitch
+		});
+
+		const chunks = [];
+		audioStream.on('data', (c) => chunks.push(c));
+
+		await new Promise((resolve, reject) => {
+			audioStream.on('end', resolve);
+			audioStream.on('error', reject);
+		});
+
+		try {
+			tts.close();
+		} catch (_) {}
+
+		const buffer = Buffer.concat(chunks);
+		if (buffer.length === 0) return false;
+
+		const tempRaw = destPath + '.raw.mp3';
+		await fs.promises.writeFile(tempRaw, buffer);
+
+		const filterArgs = effectPreset?.ffmpegFilter && effectPreset.ffmpegFilter.trim()
+			? ['-af', effectPreset.ffmpegFilter.trim()]
+			: [];
+
+		await runFFmpeg(
+			[
+				'-i', tempRaw,
+				...filterArgs,
+				'-c:a', 'libmp3lame',
+				'-ar', '44100',
+				'-ac', '2',
+				'-b:a', '192k',
+				'-y',
+				destPath
+			],
+			25000
+		);
+
+		await fs.promises.unlink(tempRaw).catch(() => {});
+		return true;
+	} catch (e) {
+		console.warn('makeEdgeTTSAudio render synthesis failed, falling back:', e.message);
+		return false;
+	}
+}
+
 // Generate a dynamic animated gradient background when no video
 function makeGradientVideo(destPath, durationSec) {
 	return runFFmpeg(
@@ -288,7 +355,16 @@ export async function POST({ request }) {
 
 					// 1. Audio preparation
 					let audioReady = false;
-					if (scene.serverAudioPath) {
+					const currentSpokenText = (
+						getSpokenVoiceoverText(scene) || scene.narration || scene.words?.join(' ') || ''
+					).trim();
+					const isStaleAudio = Boolean(
+						scene.lastSpokenText &&
+						scene.lastSpokenText.trim() !== currentSpokenText &&
+						!scene.isCustomAudio
+					);
+
+					if (scene.serverAudioPath && !isStaleAudio) {
 						try {
 							await fs.promises.copyFile(scene.serverAudioPath, audioDest);
 							audioReady = true;
@@ -297,7 +373,7 @@ export async function POST({ request }) {
 						}
 					}
 
-					if (!audioReady && scene.voiceAudioUrl && scene.voiceAudioUrl.startsWith('data:audio')) {
+					if (!audioReady && scene.voiceAudioUrl && scene.voiceAudioUrl.startsWith('data:audio') && !isStaleAudio) {
 						try {
 							const base64Data = scene.voiceAudioUrl.replace(/^data:audio\/[^;]+;base64,/, '');
 							await fs.promises.writeFile(audioDest, Buffer.from(base64Data, 'base64'));
@@ -308,10 +384,17 @@ export async function POST({ request }) {
 					}
 
 					if (!audioReady) {
-						const spokenText =
-							getSpokenVoiceoverText(scene) || scene.narration || scene.words?.join(' ') || '';
-						if (spokenText.trim()) {
-							await makeTTSAudio(spokenText, audioDest, sceneDuration);
+						if (currentSpokenText) {
+							const edgeSuccess = await makeEdgeTTSAudio(
+								currentSpokenText,
+								scene.voiceId,
+								scene.audioEffect,
+								audioDest,
+								sceneDuration
+							);
+							if (!edgeSuccess) {
+								await makeTTSAudio(currentSpokenText, audioDest, sceneDuration);
+							}
 						} else {
 							await makeSilent(audioDest, sceneDuration);
 						}

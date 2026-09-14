@@ -298,10 +298,12 @@
 					class:fade-out={sceneCurrentTime >= 3.2}
 				>
 					<div class="chapter-card">
-						<div class="chapter-tag-badge">
-							<span class="chapter-dot"></span>
-							<span class="chapter-tag-text">{currentScene.chapter.tag || `BAB ${String(currentScene.chapter.number || 1).padStart(2, '0')}`}</span>
-						</div>
+						{#if currentScene.chapter.tag && currentScene.chapter.tag.trim()}
+							<div class="chapter-tag-badge">
+								<span class="chapter-dot"></span>
+								<span class="chapter-tag-text">{currentScene.chapter.tag}</span>
+							</div>
+						{/if}
 						<h2 class="chapter-main-title">{currentScene.chapter.title}</h2>
 						{#if currentScene.chapter.subtitle}
 							<p class="chapter-sub-title">{currentScene.chapter.subtitle}</p>
