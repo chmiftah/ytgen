@@ -17,18 +17,26 @@ if (!fs.existsSync(FOOTAGE_DIR)) {
 function getPexelsApiKey() {
 	// From CLI args: --key=...
 	const argKey = process.argv.find((a) => a.startsWith('--key='));
-	if (argKey) return argKey.split('=')[1].trim();
+	if (argKey) return argKey.split('=')[1].replace(/['"\s]/g, '').trim();
 
 	// From process.env
-	if (process.env.PEXELS_API_KEY) return process.env.PEXELS_API_KEY.trim();
+	if (process.env.PEXELS_API_KEY) return process.env.PEXELS_API_KEY.replace(/['"\s]/g, '').trim();
+	if (process.env.PEXELS_KEY) return process.env.PEXELS_KEY.replace(/['"\s]/g, '').trim();
 
 	// From .env file
 	const envPath = path.resolve('./.env');
 	if (fs.existsSync(envPath)) {
 		const envContent = fs.readFileSync(envPath, 'utf-8');
-		const match = envContent.match(/PEXELS_API_KEY=([^\r\n]+)/);
-		if (match && match[1] && !match[1].startsWith('your_')) {
-			return match[1].trim();
+		// Look for any line with pexels key
+		for (const line of envContent.split('\n')) {
+			const trimmed = line.trim();
+			if (trimmed.startsWith('#')) continue;
+			if (/pexels/i.test(trimmed) && trimmed.includes('=')) {
+				const val = trimmed.split('=')[1].replace(/['"\s]/g, '').trim();
+				if (val && val.length > 8 && !val.startsWith('your_')) {
+					return val;
+				}
+			}
 		}
 	}
 
