@@ -1,5 +1,45 @@
 [
   {
+    "id": "local-nature-nature-mountain-sunrise-drone-landscape-1",
+    "title": "Nature Mountain Sunrise Drone Landscape",
+    "fileName": "nature-nature-mountain-sunrise-drone-landscape-1.mp4",
+    "videoUrl": "/footage/nature-nature-mountain-sunrise-drone-landscape-1.mp4",
+    "thumbnail": "/footage/nature-nature-mountain-sunrise-drone-landscape-1.jpg",
+    "query": "nature mountain sunrise drone landscape",
+    "tags": [
+      "nature",
+      "mountain",
+      "sunrise",
+      "drone",
+      "landscape",
+      "sky"
+    ],
+    "duration": 60,
+    "sourceUrl": "https://videos.pexels.com/video-files/3209828/3209828-uhd_2560_1440_25fps.mp4",
+    "source": "local",
+    "createdAt": "2026-09-14T11:13:43.478Z"
+  },
+  {
+    "id": "local-technology-technology-microchip-hardware-innovation-1",
+    "title": "Technology Microchip Hardware Innovation",
+    "fileName": "technology-technology-microchip-hardware-innovation-1.mp4",
+    "videoUrl": "/footage/technology-technology-microchip-hardware-innovation-1.mp4",
+    "thumbnail": "/footage/technology-technology-microchip-hardware-innovation-1.jpg",
+    "query": "microchip processor technology hardware",
+    "tags": [
+      "microchip",
+      "technology",
+      "processor",
+      "hardware",
+      "innovation",
+      "ai"
+    ],
+    "duration": 60,
+    "sourceUrl": "https://videos.pexels.com/video-files/3141207/3141207-uhd_2560_1440_25fps.mp4",
+    "source": "local",
+    "createdAt": "2026-09-14T11:13:40.772Z"
+  },
+  {
     "id": "local-technology-artificial-intelligence-1",
     "title": "Technology Artificial Intelligence 1",
     "fileName": "technology-artificial-intelligence-1.mp4",
