@@ -2,11 +2,42 @@ import { exportToASS } from '$lib/services/subtitleService.js';
 import { getSpokenVoiceoverText } from '$lib/services/scriptAnalyzer.js';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { execFile, spawn } from 'child_process';
 import util from 'util';
 import ffmpegPath from 'ffmpeg-static';
 
 const execFileAsync = util.promisify(execFile);
+
+// Check if Apple Silicon Hardware Encoder (VideoToolbox) is available
+let isVideoToolboxAvailable = null;
+async function checkVideoToolboxSupport() {
+	if (isVideoToolboxAvailable !== null) return isVideoToolboxAvailable;
+	try {
+		const { stdout } = await execFileAsync(ffmpegPath || 'ffmpeg', ['-encoders']);
+		isVideoToolboxAvailable = stdout.includes('h264_videotoolbox');
+	} catch (e) {
+		isVideoToolboxAvailable = false;
+	}
+	return isVideoToolboxAvailable;
+}
+
+// Concurrency pool limiter to process items in parallel without overloading system
+async function asyncPool(limit, items, iteratorFn) {
+	const results = [];
+	const executing = new Set();
+	for (const item of items) {
+		const p = Promise.resolve().then(() => iteratorFn(item));
+		results.push(p);
+		executing.add(p);
+		const clean = () => executing.delete(p);
+		p.then(clean, clean);
+		if (executing.size >= limit) {
+			await Promise.race(executing);
+		}
+	}
+	return Promise.all(results);
+}
 
 // Helper to download remote file with timeout + retry
 async function downloadFile(url, destPath, timeoutMs = 30000, retries = 2) {
@@ -24,17 +55,44 @@ async function downloadFile(url, destPath, timeoutMs = 30000, retries = 2) {
 			clearTimeout(timer);
 			if (attempt === retries) throw err;
 			console.warn(`Download attempt ${attempt + 1} failed, retrying:`, err.message);
-			await new Promise(r => setTimeout(r, 1000));
+			await new Promise((r) => setTimeout(r, 1000));
 		}
 	}
 }
 
+// Persistent Local Footage Cache: Never re-download footage that was already fetched
+const footageCacheDir = path.resolve('./static/renders/footage-cache');
+async function getCachedOrDownloadFootage(url, destPath) {
+	if (!url || !url.startsWith('http')) return false;
+	try {
+		await fs.promises.mkdir(footageCacheDir, { recursive: true });
+		const urlHash = crypto.createHash('md5').update(url).digest('hex');
+		const cachedFilePath = path.join(footageCacheDir, `${urlHash}.mp4`);
+
+		if (fs.existsSync(cachedFilePath)) {
+			// Instant read from fast local SSD
+			await fs.promises.copyFile(cachedFilePath, destPath);
+			return true;
+		}
+
+		// Download to persistent cache first, then copy
+		await downloadFile(url, cachedFilePath, 35000, 2);
+		await fs.promises.copyFile(cachedFilePath, destPath);
+		return true;
+	} catch (err) {
+		console.warn(`Footage download/cache failed for ${url}:`, err.message);
+		return false;
+	}
+}
+
 // Helper to run ffmpeg with a timeout
-function runFFmpeg(args, timeoutMs = 120000) {
+function runFFmpeg(args, timeoutMs = 180000) {
 	return new Promise((resolve, reject) => {
 		const proc = spawn(ffmpegPath || 'ffmpeg', args);
 		let stderr = '';
-		proc.stderr.on('data', (d) => { stderr += d.toString(); });
+		proc.stderr.on('data', (d) => {
+			stderr += d.toString();
+		});
 		const timer = setTimeout(() => {
 			proc.kill('SIGKILL');
 			reject(new Error(`FFmpeg timed out after ${timeoutMs / 1000}s`));
@@ -44,76 +102,61 @@ function runFFmpeg(args, timeoutMs = 120000) {
 			if (code === 0) resolve();
 			else reject(new Error(`FFmpeg exit ${code}: ${stderr.slice(-800)}`));
 		});
-		proc.on('error', (err) => { clearTimeout(timer); reject(err); });
+		proc.on('error', (err) => {
+			clearTimeout(timer);
+			reject(err);
+		});
 	});
 }
+
 // Generate a lavfi-based cinematic video (animated color gradient)
 function makeLavfiVideo(lavfiFilter, destPath, durationSec) {
-	// Parse filter string: 'color=c=0x0a0f1e:size=1920x1080:rate=30,hue=h=t*30:s=1'
-	// Split into source and filter parts
 	const parts = lavfiFilter.split(',');
-	const source = parts[0]; // e.g. 'color=c=0x0a0f1e:size=1920x1080:rate=30'
-	const vfFilters = parts.slice(1); // e.g. ['hue=h=t*30:s=1']
+	const source = parts[0];
+	const vfFilters = parts.slice(1);
 
-	const args = [
-		'-f', 'lavfi',
-		'-i', source,
-	];
-
+	const args = ['-f', 'lavfi', '-i', source];
 	if (vfFilters.length > 0) {
 		args.push('-vf', vfFilters.join(','));
 	}
-
-	args.push(
-		'-t', String(durationSec),
-		'-pix_fmt', 'yuv420p',
-		'-y', destPath
-	);
+	args.push('-t', String(durationSec), '-pix_fmt', 'yuv420p', '-y', destPath);
 
 	return runFFmpeg(args, 30000);
 }
 
 // Generate a silent audio file
 function makeSilent(destPath, durationSec) {
-	return runFFmpeg([
-		'-f', 'lavfi',
-		'-i', 'anullsrc=r=44100:cl=stereo',
-		'-t', String(durationSec),
-		'-y', destPath
-	], 30000);
+	return runFFmpeg(
+		['-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', '-t', String(durationSec), '-y', destPath],
+		30000
+	);
 }
 
 // Generate TTS audio using macOS `say` command as fallback
 async function makeTTSAudio(text, destPath, durationSec) {
-	// macOS say → AIFF → mp3 via ffmpeg
 	const aiffPath = destPath.replace(/\.mp3$/, '.aiff');
 	try {
-		// Sanitize text for shell
 		const cleanText = text.replace(/['"\\]/g, ' ').slice(0, 500);
-		const isIndonesian = /\b(yang|dan|di|ini|itu|adalah|untuk|dari|dengan|pada|ke|halo|selamat|kita|bisa|saya)\b/i.test(cleanText);
+		const isIndonesian = /\b(yang|dan|di|ini|itu|adalah|untuk|dari|dengan|pada|ke|halo|selamat|kita|bisa|saya)\b/i.test(
+			cleanText
+		);
 		const voiceName = isIndonesian ? 'Damayanti' : 'Samantha';
 
-		await execFileAsync('/usr/bin/say', [
-			'-v', voiceName,
-			'-r', '175',       // Words per minute
-			'-o', aiffPath,
-			cleanText
-		], { timeout: 30000 });
+		await execFileAsync(
+			'/usr/bin/say',
+			['-v', voiceName, '-r', '175', '-o', aiffPath, cleanText],
+			{ timeout: 30000 }
+		);
 
-		// Convert AIFF to MP3
-		await runFFmpeg([
-			'-i', aiffPath,
-			'-codec:a', 'libmp3lame',
-			'-q:a', '4',
-			'-y', destPath
-		], 20000);
+		await runFFmpeg(
+			['-i', aiffPath, '-codec:a', 'libmp3lame', '-q:a', '4', '-y', destPath],
+			20000
+		);
 
-		// Clean up aiff
 		await fs.promises.unlink(aiffPath).catch(() => {});
 		return true;
 	} catch (err) {
 		console.warn('macOS say TTS failed:', err.message);
-		// Last resort: silent
 		await makeSilent(destPath, durationSec);
 		return false;
 	}
@@ -121,16 +164,24 @@ async function makeTTSAudio(text, destPath, durationSec) {
 
 // Generate a dynamic animated gradient background when no video
 function makeGradientVideo(destPath, durationSec) {
-	return runFFmpeg([
-		'-f', 'lavfi',
-		'-i', `color=c=0x0a0f1e:size=1920x1080:rate=30`,
-		'-vf', 'hue=h=t*30:s=1',
-		'-t', String(durationSec),
-		'-pix_fmt', 'yuv420p',
-		'-y', destPath
-	], 30000);
+	return runFFmpeg(
+		[
+			'-f',
+			'lavfi',
+			'-i',
+			`color=c=0x0a0f1e:size=1920x1080:rate=30`,
+			'-vf',
+			'hue=h=t*30:s=1',
+			'-t',
+			String(durationSec),
+			'-pix_fmt',
+			'yuv420p',
+			'-y',
+			destPath
+		],
+		30000
+	);
 }
-
 
 export async function POST({ request }) {
 	const renderId = `yt-long-${Date.now()}`;
@@ -138,7 +189,6 @@ export async function POST({ request }) {
 	const finalMp4Name = `youtube-long-${renderId}.mp4`;
 	const finalMp4Path = path.resolve(`./static/renders/${finalMp4Name}`);
 
-	// Use SSE to stream real progress back to client
 	const encoder = new TextEncoder();
 	let controllerRef = null;
 
@@ -154,7 +204,6 @@ export async function POST({ request }) {
 		}
 	});
 
-	// Run render in background, stream progress
 	(async () => {
 		try {
 			const {
@@ -163,7 +212,8 @@ export async function POST({ request }) {
 				karaokeEnabled = true,
 				fontSize = 34,
 				bgmUrl,
-				bgmVolume = 0.15
+				bgmVolume = 0.15,
+				renderQuality = '1080p'
 			} = await request.json();
 
 			if (!scenes || scenes.length === 0) {
@@ -172,141 +222,195 @@ export async function POST({ request }) {
 				return;
 			}
 
+			// Check M1 hardware encoder
+			const hasVT = await checkVideoToolboxSupport();
+			const is720p = renderQuality === '720p';
+			const targetWidth = is720p ? 1280 : 1920;
+			const targetHeight = is720p ? 720 : 1080;
+			const targetFps = 30;
+
+			sendEvent({
+				progress: 5,
+				step: `Menginisialisasi pipeline render (${hasVT ? '⚡ Apple Silicon M1 VideoToolbox' : 'CPU libx264'} - ${is720p ? '720p Fast' : '1080p HD'})...`
+			});
+
 			await fs.promises.mkdir(tempDir, { recursive: true });
 			await fs.promises.mkdir(path.resolve('./static/renders'), { recursive: true });
+			await fs.promises.mkdir(footageCacheDir, { recursive: true });
 
-			const processedClips = [];
+			// =========================================================================
+			// PHASE 1: Parallel Footage Ingestion & Audio Prep (Concurrency = 4)
+			// =========================================================================
+			sendEvent({ progress: 10, step: `Menyiapkan footage & audio (${scenes.length} adegan paralel)...` });
+			let completedPrep = 0;
 
-			for (let i = 0; i < scenes.length; i++) {
-				const scene = scenes[i];
-				const pct = Math.round(10 + ((i / scenes.length) * 60));
-				sendEvent({ progress: pct, step: `Memproses scene ${i + 1}/${scenes.length}...` });
+			await asyncPool(
+				4,
+				scenes.map((s, idx) => ({ scene: s, index: idx })),
+				async ({ scene, index }) => {
+					const videoDest = path.join(tempDir, `video-${index}.mp4`);
+					const audioDest = path.join(tempDir, `audio-${index}.mp3`);
+					const sceneDuration = Number(scene.audioDuration || scene.estimatedDuration || 5);
 
-				const sceneDuration = Number(scene.audioDuration || scene.estimatedDuration || 5);
-				const videoDest = path.join(tempDir, `video-${i}.mp4`);
-				const audioDest = path.join(tempDir, `audio-${i}.mp3`);
-				const sceneOutput = path.join(tempDir, `scene-${i}-norm.mp4`);
+					// 1. Audio preparation
+					let audioReady = false;
+					if (scene.serverAudioPath) {
+						try {
+							await fs.promises.copyFile(scene.serverAudioPath, audioDest);
+							audioReady = true;
+						} catch (copyErr) {
+							console.warn(`Scene ${index}: serverAudioPath copy failed:`, copyErr.message);
+						}
+					}
 
-				// --- Handle Audio ---
-				let audioReady = false;
+					if (!audioReady && scene.voiceAudioUrl && scene.voiceAudioUrl.startsWith('data:audio')) {
+						try {
+							const base64Data = scene.voiceAudioUrl.replace(/^data:audio\/[^;]+;base64,/, '');
+							await fs.promises.writeFile(audioDest, Buffer.from(base64Data, 'base64'));
+							audioReady = true;
+						} catch (b64Err) {
+							console.warn(`Scene ${index}: base64 audio decode failed:`, b64Err.message);
+						}
+					}
 
-				if (scene.serverAudioPath) {
-					// Best: audio saved to disk by frontend (ElevenLabs)
-					try {
-						await fs.promises.copyFile(scene.serverAudioPath, audioDest);
+					if (!audioReady) {
+						const spokenText =
+							getSpokenVoiceoverText(scene) || scene.narration || scene.words?.join(' ') || '';
+						if (spokenText.trim()) {
+							await makeTTSAudio(spokenText, audioDest, sceneDuration);
+						} else {
+							await makeSilent(audioDest, sceneDuration);
+						}
 						audioReady = true;
-					} catch (copyErr) {
-						console.warn(`Scene ${i}: serverAudioPath copy failed:`, copyErr.message);
 					}
-				}
 
-				if (!audioReady && scene.voiceAudioUrl && scene.voiceAudioUrl.startsWith('data:audio')) {
-					// Fallback: base64 audio from frontend
-					try {
-						const base64Data = scene.voiceAudioUrl.replace(/^data:audio\/[^;]+;base64,/, '');
-						await fs.promises.writeFile(audioDest, Buffer.from(base64Data, 'base64'));
-						audioReady = true;
-					} catch (b64Err) {
-						console.warn(`Scene ${i}: base64 audio decode failed:`, b64Err.message);
-					}
-				}
+					// 2. Video preparation (Local SSD cache or download)
+					const rawVideoUrl = scene.footage?.videoUrl;
+					let videoDownloaded = false;
 
-				if (!audioReady) {
-					// Last resort: generate TTS with macOS say, or silent
-					sendEvent({ progress: pct, step: `Scene ${i + 1}: Generating TTS narration...` });
-					const spokenText = getSpokenVoiceoverText(scene) || scene.narration || scene.words?.join(' ') || '';
-					if (spokenText.trim()) {
-						await makeTTSAudio(spokenText, audioDest, sceneDuration);
-					} else {
-						await makeSilent(audioDest, sceneDuration);
-					}
-					audioReady = true;
-				}
-
-				// --- Handle Video ---
-				const rawVideoUrl = scene.footage?.videoUrl;
-				let videoDownloaded = false;
-
-				if (rawVideoUrl && rawVideoUrl.startsWith('lavfi:')) {
-					// Generated lavfi video — no download needed
-					const lavfiFilter = rawVideoUrl.slice('lavfi:'.length);
-					await makeLavfiVideo(lavfiFilter, videoDest, sceneDuration + 2);
-					videoDownloaded = true;
-				} else if (rawVideoUrl && rawVideoUrl.startsWith('http')) {
-					try {
-						sendEvent({ progress: pct, step: `Scene ${i + 1}: Mengunduh footage...` });
-						await downloadFile(rawVideoUrl, videoDest, 30000, 1);
+					if (rawVideoUrl && rawVideoUrl.startsWith('lavfi:')) {
+						const lavfiFilter = rawVideoUrl.slice('lavfi:'.length);
+						await makeLavfiVideo(lavfiFilter, videoDest, sceneDuration + 2);
 						videoDownloaded = true;
-					} catch (err) {
-						console.warn(`Scene ${i}: video download failed (${err.message}), using gradient fallback`);
+					} else if (rawVideoUrl && rawVideoUrl.startsWith('http')) {
+						videoDownloaded = await getCachedOrDownloadFootage(rawVideoUrl, videoDest);
 					}
+
+					if (!videoDownloaded) {
+						await makeGradientVideo(videoDest, sceneDuration + 2);
+					}
+
+					completedPrep++;
+					const pct = Math.round(10 + (completedPrep / scenes.length) * 35);
+					sendEvent({
+						progress: pct,
+						step: `Mengunduh & menyiapkan klip (${completedPrep}/${scenes.length})...`
+					});
 				}
+			);
 
-				if (!videoDownloaded) {
-					// Animated gradient fallback — dark blue cinematic look
-					sendEvent({ progress: pct, step: `Scene ${i + 1}: Membuat gradient background...` });
-					await makeGradientVideo(videoDest, sceneDuration + 2);
+			// =========================================================================
+			// PHASE 2: Parallel Scene Normalization (Concurrency = 2)
+			// =========================================================================
+			sendEvent({ progress: 48, step: `Normalisasi resolusi & sinkronisasi adegan...` });
+			let completedNorm = 0;
+			const processedClips = new Array(scenes.length);
+
+			const filter = `[0:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=increase,crop=${targetWidth}:${targetHeight},fps=${targetFps},format=yuv420p[v]`;
+
+			// Use hardware encoder or ultrafast software for intermediate clips
+			const normCodecArgs = hasVT
+				? ['-c:v', 'h264_videotoolbox', '-b:v', is720p ? '3500k' : '6000k', '-realtime', '1']
+				: ['-c:v', 'libx264', '-preset', 'ultrafast'];
+
+			await asyncPool(
+				2,
+				scenes.map((s, idx) => ({ scene: s, index: idx })),
+				async ({ scene, index }) => {
+					const videoDest = path.join(tempDir, `video-${index}.mp4`);
+					const audioDest = path.join(tempDir, `audio-${index}.mp3`);
+					const sceneOutput = path.join(tempDir, `scene-${index}-norm.mp4`);
+					const sceneDuration = Number(scene.audioDuration || scene.estimatedDuration || 5);
+
+					await runFFmpeg(
+						[
+							'-stream_loop',
+							'-1',
+							'-i',
+							videoDest,
+							'-i',
+							audioDest,
+							'-filter_complex',
+							filter,
+							'-map',
+							'[v]',
+							'-map',
+							'1:a',
+							'-t',
+							String(sceneDuration),
+							...normCodecArgs,
+							'-c:a',
+							'aac',
+							'-b:a',
+							'128k',
+							'-y',
+							sceneOutput
+						],
+						90000
+					);
+
+					processedClips[index] = sceneOutput;
+					completedNorm++;
+					const pct = Math.round(48 + (completedNorm / scenes.length) * 26);
+					sendEvent({
+						progress: pct,
+						step: `Normalisasi adegan (${completedNorm}/${scenes.length})...`
+					});
 				}
+			);
 
-				// --- Normalize + merge audio into scene clip ---
-				const filter = `[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,fps=30,format=yuv420p[v]`;
-				await runFFmpeg([
-					'-stream_loop', '-1',
-					'-i', videoDest,
-					'-i', audioDest,
-					'-filter_complex', filter,
-					'-map', '[v]',
-					'-map', '1:a',
-					'-t', String(sceneDuration),
-					'-c:v', 'libx264',
-					'-preset', 'ultrafast',
-					'-c:a', 'aac',
-					'-b:a', '128k',
-					'-y', sceneOutput
-				], 90000);
-
-				processedClips.push(sceneOutput);
-			}
-
-			// Concatenate scenes
-			sendEvent({ progress: 72, step: 'Menggabungkan semua scene...' });
+			// =========================================================================
+			// PHASE 3: Concatenate Scenes
+			// =========================================================================
+			sendEvent({ progress: 75, step: 'Menggabungkan semua scene...' });
 			const concatListPath = path.join(tempDir, 'concat.txt');
 			await fs.promises.writeFile(
 				concatListPath,
 				processedClips.map((p) => `file '${p}'`).join('\n')
 			);
 			const concatenatedVideo = path.join(tempDir, 'combined.mp4');
-			await runFFmpeg([
-				'-f', 'concat',
-				'-safe', '0',
-				'-i', concatListPath,
-				'-c', 'copy',
-				'-y', concatenatedVideo
-			], 120000);
+			await runFFmpeg(
+				['-f', 'concat', '-safe', '0', '-i', concatListPath, '-c', 'copy', '-y', concatenatedVideo],
+				120000
+			);
 
-			// Generate subtitles
-			sendEvent({ progress: 80, step: 'Membuat file subtitle ASS...' });
+			// =========================================================================
+			// PHASE 4: Subtitle Generation
+			// =========================================================================
+			sendEvent({ progress: 80, step: 'Membuat subtitle ASS...' });
 			const assContent = exportToASS(scenes, subtitleStyle, { karaokeEnabled, fontSize });
 			const assPath = path.join(tempDir, 'subtitles.ass');
 			await fs.promises.writeFile(assPath, assContent);
 
-			// Download BGM if needed
+			// =========================================================================
+			// PHASE 5: BGM Preparation (Local Cache)
+			// =========================================================================
 			let bgmAudioPath = null;
 			if (bgmUrl && bgmUrl.startsWith('http')) {
-				sendEvent({ progress: 84, step: 'Mengunduh musik latar...' });
-				try {
-					bgmAudioPath = path.join(tempDir, 'bgm.mp3');
-					await downloadFile(bgmUrl, bgmAudioPath, 20000, 1);
-				} catch (e) {
-					console.warn('BGM download failed, skipping:', e.message);
-					bgmAudioPath = null;
-				}
+				sendEvent({ progress: 83, step: 'Memuat musik latar...' });
+				bgmAudioPath = path.join(tempDir, 'bgm.mp3');
+				const downloaded = await getCachedOrDownloadFootage(bgmUrl, bgmAudioPath);
+				if (!downloaded) bgmAudioPath = null;
 			}
 
-			// Final render with subtitle burn-in
-			sendEvent({ progress: 88, step: 'Burning subtitle & final encode (1080p)...' });
+			// =========================================================================
+			// PHASE 6: Hardware-Accelerated Final Encode & Subtitle Burn-in
+			// =========================================================================
+			sendEvent({
+				progress: 86,
+				step: `Burning subtitle & final encode (${hasVT ? '⚡ M1 VideoToolbox' : 'libx264'})...`
+			});
 
-			// Sanitize ASS path for FFmpeg filter
 			const safeAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:');
 			const ffmpegArgs = ['-i', concatenatedVideo];
 
@@ -337,31 +441,57 @@ export async function POST({ request }) {
 				ffmpegArgs.push(
 					'-filter_complex',
 					`[0:v]subtitles='${safeAssPath}'[v];[1:a]${bgmFilterExpr}[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]`,
-					'-map', '[v]',
-					'-map', '[a]'
+					'-map',
+					'[v]',
+					'-map',
+					'[a]'
 				);
 			} else {
 				ffmpegArgs.push(
 					'-filter_complex',
 					`[0:v]subtitles='${safeAssPath}'[v]`,
-					'-map', '[v]',
-					'-map', '0:a'
+					'-map',
+					'[v]',
+					'-map',
+					'0:a'
 				);
 			}
 
+			// Choose hardware encoder for M1 or software fallback
+			const finalCodecArgs = hasVT
+				? [
+						'-c:v',
+						'h264_videotoolbox',
+						'-b:v',
+						is720p ? '4500k' : '8000k',
+						'-realtime',
+						'0'
+					]
+				: [
+						'-c:v',
+						'libx264',
+						'-preset',
+						'fast',
+						'-crf',
+						'22'
+					];
+
 			ffmpegArgs.push(
-				'-c:v', 'libx264',
-				'-preset', 'fast',
-				'-crf', '22',
-				'-c:a', 'aac',
-				'-b:a', '192k',
-				'-movflags', '+faststart',
-				'-y', finalMp4Path
+				...finalCodecArgs,
+				'-c:a',
+				'aac',
+				'-b:a',
+				'192k',
+				'-movflags',
+				'+faststart',
+				'-y',
+				finalMp4Path
 			);
 
-			await runFFmpeg(ffmpegArgs, 300000); // 5 min max for final encode
+			// Run final encode with ample timeout for long videos
+			await runFFmpeg(ffmpegArgs, 600000); // 10 min max
 
-			// Clean up temp
+			// Clean up temp dir (cache dir stays intact)
 			fs.rm(tempDir, { recursive: true, force: true }, () => {});
 
 			sendEvent({

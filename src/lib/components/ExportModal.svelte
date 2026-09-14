@@ -21,6 +21,7 @@
 	let downloadFilename = $state('');
 	let renderStep = $state('');
 	let copiedTimestamps = $state(false);
+	let renderQuality = $state('1080p'); // '1080p' | '720p'
 
 	let youtubeTimestamps = $derived(generateYouTubeTimestamps(scenes));
 
@@ -57,7 +58,8 @@
 					karaokeEnabled,
 					fontSize: subtitleFontSize,
 					bgmUrl,
-					bgmVolume
+					bgmVolume,
+					renderQuality
 				})
 			});
 
@@ -146,11 +148,36 @@
 							<Film size={24} color="var(--primary)" />
 						</div>
 						<div>
-							<h4>Video MP4 (1080p Full HD)</h4>
+							<h4>Video MP4 ({renderQuality === '720p' ? '720p Fast Draft' : '1080p Full HD'})</h4>
 							<p>Kombinasi video footage 16:9, burned-in subtitle, narasi voiceover, & musik latar.</p>
+							
+							<!-- M1 Hardware Quality Selector -->
+							<div class="quality-picker">
+								<button 
+									type="button" 
+									class="quality-btn" 
+									class:active={renderQuality === '1080p'}
+									onclick={() => renderQuality = '1080p'}
+									disabled={isRendering}
+									title="Standar YouTube Full HD kualitas tinggi"
+								>
+									<span>🚀 1080p Produksi (M1 Hardware)</span>
+								</button>
+								<button 
+									type="button" 
+									class="quality-btn" 
+									class:active={renderQuality === '720p'}
+									onclick={() => renderQuality = '720p'}
+									disabled={isRendering}
+									title="Fast Draft: 2x lebih cepat untuk review naskah panjang 30-60 menit"
+								>
+									<span>⚡ 720p Fast Draft</span>
+								</button>
+							</div>
+
 							<div class="meta-row">
-								<span class="meta-badge">1920x1080 (16:9)</span>
-								<span class="meta-badge">H.264 / AAC</span>
+								<span class="meta-badge">{renderQuality === '720p' ? '1280x720 (Draft)' : '1920x1080 (Full HD)'}</span>
+								<span class="meta-badge hardware">⚡ M1 VideoToolbox</span>
 								<span class="meta-badge">{scenes.length} Scenes</span>
 							</div>
 						</div>
@@ -391,9 +418,35 @@
 		margin-bottom: 6px;
 	}
 
-	.meta-row {
+	.quality-picker {
 		display: flex;
 		gap: 6px;
+		margin-bottom: 8px;
+		flex-wrap: wrap;
+	}
+
+	.quality-btn {
+		font-size: 0.72rem;
+		font-weight: 500;
+		padding: 4px 9px;
+		border-radius: var(--radius-sm);
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		color: var(--text-muted);
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.quality-btn:hover:not(:disabled) {
+		background: rgba(255, 255, 255, 0.08);
+		color: var(--text-main);
+	}
+
+	.quality-btn.active {
+		background: rgba(99, 102, 241, 0.18);
+		border-color: rgba(99, 102, 241, 0.45);
+		color: #a5b4fc;
+		font-weight: 600;
 	}
 
 	.meta-badge {
@@ -402,6 +455,13 @@
 		background: rgba(255, 255, 255, 0.05);
 		border-radius: var(--radius-sm);
 		color: var(--text-muted);
+	}
+
+	.meta-badge.hardware {
+		background: rgba(16, 185, 129, 0.12);
+		border: 1px solid rgba(16, 185, 129, 0.25);
+		color: #34d399;
+		font-weight: 600;
 	}
 
 	.progress-box {
