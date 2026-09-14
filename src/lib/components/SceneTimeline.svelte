@@ -23,7 +23,7 @@
 		DEFAULT_AUDIO_EFFECT_ID,
 		getAudioEffectById
 	} from '$lib/services/audioEffectService.js';
-	import { getSpokenVoiceoverText } from '$lib/services/scriptAnalyzer.js';
+	import { getSpokenVoiceoverText, getChapterSpokenIntro } from '$lib/services/scriptAnalyzer.js';
 
 	let {
 		scenes = $bindable([]),
@@ -82,7 +82,9 @@
 			tag: `BAB ${String(num).padStart(2, '0')}`,
 			title: `Bab ${num}`,
 			subtitle: 'Pengantar topik pada segmen ini',
-			style: 'center'
+			style: 'center',
+			pauseDuration: 5,
+			outroPause: 0
 		};
 	}
 
@@ -119,6 +121,40 @@
 		scenes = [...scenes];
 
 		// Automatically auto-regenerate voice for this scene if speech is already generated
+		if (onRegenerateVoice && scene.voiceAudioUrl && !scene.isCustomAudio) {
+			try {
+				regeneratingSceneIndices.add(index);
+				regeneratingSceneIndices = new Set(regeneratingSceneIndices);
+				await onRegenerateVoice(index);
+			} finally {
+				regeneratingSceneIndices.delete(index);
+				regeneratingSceneIndices = new Set(regeneratingSceneIndices);
+			}
+		}
+	}
+
+	async function setChapterPauseDuration(scene, seconds, index) {
+		if (!scene.chapter) return;
+		scene.chapter.pauseDuration = seconds;
+		scenes = [...scenes];
+
+		if (onRegenerateVoice && scene.voiceAudioUrl && !scene.isCustomAudio) {
+			try {
+				regeneratingSceneIndices.add(index);
+				regeneratingSceneIndices = new Set(regeneratingSceneIndices);
+				await onRegenerateVoice(index);
+			} finally {
+				regeneratingSceneIndices.delete(index);
+				regeneratingSceneIndices = new Set(regeneratingSceneIndices);
+			}
+		}
+	}
+
+	async function setChapterOutroPause(scene, seconds, index) {
+		if (!scene.chapter) return;
+		scene.chapter.outroPause = seconds;
+		scenes = [...scenes];
+
 		if (onRegenerateVoice && scene.voiceAudioUrl && !scene.isCustomAudio) {
 			try {
 				regeneratingSceneIndices.add(index);
@@ -393,6 +429,53 @@
 								>
 									&times;
 								</button>
+							</div>
+						</div>
+
+						<!-- Chapter Pause / Delay Controls -->
+						<div class="chapter-timing-row">
+							<div class="chapter-timing-item">
+								<span class="timing-label">⏱️ Jeda Judul:</span>
+								<div class="pause-pills">
+									{#each [0, 3, 5, 7, 10] as sec}
+										<button
+											type="button"
+											class="pause-pill-btn"
+											class:active={(scene.chapter.pauseDuration ?? 5) === sec}
+											onclick={() => setChapterPauseDuration(scene, sec, index)}
+											title={`Beri jeda hening ${sec} detik setelah pembacaan judul bab agar musik/visual lebih dramatis`}
+										>
+											{sec === 5 ? '5s ⭐' : `${sec}s`}
+										</button>
+									{/each}
+								</div>
+								<span class="timing-desc">
+									{#if (scene.chapter.pauseDuration ?? 5) === 0}
+										Langsung narasi
+									{:else}
+										Jeda {(scene.chapter.pauseDuration ?? 5)}s (BGM naik)
+									{/if}
+								</span>
+							</div>
+
+							<div class="chapter-timing-item">
+								<span class="timing-label">🌙 Jeda Akhir Bab:</span>
+								<div class="pause-pills">
+									{#each [0, 3, 5, 7, 10] as sec}
+										<button
+											type="button"
+											class="pause-pill-btn"
+											class:active={(scene.chapter.outroPause ?? 0) === sec}
+											onclick={() => setChapterOutroPause(scene, sec, index)}
+											title={`Beri jeda hening ${sec} detik di akhir adegan sebelum bab berikutnya`}
+										>
+											{sec === 0 ? '0s' : `${sec}s`}
+										</button>
+									{/each}
+								</div>
+								{#if (scene.chapter.outroPause ?? 0) > 0}
+									<span class="timing-desc">Jeda {(scene.chapter.outroPause ?? 0)}s sebelum bab baru</span>
+								{/if}
 							</div>
 						</div>
 
@@ -1400,6 +1483,70 @@
 	.chapter-remove-btn:hover {
 		background: rgba(239, 68, 68, 0.2);
 		color: #ef4444;
+	}
+
+	/* Chapter Timing Row (Pause / Jeda) */
+	.chapter-timing-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		padding: 6px 10px;
+		background: rgba(0, 0, 0, 0.28);
+		border-radius: 6px;
+		border: 1px dashed rgba(16, 185, 129, 0.25);
+		font-size: 0.72rem;
+	}
+
+	.chapter-timing-item {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+
+	.timing-label {
+		color: rgba(226, 232, 240, 0.9);
+		font-weight: 600;
+	}
+
+	.pause-pills {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.pause-pill-btn {
+		background: rgba(255, 255, 255, 0.07);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		color: rgba(255, 255, 255, 0.8);
+		font-size: 0.65rem;
+		font-weight: 600;
+		padding: 2px 7px;
+		border-radius: 4px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.pause-pill-btn:hover {
+		background: rgba(16, 185, 129, 0.25);
+		border-color: rgba(16, 185, 129, 0.5);
+		color: #ffffff;
+	}
+
+	.pause-pill-btn.active {
+		background: #10b981;
+		color: #0b1120;
+		font-weight: 700;
+		border-color: #10b981;
+		box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+	}
+
+	.timing-desc {
+		color: #34d399;
+		font-size: 0.66rem;
+		font-style: italic;
 	}
 
 	/* Pronunciation Footer Bar */

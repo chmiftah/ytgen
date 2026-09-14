@@ -279,35 +279,21 @@ export function analyzeScript(rawScript) {
 }
 
 /**
- * Format spoken text for voiceover narration, prepending the chapter announcement
- * with natural pauses if the scene represents the start of a chapter.
+ * Get just the spoken chapter intro (without narration)
  */
-export function getSpokenVoiceoverText(scene) {
-	if (!scene) return '';
-	if (!scene.chapter) {
-		return scene.narration || '';
-	}
-
+export function getChapterSpokenIntro(scene) {
+	if (!scene || !scene.chapter) return '';
 	const title = (scene.chapter.title || '').trim();
 	const rawTag = (scene.chapter.tag !== undefined && scene.chapter.tag !== null) 
 		? String(scene.chapter.tag).trim() 
 		: '';
-
 	const titlePunct = /[.!?]$/.test(title) ? '' : '.';
-
-	// Cek apakah judul sendiri sudah diawali kata 'Bab', 'Bagian', 'Part', 'Segmen', 'Episode', 'Chapter'
-	// Contoh: title = "Bagian 1: Asal Mula" atau "Part 1 - The Beginning"
 	const titleHasChapterPrefix = /^(bab|bagian|part|segmen|episode|chapter|eps)\b/i.test(title);
 
-	// Jika tag dikosongkan (user ingin "hanya judul bab saja") ATAU judul sudah mengandung awalan:
 	if (!rawTag || titleHasChapterPrefix) {
-		if (title) {
-			return `... ${title}${titlePunct} ...\n\n${scene.narration || ''}`;
-		}
-		return scene.narration || '';
+		return title ? `${title}${titlePunct}` : '';
 	}
 
-	// Normalisasi tag yang diisi user (misal: "BAGIAN 01" -> "Bagian 1", "PART 1" -> "Part 1", "BAB 02" -> "Bab 2")
 	let spokenTag = rawTag;
 	if (/^BAB\s*0?(\d+)[:\s-]*$/i.test(rawTag)) {
 		spokenTag = rawTag.replace(/^BAB\s*0?(\d+)[:\s-]*$/i, 'Bab $1');
@@ -319,19 +305,36 @@ export function getSpokenVoiceoverText(scene) {
 		spokenTag = rawTag.replace(/^EPISODE\s*0?(\d+)[:\s-]*$/i, 'Episode $1');
 	}
 
-	// Format: "... Bagian 1, Fajar Kecerdasan Baru. ...\n\nNarasi..."
 	if (title) {
-		return `... ${spokenTag}, ${title}${titlePunct} ...\n\n${scene.narration || ''}`;
+		return `${spokenTag}, ${title}${titlePunct}`;
 	}
-	return `... ${spokenTag}. ...\n\n${scene.narration || ''}`;
+	return `${spokenTag}.`;
+}
+
+/**
+ * Format spoken text for voiceover narration, prepending the chapter announcement
+ * with natural pauses if the scene represents the start of a chapter.
+ */
+export function getSpokenVoiceoverText(scene) {
+	if (!scene) return '';
+	if (!scene.chapter) {
+		return scene.narration || '';
+	}
+
+	const intro = getChapterSpokenIntro(scene);
+	if (intro) {
+		return `... ${intro} ...\n\n${scene.narration || ''}`;
+	}
+	return scene.narration || '';
 }
 
 export function createSceneObject(index, text, chapter = null) {
 	const words = text.split(/\s+/).filter(Boolean);
-	// Approx speech rate: ~140 words per minute => ~2.3 words per second => ~0.43s per word
-	// If this scene introduces a chapter, add ~3.8s for the chapter title announcement & pause
-	const chapterOffset = chapter ? 3.8 : 0;
-	const estimatedDuration = Math.max(3.5, Number(((words.length * 0.45) + chapterOffset).toFixed(1)));
+	const pauseDuration = chapter ? Number(chapter.pauseDuration ?? 5) : 0;
+	const outroPause = chapter ? Number(chapter.outroPause ?? 0) : 0;
+	// Chapter introduction duration: speech (~2.8s) + user-defined pause gap (e.g. 5s)
+	const chapterOffset = chapter ? (2.8 + pauseDuration) : 0;
+	const estimatedDuration = Math.max(3.5, Number(((words.length * 0.45) + chapterOffset + outroPause).toFixed(1)));
 	const visualQuery = extractVisualQuery(text);
 
 	return {
@@ -350,7 +353,9 @@ export function createSceneObject(index, text, chapter = null) {
 			tag: (chapter.tag !== undefined && chapter.tag !== null) ? String(chapter.tag).trim() : `BAB ${String(chapter.number || 1).padStart(2, '0')}`,
 			title: chapter.title || 'Awal Mula Cerita',
 			subtitle: chapter.subtitle || 'Pengenalan dan latar belakang cerita',
-			style: chapter.style || 'center'
+			style: chapter.style || 'center',
+			pauseDuration,
+			outroPause
 		} : null
 	};
 }

@@ -47,10 +47,34 @@
 
 	// Subtitle active words
 	let activeSubtitles = $derived.by(() => {
-		if (!currentScene) return { words: [], activeIndex: -1 };
+		if (!currentScene || !currentScene.wordTimings || currentScene.wordTimings.length === 0) {
+			return { words: [], activeIndex: -1 };
+		}
 		const style = SUBTITLE_STYLES[subtitleStyleKey] || SUBTITLE_STYLES.hormozi;
-		return getActiveSubtitleWindow(currentScene.wordTimings, sceneCurrentTime, style.chunkSize, karaokeEnabled);
+		let timings = currentScene.wordTimings;
+		if (currentScene.chapter) {
+			const chDuration = getChapterCardDuration(currentScene);
+			// During chapter title card and pause, suppress bottom narration subtitles completely
+			if (sceneCurrentTime < (chDuration - 0.3)) {
+				return { words: [], activeIndex: -1 };
+			}
+			timings = timings.filter((t) => t.start >= (chDuration - 0.4));
+		}
+		return getActiveSubtitleWindow(timings, sceneCurrentTime, style.chunkSize, karaokeEnabled);
 	});
+
+	function handleVoiceMetadata() {
+		if (voiceAudioElement && voiceAudioElement.duration && !isNaN(voiceAudioElement.duration) && isFinite(voiceAudioElement.duration)) {
+			const realDur = voiceAudioElement.duration;
+			if (currentScene && (currentScene.audioDuration < realDur || Math.abs(currentScene.audioDuration - realDur) > 0.2)) {
+				const paddedDur = Number((realDur + 0.4).toFixed(2));
+				if (currentScene.audioDuration < paddedDur) {
+					currentScene.audioDuration = paddedDur;
+					scenes = [...scenes];
+				}
+			}
+		}
+	}
 
 	let currentSubtitleStyle = $derived(SUBTITLE_STYLES[subtitleStyleKey] || SUBTITLE_STYLES.hormozi);
 
@@ -69,6 +93,12 @@
 		// Generate animated gradient
 		return `background: radial-gradient(ellipse at 30% 50%, ${hex}dd 0%, ${hex}22 60%, #000 100%);`;
 	});
+
+	function getChapterCardDuration(scene) {
+		if (!scene?.chapter) return 3.8;
+		const pause = Number(scene.chapter.pauseDuration ?? 5);
+		return 2.8 + pause;
+	}
 
 
 	onMount(() => {
@@ -143,8 +173,9 @@
 		audioController.playBGM();
 
 		// Chapter transition handling: swell BGM and play transition stinger
-		if (currentScene?.chapter && sceneCurrentTime < 3.5) {
-			audioController.swellBGM(Math.max(0.5, 3.5 - sceneCurrentTime));
+		const chDuration = getChapterCardDuration(currentScene);
+		if (currentScene?.chapter && sceneCurrentTime < chDuration) {
+			audioController.swellBGM(Math.max(0.5, chDuration - sceneCurrentTime));
 			if (sceneCurrentTime < 0.6) {
 				playChapterStinger();
 			}
@@ -197,7 +228,7 @@
 			const nextScene = scenes[foundIndex];
 			if (nextScene?.chapter) {
 				// Musik masuk (swell) & stinger on chapter change
-				audioController.swellBGM(3.5);
+				audioController.swellBGM(getChapterCardDuration(nextScene));
 				playChapterStinger();
 			} else {
 				audioController.duckBGM(Boolean(nextScene?.voiceAudioUrl));
@@ -227,8 +258,9 @@
 		}
 		audioController.seekBGM(currentTime);
 
-		if (currentScene?.chapter && sceneCurrentTime < 3.5) {
-			audioController.swellBGM(Math.max(0.5, 3.5 - sceneCurrentTime));
+		const chDuration = getChapterCardDuration(currentScene);
+		if (currentScene?.chapter && sceneCurrentTime < chDuration) {
+			audioController.swellBGM(Math.max(0.5, chDuration - sceneCurrentTime));
 		} else {
 			audioController.duckBGM(Boolean(currentScene?.voiceAudioUrl));
 		}
@@ -287,15 +319,15 @@
 			{/if}
 
 			<!-- Hidden Voiceover Audio Element -->
-			<audio bind:this={voiceAudioElement} style="display:none"></audio>
+			<audio bind:this={voiceAudioElement} onloadedmetadata={handleVoiceMetadata} style="display:none"></audio>
 
-			<!-- Cinematic Chapter Title Card Overlay (Active on chapter scene start for ~3.8s) -->
-			{#if currentScene?.chapter && sceneCurrentTime < 3.8}
+			<!-- Cinematic Chapter Title Card Overlay (Active on chapter scene start for speech + pauseDuration) -->
+			{#if currentScene?.chapter && sceneCurrentTime < getChapterCardDuration(currentScene)}
 				<div 
 					class="chapter-overlay"
 					class:center-style={currentScene.chapter.style !== 'lower-third'}
 					class:lower-third-style={currentScene.chapter.style === 'lower-third'}
-					class:fade-out={sceneCurrentTime >= 3.2}
+					class:fade-out={sceneCurrentTime >= (getChapterCardDuration(currentScene) - 0.6)}
 				>
 					<div class="chapter-card">
 						{#if currentScene.chapter.tag && currentScene.chapter.tag.trim()}
@@ -317,7 +349,7 @@
 			{#if activeSubtitles.words.length > 0}
 				<div 
 					class="subtitles-overlay {currentSubtitleStyle.id}"
-					class:chapter-active={currentScene?.chapter && sceneCurrentTime < 3.5}
+					class:chapter-active={currentScene?.chapter && sceneCurrentTime < getChapterCardDuration(currentScene)}
 					style="
 						font-family: {currentSubtitleStyle.fontFamily};
 						font-size: {subtitleFontSize || currentSubtitleStyle.fontSize}px;

@@ -1,5 +1,5 @@
 import { exportToASS } from '$lib/services/subtitleService.js';
-import { getSpokenVoiceoverText } from '$lib/services/scriptAnalyzer.js';
+import { getSpokenVoiceoverText, getChapterSpokenIntro } from '$lib/services/scriptAnalyzer.js';
 import { getLocalCatalog, saveLocalCatalog, generateGeneralFileName, extractThumbnail } from '$lib/services/localFootageService.js';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { getAudioEffectById } from '$lib/services/audioEffectService.js';
@@ -24,6 +24,24 @@ async function checkVideoToolboxSupport() {
 		isVideoToolboxAvailable = false;
 	}
 	return isVideoToolboxAvailable;
+}
+
+function getAudioDurationFromFile(filePath) {
+	return new Promise((resolve) => {
+		const proc = spawn(ffmpegPath || 'ffmpeg', ['-i', filePath]);
+		let stderr = '';
+		proc.stderr.on('data', (d) => { stderr += d.toString(); });
+		proc.on('close', () => {
+			const match = stderr.match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/);
+			if (match) {
+				const sec = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseFloat(match[3]);
+				resolve(Number(sec.toFixed(2)));
+			} else {
+				resolve(null);
+			}
+		});
+		proc.on('error', () => resolve(null));
+	});
 }
 
 // Concurrency pool limiter to process items in parallel without overloading system
@@ -199,64 +217,140 @@ async function makeTTSAudio(text, destPath, durationSec) {
 	}
 }
 
-async function makeEdgeTTSAudio(text, voiceId, audioEffect, destPath, durationSec) {
+async function synthesizeRawEdgeSpeech(text, voice, rate, pitch) {
+	const tts = new MsEdgeTTS();
+	await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3, {
+		wordBoundaryEnabled: false
+	});
+	const { audioStream } = tts.toStream(text, { rate, pitch });
+	const chunks = [];
+	audioStream.on('data', (c) => chunks.push(c));
+	await new Promise((resolve, reject) => {
+		audioStream.on('end', resolve);
+		audioStream.on('error', reject);
+	});
+	try { tts.close(); } catch (_) {}
+	return Buffer.concat(chunks);
+}
+
+async function makeEdgeTTSAudio(text, voiceId, audioEffect, destPath, durationSec, options = {}) {
 	try {
 		const cleanText = (text || '').trim();
-		if (!cleanText) return false;
+		const { chapterIntro = '', chapterPause = 0, outroPause = 0 } = options;
+		const cleanIntro = (chapterIntro || '').trim();
+		const pauseSec = Number(chapterPause || 0);
+		const outroSec = Number(outroPause || 0);
+		const sceneOutro = Math.max(0.6, outroSec);
+
+		if (!cleanText && !cleanIntro) return false;
 
 		const effectPreset = getAudioEffectById(audioEffect || 'natural');
 		const voice = voiceId || DEFAULT_EDGE_VOICE_ID;
 		const effectivePitch = effectPreset?.edgePitch || '0Hz';
 		const effectiveRate = effectPreset?.edgeRate || '0%';
 
-		const tts = new MsEdgeTTS();
-		await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3, {
-			wordBoundaryEnabled: false
-		});
-
-		const { audioStream } = tts.toStream(cleanText, {
-			rate: effectiveRate,
-			pitch: effectivePitch
-		});
-
-		const chunks = [];
-		audioStream.on('data', (c) => chunks.push(c));
-
-		await new Promise((resolve, reject) => {
-			audioStream.on('end', resolve);
-			audioStream.on('error', reject);
-		});
-
-		try {
-			tts.close();
-		} catch (_) {}
-
-		const buffer = Buffer.concat(chunks);
-		if (buffer.length === 0) return false;
-
-		const tempRaw = destPath + '.raw.mp3';
-		await fs.promises.writeFile(tempRaw, buffer);
-
 		const filterArgs = effectPreset?.ffmpegFilter && effectPreset.ffmpegFilter.trim()
 			? ['-af', effectPreset.ffmpegFilter.trim()]
 			: [];
 
-		await runFFmpeg(
-			[
-				'-i', tempRaw,
-				...filterArgs,
-				'-c:a', 'libmp3lame',
-				'-ar', '44100',
-				'-ac', '2',
-				'-b:a', '192k',
-				'-y',
-				destPath
-			],
-			25000
-		);
+		if (cleanIntro && pauseSec > 0 && cleanText) {
+			const introBuf = await synthesizeRawEdgeSpeech(cleanIntro, voice, effectiveRate, effectivePitch);
+			const narrBuf = await synthesizeRawEdgeSpeech(cleanText, voice, effectiveRate, effectivePitch);
 
-		await fs.promises.unlink(tempRaw).catch(() => {});
-		return true;
+			const tempIntro = destPath + '.intro.mp3';
+			const tempNarr = destPath + '.narr.mp3';
+			await fs.promises.writeFile(tempIntro, introBuf);
+			await fs.promises.writeFile(tempNarr, narrBuf);
+
+			let filterComplex = `[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a0];[1:a]atrim=0:${pauseSec},aformat=sample_rates=44100:channel_layouts=stereo[a1];[2:a]aformat=sample_rates=44100:channel_layouts=stereo[a2];[a0][a1][a2]concat=n=3:v=0:a=1[out0]`;
+			let mapInput = '[out0]';
+			const ffmpegInputs = [
+				'-i', tempIntro,
+				'-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+				'-i', tempNarr
+			];
+
+			if (sceneOutro > 0) {
+				ffmpegInputs.push('-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo');
+				filterComplex += `;[3:a]atrim=0:${sceneOutro},aformat=sample_rates=44100:channel_layouts=stereo[a3];[out0][a3]concat=n=2:v=0:a=1[out1]`;
+				mapInput = '[out1]';
+			}
+
+			if (effectPreset?.ffmpegFilter && effectPreset.ffmpegFilter.trim()) {
+				filterComplex += `;${mapInput}${effectPreset.ffmpegFilter.trim()}[outf]`;
+				mapInput = '[outf]';
+			}
+
+			await runFFmpeg(
+				[
+					...ffmpegInputs,
+					'-filter_complex', filterComplex,
+					'-map', mapInput,
+					'-c:a', 'libmp3lame',
+					'-ar', '44100',
+					'-ac', '2',
+					'-b:a', '192k',
+					'-y',
+					destPath
+				],
+				30000
+			);
+
+			await Promise.all([
+				fs.promises.unlink(tempIntro).catch(() => {}),
+				fs.promises.unlink(tempNarr).catch(() => {})
+			]);
+			return true;
+		} else {
+			const fullSpeechText = cleanIntro ? `${cleanIntro} ... ${cleanText}` : cleanText;
+			const buffer = await synthesizeRawEdgeSpeech(fullSpeechText, voice, effectiveRate, effectivePitch);
+			if (buffer.length === 0) return false;
+
+			const tempRaw = destPath + '.raw.mp3';
+			await fs.promises.writeFile(tempRaw, buffer);
+
+			if (sceneOutro > 0) {
+				let filterComplex = `[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a0];[1:a]atrim=0:${sceneOutro},aformat=sample_rates=44100:channel_layouts=stereo[a1];[a0][a1]concat=n=2:v=0:a=1[out0]`;
+				let mapInput = '[out0]';
+				if (effectPreset?.ffmpegFilter && effectPreset.ffmpegFilter.trim()) {
+					filterComplex += `;[out0]${effectPreset.ffmpegFilter.trim()}[outf]`;
+					mapInput = '[outf]';
+				}
+
+				await runFFmpeg(
+					[
+						'-i', tempRaw,
+						'-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+						'-filter_complex', filterComplex,
+						'-map', mapInput,
+						'-c:a', 'libmp3lame',
+						'-ar', '44100',
+						'-ac', '2',
+						'-b:a', '192k',
+						'-y',
+						destPath
+					],
+					25000
+				);
+			} else {
+				await runFFmpeg(
+					[
+						'-i', tempRaw,
+						...filterArgs,
+						'-c:a', 'libmp3lame',
+						'-ar', '44100',
+						'-ac', '2',
+						'-b:a', '192k',
+						'-y',
+						destPath
+					],
+					25000
+				);
+			}
+
+			await fs.promises.unlink(tempRaw).catch(() => {});
+			return true;
+		}
 	} catch (e) {
 		console.warn('makeEdgeTTSAudio render synthesis failed, falling back:', e.message);
 		return false;
@@ -385,12 +479,18 @@ export async function POST({ request }) {
 
 					if (!audioReady) {
 						if (currentSpokenText) {
+							const chIntro = scene.chapter ? getChapterSpokenIntro(scene) : '';
+							const chPause = scene.chapter ? Number(scene.chapter.pauseDuration ?? 5) : 0;
+							const outPause = scene.chapter ? Number(scene.chapter.outroPause ?? 0) : 0;
+							const narrText = scene.narration || scene.words?.join(' ') || currentSpokenText;
+
 							const edgeSuccess = await makeEdgeTTSAudio(
-								currentSpokenText,
+								narrText,
 								scene.voiceId,
 								scene.audioEffect,
 								audioDest,
-								sceneDuration
+								sceneDuration,
+								{ chapterIntro: chIntro, chapterPause: chPause, outroPause: outPause }
 							);
 							if (!edgeSuccess) {
 								await makeTTSAudio(currentSpokenText, audioDest, sceneDuration);
@@ -399,6 +499,12 @@ export async function POST({ request }) {
 							await makeSilent(audioDest, sceneDuration);
 						}
 						audioReady = true;
+					}
+
+					// Proactively probe exact audio duration to ensure scene is never cut short
+					const probedDur = await getAudioDurationFromFile(audioDest);
+					if (probedDur && (!scene.audioDuration || scene.audioDuration < probedDur)) {
+						scene.audioDuration = probedDur;
 					}
 
 					// 2. Video preparation (Local SSD cache or download)
@@ -558,7 +664,8 @@ export async function POST({ request }) {
 					const dur = Number(sc.audioDuration || sc.estimatedDuration || 5);
 					if (sc.chapter) {
 						const start = cumulativeSec.toFixed(2);
-						const end = (cumulativeSec + Math.min(3.5, dur)).toFixed(2);
+						const pause = Number(sc.chapter.pauseDuration ?? 5);
+						const end = (cumulativeSec + Math.min(dur, 2.6 + pause)).toFixed(2);
 						chapterSwells.push(`between(t,${start},${end})`);
 					}
 					cumulativeSec += dur;

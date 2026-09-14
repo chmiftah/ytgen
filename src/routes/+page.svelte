@@ -11,7 +11,7 @@
 	import ScriptGeneratorModal from '$lib/components/ScriptGeneratorModal.svelte';
 	import GenerationProgressConsole from '$lib/components/GenerationProgressConsole.svelte';
 
-	import { analyzeScript, SCRIPT_PRESETS, getSpokenVoiceoverText } from '$lib/services/scriptAnalyzer.js';
+	import { analyzeScript, SCRIPT_PRESETS, getSpokenVoiceoverText, getChapterSpokenIntro } from '$lib/services/scriptAnalyzer.js';
 	import { findMatchingStockVideo } from '$lib/services/stockLibrary.js';
 	import { analyzeAudioFile } from '$lib/services/audioAnalysisService.js';
 	import { calculateAudioSyncedWordTimings, generateSyntheticWordTimings } from '$lib/services/subtitleService.js';
@@ -256,9 +256,12 @@
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({
-								text: spokenText,
+								text: sc.narration || spokenText,
 								voiceId: selectedVoiceId || DEFAULT_EDGE_VOICE_ID,
-								audioEffect: sc.audioEffect || selectedAudioEffect
+								audioEffect: sc.audioEffect || selectedAudioEffect,
+								chapterIntro: sc.chapter ? getChapterSpokenIntro(sc) : '',
+								chapterPause: sc.chapter ? Number(sc.chapter.pauseDuration ?? 5) : 0,
+								outroPause: sc.chapter ? Number(sc.chapter.outroPause ?? 0) : 0
 							})
 						});
 						voiceData = await ttsRes.json();
@@ -387,9 +390,12 @@
 			const endpoint = isEdge ? '/api/edge-tts' : '/api/elevenlabs';
 			const payload = isEdge
 				? {
-					text: getSpokenVoiceoverText(targetScene),
+					text: targetScene.narration || getSpokenVoiceoverText(targetScene),
 					voiceId: selectedVoiceId || DEFAULT_EDGE_VOICE_ID,
-					audioEffect: effectToUse
+					audioEffect: effectToUse,
+					chapterIntro: targetScene.chapter ? getChapterSpokenIntro(targetScene) : '',
+					chapterPause: targetScene.chapter ? Number(targetScene.chapter.pauseDuration ?? 5) : 0,
+					outroPause: targetScene.chapter ? Number(targetScene.chapter.outroPause ?? 0) : 0
 				}
 				: {
 					text: getSpokenVoiceoverText(targetScene),

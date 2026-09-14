@@ -79,12 +79,13 @@ export function calculateAudioSyncedWordTimings(words, totalDuration, options = 
 	if (!words || words.length === 0) return [];
 
 	const isChapterScene = Boolean(options.isChapterScene);
+	const chapterPause = Number(options.chapterPause ?? 5);
 	const timingOffset = Number(options.timingOffset) || 0;
 
 	// Determine speech boundaries
 	let startBound = typeof options.speechStart === 'number'
 		? Math.max(0, options.speechStart)
-		: (isChapterScene ? 3.5 : 0.12);
+		: (isChapterScene ? (2.6 + chapterPause) : 0.12);
 
 	let endBound = typeof options.speechEnd === 'number'
 		? Math.min(totalDuration, options.speechEnd)
@@ -122,8 +123,8 @@ export function calculateAudioSyncedWordTimings(words, totalDuration, options = 
 /**
  * Generate synthetic word timings if ElevenLabs timestamps are not available
  */
-export function generateSyntheticWordTimings(words, totalDuration, isChapterScene = false) {
-	return calculateAudioSyncedWordTimings(words, totalDuration, { isChapterScene });
+export function generateSyntheticWordTimings(words, totalDuration, isChapterScene = false, chapterPause = 5) {
+	return calculateAudioSyncedWordTimings(words, totalDuration, { isChapterScene, chapterPause });
 }
 
 /**
@@ -195,17 +196,34 @@ export function alignElevenLabsTimestamps(text, alignment) {
 export function getActiveSubtitleWindow(wordTimings, sceneCurrentTime, chunkSize = 4, karaokeEnabled = true) {
 	if (!wordTimings || wordTimings.length === 0) return { words: [], activeIndex: -1 };
 
-	// Find active word
+	// 1. Before first word starts: show first chunk without highlighting
+	if (sceneCurrentTime < wordTimings[0].start) {
+		const endIdx = Math.min(chunkSize, wordTimings.length);
+		return {
+			words: wordTimings.slice(0, endIdx).map((w) => ({
+				...w,
+				isHighlighted: false
+			})),
+			activeIndex: -1
+		};
+	}
+
+	// 2. Check if currently inside a word boundary
 	let activeIndex = wordTimings.findIndex(
 		(w) => sceneCurrentTime >= w.start && sceneCurrentTime <= w.end
 	);
 
+	let isInsideWord = (activeIndex !== -1);
+
+	// 3. If in a pause between words or after the last word: stay on the most recently started word
 	if (activeIndex === -1) {
-		if (sceneCurrentTime < wordTimings[0].start) {
-			activeIndex = 0;
-		} else {
-			activeIndex = wordTimings.length - 1;
+		for (let i = wordTimings.length - 1; i >= 0; i--) {
+			if (sceneCurrentTime >= wordTimings[i].start) {
+				activeIndex = i;
+				break;
+			}
 		}
+		if (activeIndex === -1) activeIndex = 0;
 	}
 
 	// Calculate chunk window around active word
@@ -215,12 +233,12 @@ export function getActiveSubtitleWindow(wordTimings, sceneCurrentTime, chunkSize
 
 	const windowWords = wordTimings.slice(startIdx, endIdx).map((w, idx) => ({
 		...w,
-		isHighlighted: karaokeEnabled ? (startIdx + idx === activeIndex) : false
+		isHighlighted: karaokeEnabled ? (isInsideWord && (startIdx + idx === activeIndex)) : false
 	}));
 
 	return {
 		words: windowWords,
-		activeIndex: karaokeEnabled ? (activeIndex - startIdx) : -1
+		activeIndex: (karaokeEnabled && isInsideWord) ? (activeIndex - startIdx) : -1
 	};
 }
 
@@ -327,10 +345,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 	for (const scene of scenes) {
 		const sceneDuration = scene.audioDuration || scene.estimatedDuration || 5;
 
-		// Burn-in Chapter Title Card if present (display for first ~3.5 seconds of scene)
+		// Burn-in Chapter Title Card if present (display for speech intro + pauseDuration)
+		let chapterCardDuration = 0;
 		if (scene.chapter) {
+			const pause = Number(scene.chapter.pauseDuration ?? 5);
+			chapterCardDuration = 2.6 + pause;
 			const chStart = cumulativeTime;
-			const chEnd = cumulativeTime + Math.min(3.5, sceneDuration);
+			const chEnd = cumulativeTime + Math.min(chapterCardDuration, sceneDuration);
 			const rawTag = (scene.chapter.tag !== undefined && scene.chapter.tag !== null)
 				? String(scene.chapter.tag).trim()
 				: '';
@@ -351,12 +372,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 		const rawTimings = scene.wordTimings && scene.wordTimings.length > 0 
 			? scene.wordTimings 
-			: generateSyntheticWordTimings(scene.words, sceneDuration, !!scene.chapter);
+			: generateSyntheticWordTimings(scene.words, sceneDuration, !!scene.chapter, scene.chapter?.pauseDuration ?? 5);
 
 		// If scene has a chapter card, filter out any word timings that occur during the
-		// chapter intro display (first ~3.2s) so they aren't rendered as duplicate bottom subtitles
+		// chapter intro display (speech intro + pause) so they aren't rendered as duplicate bottom subtitles
 		const timings = scene.chapter 
-			? rawTimings.filter((t) => t.start >= 3.2)
+			? rawTimings.filter((t) => t.start >= (chapterCardDuration - 0.3))
 			: rawTimings;
 
 		const chunkSize = style.chunkSize || 4;
