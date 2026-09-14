@@ -1,0 +1,956 @@
+[
+  {
+    "id": "local-technology-artificial-intelligence-1",
+    "title": "Technology Artificial Intelligence 1",
+    "fileName": "technology-artificial-intelligence-1.mp4",
+    "videoUrl": "/footage/technology-artificial-intelligence-1.mp4",
+    "thumbnail": "/footage/technology-artificial-intelligence-1.jpg",
+    "query": "technology artificial intelligence",
+    "tags": [
+      "technology",
+      "ai",
+      "cyber",
+      "network",
+      "digital",
+      "data",
+      "future",
+      "robot"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:56.963Z"
+  },
+  {
+    "id": "local-nature-mountain-landscape-1",
+    "title": "Nature Mountain Landscape 1",
+    "fileName": "nature-mountain-landscape-1.mp4",
+    "videoUrl": "/footage/nature-mountain-landscape-1.mp4",
+    "thumbnail": "/footage/nature-mountain-landscape-1.jpg",
+    "query": "nature mountain landscape",
+    "tags": [
+      "nature",
+      "mountain",
+      "landscape",
+      "sky",
+      "drone",
+      "sunrise",
+      "clouds"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:56.967Z"
+  },
+  {
+    "id": "local-cyberpunk-neon-city-night-1",
+    "title": "Cyberpunk Neon City Night 1",
+    "fileName": "cyberpunk-neon-city-night-1.mp4",
+    "videoUrl": "/footage/cyberpunk-neon-city-night-1.mp4",
+    "thumbnail": "/footage/cyberpunk-neon-city-night-1.jpg",
+    "query": "cyberpunk neon city night",
+    "tags": [
+      "cyberpunk",
+      "city",
+      "neon",
+      "night",
+      "matrix",
+      "futuristic",
+      "tokyo"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:56.970Z"
+  },
+  {
+    "id": "local-business-stock-market-finance-1",
+    "title": "Business Stock Market Finance 1",
+    "fileName": "business-stock-market-finance-1.mp4",
+    "videoUrl": "/footage/business-stock-market-finance-1.mp4",
+    "thumbnail": "/footage/business-stock-market-finance-1.jpg",
+    "query": "business stock market finance",
+    "tags": [
+      "business",
+      "finance",
+      "money",
+      "stock",
+      "market",
+      "chart",
+      "investment",
+      "crypto"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:56.973Z"
+  },
+  {
+    "id": "local-space-cosmic-galaxy-stars-1",
+    "title": "Space Cosmic Galaxy Stars 1",
+    "fileName": "space-cosmic-galaxy-stars-1.mp4",
+    "videoUrl": "/footage/space-cosmic-galaxy-stars-1.mp4",
+    "thumbnail": "/footage/space-cosmic-galaxy-stars-1.jpg",
+    "query": "space cosmic galaxy stars",
+    "tags": [
+      "space",
+      "universe",
+      "galaxy",
+      "stars",
+      "cosmos",
+      "nebula",
+      "astronomy"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:56.975Z"
+  },
+  {
+    "id": "local-urban-modern-metropolis-skyline-1",
+    "title": "Urban Modern Metropolis Skyline 1",
+    "fileName": "urban-modern-metropolis-skyline-1.mp4",
+    "videoUrl": "/footage/urban-modern-metropolis-skyline-1.mp4",
+    "thumbnail": "/footage/urban-modern-metropolis-skyline-1.jpg",
+    "query": "urban modern metropolis skyline",
+    "tags": [
+      "urban",
+      "city",
+      "metropolis",
+      "skyline",
+      "architecture",
+      "building",
+      "office"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:56.979Z"
+  },
+  {
+    "id": "local-mindset-focus-psychology-time-1",
+    "title": "Mindset Focus Psychology Time 1",
+    "fileName": "mindset-focus-psychology-time-1.mp4",
+    "videoUrl": "/footage/mindset-focus-psychology-time-1.mp4",
+    "thumbnail": "/footage/mindset-focus-psychology-time-1.jpg",
+    "query": "mindset focus psychology time",
+    "tags": [
+      "mindset",
+      "psychology",
+      "focus",
+      "time",
+      "meditation",
+      "discipline",
+      "brain"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:56.982Z"
+  },
+  {
+    "id": "local-technology-artificial-intelligence-2",
+    "title": "Technology Artificial Intelligence 2",
+    "fileName": "technology-artificial-intelligence-2.mp4",
+    "videoUrl": "/footage/technology-artificial-intelligence-2.mp4",
+    "thumbnail": "/footage/technology-artificial-intelligence-2.jpg",
+    "query": "technology artificial intelligence",
+    "tags": [
+      "technology",
+      "ai",
+      "cyber",
+      "network",
+      "digital",
+      "data",
+      "future",
+      "robot"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:56.983Z"
+  },
+  {
+    "id": "local-nature-mountain-landscape-2",
+    "title": "Nature Mountain Landscape 2",
+    "fileName": "nature-mountain-landscape-2.mp4",
+    "videoUrl": "/footage/nature-mountain-landscape-2.mp4",
+    "thumbnail": "/footage/nature-mountain-landscape-2.jpg",
+    "query": "nature mountain landscape",
+    "tags": [
+      "nature",
+      "mountain",
+      "landscape",
+      "sky",
+      "drone",
+      "sunrise",
+      "clouds"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:56.988Z"
+  },
+  {
+    "id": "local-cyberpunk-neon-city-night-2",
+    "title": "Cyberpunk Neon City Night 2",
+    "fileName": "cyberpunk-neon-city-night-2.mp4",
+    "videoUrl": "/footage/cyberpunk-neon-city-night-2.mp4",
+    "thumbnail": "/footage/cyberpunk-neon-city-night-2.jpg",
+    "query": "cyberpunk neon city night",
+    "tags": [
+      "cyberpunk",
+      "city",
+      "neon",
+      "night",
+      "matrix",
+      "futuristic",
+      "tokyo"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:56.994Z"
+  },
+  {
+    "id": "local-business-stock-market-finance-2",
+    "title": "Business Stock Market Finance 2",
+    "fileName": "business-stock-market-finance-2.mp4",
+    "videoUrl": "/footage/business-stock-market-finance-2.mp4",
+    "thumbnail": "/footage/business-stock-market-finance-2.jpg",
+    "query": "business stock market finance",
+    "tags": [
+      "business",
+      "finance",
+      "money",
+      "stock",
+      "market",
+      "chart",
+      "investment",
+      "crypto"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.003Z"
+  },
+  {
+    "id": "local-space-cosmic-galaxy-stars-2",
+    "title": "Space Cosmic Galaxy Stars 2",
+    "fileName": "space-cosmic-galaxy-stars-2.mp4",
+    "videoUrl": "/footage/space-cosmic-galaxy-stars-2.mp4",
+    "thumbnail": "/footage/space-cosmic-galaxy-stars-2.jpg",
+    "query": "space cosmic galaxy stars",
+    "tags": [
+      "space",
+      "universe",
+      "galaxy",
+      "stars",
+      "cosmos",
+      "nebula",
+      "astronomy"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.007Z"
+  },
+  {
+    "id": "local-urban-modern-metropolis-skyline-2",
+    "title": "Urban Modern Metropolis Skyline 2",
+    "fileName": "urban-modern-metropolis-skyline-2.mp4",
+    "videoUrl": "/footage/urban-modern-metropolis-skyline-2.mp4",
+    "thumbnail": "/footage/urban-modern-metropolis-skyline-2.jpg",
+    "query": "urban modern metropolis skyline",
+    "tags": [
+      "urban",
+      "city",
+      "metropolis",
+      "skyline",
+      "architecture",
+      "building",
+      "office"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.010Z"
+  },
+  {
+    "id": "local-mindset-focus-psychology-time-2",
+    "title": "Mindset Focus Psychology Time 2",
+    "fileName": "mindset-focus-psychology-time-2.mp4",
+    "videoUrl": "/footage/mindset-focus-psychology-time-2.mp4",
+    "thumbnail": "/footage/mindset-focus-psychology-time-2.jpg",
+    "query": "mindset focus psychology time",
+    "tags": [
+      "mindset",
+      "psychology",
+      "focus",
+      "time",
+      "meditation",
+      "discipline",
+      "brain"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.016Z"
+  },
+  {
+    "id": "local-technology-artificial-intelligence-3",
+    "title": "Technology Artificial Intelligence 3",
+    "fileName": "technology-artificial-intelligence-3.mp4",
+    "videoUrl": "/footage/technology-artificial-intelligence-3.mp4",
+    "thumbnail": "/footage/technology-artificial-intelligence-3.jpg",
+    "query": "technology artificial intelligence",
+    "tags": [
+      "technology",
+      "ai",
+      "cyber",
+      "network",
+      "digital",
+      "data",
+      "future",
+      "robot"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.020Z"
+  },
+  {
+    "id": "local-nature-mountain-landscape-3",
+    "title": "Nature Mountain Landscape 3",
+    "fileName": "nature-mountain-landscape-3.mp4",
+    "videoUrl": "/footage/nature-mountain-landscape-3.mp4",
+    "thumbnail": "/footage/nature-mountain-landscape-3.jpg",
+    "query": "nature mountain landscape",
+    "tags": [
+      "nature",
+      "mountain",
+      "landscape",
+      "sky",
+      "drone",
+      "sunrise",
+      "clouds"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.024Z"
+  },
+  {
+    "id": "local-cyberpunk-neon-city-night-3",
+    "title": "Cyberpunk Neon City Night 3",
+    "fileName": "cyberpunk-neon-city-night-3.mp4",
+    "videoUrl": "/footage/cyberpunk-neon-city-night-3.mp4",
+    "thumbnail": "/footage/cyberpunk-neon-city-night-3.jpg",
+    "query": "cyberpunk neon city night",
+    "tags": [
+      "cyberpunk",
+      "city",
+      "neon",
+      "night",
+      "matrix",
+      "futuristic",
+      "tokyo"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.027Z"
+  },
+  {
+    "id": "local-business-stock-market-finance-3",
+    "title": "Business Stock Market Finance 3",
+    "fileName": "business-stock-market-finance-3.mp4",
+    "videoUrl": "/footage/business-stock-market-finance-3.mp4",
+    "thumbnail": "/footage/business-stock-market-finance-3.jpg",
+    "query": "business stock market finance",
+    "tags": [
+      "business",
+      "finance",
+      "money",
+      "stock",
+      "market",
+      "chart",
+      "investment",
+      "crypto"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.030Z"
+  },
+  {
+    "id": "local-space-cosmic-galaxy-stars-3",
+    "title": "Space Cosmic Galaxy Stars 3",
+    "fileName": "space-cosmic-galaxy-stars-3.mp4",
+    "videoUrl": "/footage/space-cosmic-galaxy-stars-3.mp4",
+    "thumbnail": "/footage/space-cosmic-galaxy-stars-3.jpg",
+    "query": "space cosmic galaxy stars",
+    "tags": [
+      "space",
+      "universe",
+      "galaxy",
+      "stars",
+      "cosmos",
+      "nebula",
+      "astronomy"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.033Z"
+  },
+  {
+    "id": "local-urban-modern-metropolis-skyline-3",
+    "title": "Urban Modern Metropolis Skyline 3",
+    "fileName": "urban-modern-metropolis-skyline-3.mp4",
+    "videoUrl": "/footage/urban-modern-metropolis-skyline-3.mp4",
+    "thumbnail": "/footage/urban-modern-metropolis-skyline-3.jpg",
+    "query": "urban modern metropolis skyline",
+    "tags": [
+      "urban",
+      "city",
+      "metropolis",
+      "skyline",
+      "architecture",
+      "building",
+      "office"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.042Z"
+  },
+  {
+    "id": "local-mindset-focus-psychology-time-3",
+    "title": "Mindset Focus Psychology Time 3",
+    "fileName": "mindset-focus-psychology-time-3.mp4",
+    "videoUrl": "/footage/mindset-focus-psychology-time-3.mp4",
+    "thumbnail": "/footage/mindset-focus-psychology-time-3.jpg",
+    "query": "mindset focus psychology time",
+    "tags": [
+      "mindset",
+      "psychology",
+      "focus",
+      "time",
+      "meditation",
+      "discipline",
+      "brain"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.045Z"
+  },
+  {
+    "id": "local-technology-artificial-intelligence-4",
+    "title": "Technology Artificial Intelligence 4",
+    "fileName": "technology-artificial-intelligence-4.mp4",
+    "videoUrl": "/footage/technology-artificial-intelligence-4.mp4",
+    "thumbnail": "/footage/technology-artificial-intelligence-4.jpg",
+    "query": "technology artificial intelligence",
+    "tags": [
+      "technology",
+      "ai",
+      "cyber",
+      "network",
+      "digital",
+      "data",
+      "future",
+      "robot"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.047Z"
+  },
+  {
+    "id": "local-nature-mountain-landscape-4",
+    "title": "Nature Mountain Landscape 4",
+    "fileName": "nature-mountain-landscape-4.mp4",
+    "videoUrl": "/footage/nature-mountain-landscape-4.mp4",
+    "thumbnail": "/footage/nature-mountain-landscape-4.jpg",
+    "query": "nature mountain landscape",
+    "tags": [
+      "nature",
+      "mountain",
+      "landscape",
+      "sky",
+      "drone",
+      "sunrise",
+      "clouds"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.053Z"
+  },
+  {
+    "id": "local-cyberpunk-neon-city-night-4",
+    "title": "Cyberpunk Neon City Night 4",
+    "fileName": "cyberpunk-neon-city-night-4.mp4",
+    "videoUrl": "/footage/cyberpunk-neon-city-night-4.mp4",
+    "thumbnail": "/footage/cyberpunk-neon-city-night-4.jpg",
+    "query": "cyberpunk neon city night",
+    "tags": [
+      "cyberpunk",
+      "city",
+      "neon",
+      "night",
+      "matrix",
+      "futuristic",
+      "tokyo"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.076Z"
+  },
+  {
+    "id": "local-business-stock-market-finance-4",
+    "title": "Business Stock Market Finance 4",
+    "fileName": "business-stock-market-finance-4.mp4",
+    "videoUrl": "/footage/business-stock-market-finance-4.mp4",
+    "thumbnail": "/footage/business-stock-market-finance-4.jpg",
+    "query": "business stock market finance",
+    "tags": [
+      "business",
+      "finance",
+      "money",
+      "stock",
+      "market",
+      "chart",
+      "investment",
+      "crypto"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.080Z"
+  },
+  {
+    "id": "local-space-cosmic-galaxy-stars-4",
+    "title": "Space Cosmic Galaxy Stars 4",
+    "fileName": "space-cosmic-galaxy-stars-4.mp4",
+    "videoUrl": "/footage/space-cosmic-galaxy-stars-4.mp4",
+    "thumbnail": "/footage/space-cosmic-galaxy-stars-4.jpg",
+    "query": "space cosmic galaxy stars",
+    "tags": [
+      "space",
+      "universe",
+      "galaxy",
+      "stars",
+      "cosmos",
+      "nebula",
+      "astronomy"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.083Z"
+  },
+  {
+    "id": "local-urban-modern-metropolis-skyline-4",
+    "title": "Urban Modern Metropolis Skyline 4",
+    "fileName": "urban-modern-metropolis-skyline-4.mp4",
+    "videoUrl": "/footage/urban-modern-metropolis-skyline-4.mp4",
+    "thumbnail": "/footage/urban-modern-metropolis-skyline-4.jpg",
+    "query": "urban modern metropolis skyline",
+    "tags": [
+      "urban",
+      "city",
+      "metropolis",
+      "skyline",
+      "architecture",
+      "building",
+      "office"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.084Z"
+  },
+  {
+    "id": "local-mindset-focus-psychology-time-4",
+    "title": "Mindset Focus Psychology Time 4",
+    "fileName": "mindset-focus-psychology-time-4.mp4",
+    "videoUrl": "/footage/mindset-focus-psychology-time-4.mp4",
+    "thumbnail": "/footage/mindset-focus-psychology-time-4.jpg",
+    "query": "mindset focus psychology time",
+    "tags": [
+      "mindset",
+      "psychology",
+      "focus",
+      "time",
+      "meditation",
+      "discipline",
+      "brain"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.088Z"
+  },
+  {
+    "id": "local-technology-artificial-intelligence-5",
+    "title": "Technology Artificial Intelligence 5",
+    "fileName": "technology-artificial-intelligence-5.mp4",
+    "videoUrl": "/footage/technology-artificial-intelligence-5.mp4",
+    "thumbnail": "/footage/technology-artificial-intelligence-5.jpg",
+    "query": "technology artificial intelligence",
+    "tags": [
+      "technology",
+      "ai",
+      "cyber",
+      "network",
+      "digital",
+      "data",
+      "future",
+      "robot"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.091Z"
+  },
+  {
+    "id": "local-nature-mountain-landscape-5",
+    "title": "Nature Mountain Landscape 5",
+    "fileName": "nature-mountain-landscape-5.mp4",
+    "videoUrl": "/footage/nature-mountain-landscape-5.mp4",
+    "thumbnail": "/footage/nature-mountain-landscape-5.jpg",
+    "query": "nature mountain landscape",
+    "tags": [
+      "nature",
+      "mountain",
+      "landscape",
+      "sky",
+      "drone",
+      "sunrise",
+      "clouds"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.092Z"
+  },
+  {
+    "id": "local-cyberpunk-neon-city-night-5",
+    "title": "Cyberpunk Neon City Night 5",
+    "fileName": "cyberpunk-neon-city-night-5.mp4",
+    "videoUrl": "/footage/cyberpunk-neon-city-night-5.mp4",
+    "thumbnail": "/footage/cyberpunk-neon-city-night-5.jpg",
+    "query": "cyberpunk neon city night",
+    "tags": [
+      "cyberpunk",
+      "city",
+      "neon",
+      "night",
+      "matrix",
+      "futuristic",
+      "tokyo"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.097Z"
+  },
+  {
+    "id": "local-business-stock-market-finance-5",
+    "title": "Business Stock Market Finance 5",
+    "fileName": "business-stock-market-finance-5.mp4",
+    "videoUrl": "/footage/business-stock-market-finance-5.mp4",
+    "thumbnail": "/footage/business-stock-market-finance-5.jpg",
+    "query": "business stock market finance",
+    "tags": [
+      "business",
+      "finance",
+      "money",
+      "stock",
+      "market",
+      "chart",
+      "investment",
+      "crypto"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.103Z"
+  },
+  {
+    "id": "local-space-cosmic-galaxy-stars-5",
+    "title": "Space Cosmic Galaxy Stars 5",
+    "fileName": "space-cosmic-galaxy-stars-5.mp4",
+    "videoUrl": "/footage/space-cosmic-galaxy-stars-5.mp4",
+    "thumbnail": "/footage/space-cosmic-galaxy-stars-5.jpg",
+    "query": "space cosmic galaxy stars",
+    "tags": [
+      "space",
+      "universe",
+      "galaxy",
+      "stars",
+      "cosmos",
+      "nebula",
+      "astronomy"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.108Z"
+  },
+  {
+    "id": "local-urban-modern-metropolis-skyline-5",
+    "title": "Urban Modern Metropolis Skyline 5",
+    "fileName": "urban-modern-metropolis-skyline-5.mp4",
+    "videoUrl": "/footage/urban-modern-metropolis-skyline-5.mp4",
+    "thumbnail": "/footage/urban-modern-metropolis-skyline-5.jpg",
+    "query": "urban modern metropolis skyline",
+    "tags": [
+      "urban",
+      "city",
+      "metropolis",
+      "skyline",
+      "architecture",
+      "building",
+      "office"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.119Z"
+  },
+  {
+    "id": "local-mindset-focus-psychology-time-5",
+    "title": "Mindset Focus Psychology Time 5",
+    "fileName": "mindset-focus-psychology-time-5.mp4",
+    "videoUrl": "/footage/mindset-focus-psychology-time-5.mp4",
+    "thumbnail": "/footage/mindset-focus-psychology-time-5.jpg",
+    "query": "mindset focus psychology time",
+    "tags": [
+      "mindset",
+      "psychology",
+      "focus",
+      "time",
+      "meditation",
+      "discipline",
+      "brain"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.122Z"
+  },
+  {
+    "id": "local-technology-artificial-intelligence-6",
+    "title": "Technology Artificial Intelligence 6",
+    "fileName": "technology-artificial-intelligence-6.mp4",
+    "videoUrl": "/footage/technology-artificial-intelligence-6.mp4",
+    "thumbnail": "/footage/technology-artificial-intelligence-6.jpg",
+    "query": "technology artificial intelligence",
+    "tags": [
+      "technology",
+      "ai",
+      "cyber",
+      "network",
+      "digital",
+      "data",
+      "future",
+      "robot"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.130Z"
+  },
+  {
+    "id": "local-nature-mountain-landscape-6",
+    "title": "Nature Mountain Landscape 6",
+    "fileName": "nature-mountain-landscape-6.mp4",
+    "videoUrl": "/footage/nature-mountain-landscape-6.mp4",
+    "thumbnail": "/footage/nature-mountain-landscape-6.jpg",
+    "query": "nature mountain landscape",
+    "tags": [
+      "nature",
+      "mountain",
+      "landscape",
+      "sky",
+      "drone",
+      "sunrise",
+      "clouds"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.132Z"
+  },
+  {
+    "id": "local-cyberpunk-neon-city-night-6",
+    "title": "Cyberpunk Neon City Night 6",
+    "fileName": "cyberpunk-neon-city-night-6.mp4",
+    "videoUrl": "/footage/cyberpunk-neon-city-night-6.mp4",
+    "thumbnail": "/footage/cyberpunk-neon-city-night-6.jpg",
+    "query": "cyberpunk neon city night",
+    "tags": [
+      "cyberpunk",
+      "city",
+      "neon",
+      "night",
+      "matrix",
+      "futuristic",
+      "tokyo"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.135Z"
+  },
+  {
+    "id": "local-business-stock-market-finance-6",
+    "title": "Business Stock Market Finance 6",
+    "fileName": "business-stock-market-finance-6.mp4",
+    "videoUrl": "/footage/business-stock-market-finance-6.mp4",
+    "thumbnail": "/footage/business-stock-market-finance-6.jpg",
+    "query": "business stock market finance",
+    "tags": [
+      "business",
+      "finance",
+      "money",
+      "stock",
+      "market",
+      "chart",
+      "investment",
+      "crypto"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.144Z"
+  },
+  {
+    "id": "local-space-cosmic-galaxy-stars-6",
+    "title": "Space Cosmic Galaxy Stars 6",
+    "fileName": "space-cosmic-galaxy-stars-6.mp4",
+    "videoUrl": "/footage/space-cosmic-galaxy-stars-6.mp4",
+    "thumbnail": "/footage/space-cosmic-galaxy-stars-6.jpg",
+    "query": "space cosmic galaxy stars",
+    "tags": [
+      "space",
+      "universe",
+      "galaxy",
+      "stars",
+      "cosmos",
+      "nebula",
+      "astronomy"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.150Z"
+  },
+  {
+    "id": "local-urban-modern-metropolis-skyline-6",
+    "title": "Urban Modern Metropolis Skyline 6",
+    "fileName": "urban-modern-metropolis-skyline-6.mp4",
+    "videoUrl": "/footage/urban-modern-metropolis-skyline-6.mp4",
+    "thumbnail": "/footage/urban-modern-metropolis-skyline-6.jpg",
+    "query": "urban modern metropolis skyline",
+    "tags": [
+      "urban",
+      "city",
+      "metropolis",
+      "skyline",
+      "architecture",
+      "building",
+      "office"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.155Z"
+  },
+  {
+    "id": "local-mindset-focus-psychology-time-6",
+    "title": "Mindset Focus Psychology Time 6",
+    "fileName": "mindset-focus-psychology-time-6.mp4",
+    "videoUrl": "/footage/mindset-focus-psychology-time-6.mp4",
+    "thumbnail": "/footage/mindset-focus-psychology-time-6.jpg",
+    "query": "mindset focus psychology time",
+    "tags": [
+      "mindset",
+      "psychology",
+      "focus",
+      "time",
+      "meditation",
+      "discipline",
+      "brain"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.158Z"
+  },
+  {
+    "id": "local-technology-artificial-intelligence-7",
+    "title": "Technology Artificial Intelligence 7",
+    "fileName": "technology-artificial-intelligence-7.mp4",
+    "videoUrl": "/footage/technology-artificial-intelligence-7.mp4",
+    "thumbnail": "/footage/technology-artificial-intelligence-7.jpg",
+    "query": "technology artificial intelligence",
+    "tags": [
+      "technology",
+      "ai",
+      "cyber",
+      "network",
+      "digital",
+      "data",
+      "future",
+      "robot"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.161Z"
+  },
+  {
+    "id": "local-nature-mountain-landscape-7",
+    "title": "Nature Mountain Landscape 7",
+    "fileName": "nature-mountain-landscape-7.mp4",
+    "videoUrl": "/footage/nature-mountain-landscape-7.mp4",
+    "thumbnail": "/footage/nature-mountain-landscape-7.jpg",
+    "query": "nature mountain landscape",
+    "tags": [
+      "nature",
+      "mountain",
+      "landscape",
+      "sky",
+      "drone",
+      "sunrise",
+      "clouds"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.164Z"
+  },
+  {
+    "id": "local-cyberpunk-neon-city-night-7",
+    "title": "Cyberpunk Neon City Night 7",
+    "fileName": "cyberpunk-neon-city-night-7.mp4",
+    "videoUrl": "/footage/cyberpunk-neon-city-night-7.mp4",
+    "thumbnail": "/footage/cyberpunk-neon-city-night-7.jpg",
+    "query": "cyberpunk neon city night",
+    "tags": [
+      "cyberpunk",
+      "city",
+      "neon",
+      "night",
+      "matrix",
+      "futuristic",
+      "tokyo"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.166Z"
+  },
+  {
+    "id": "local-business-stock-market-finance-7",
+    "title": "Business Stock Market Finance 7",
+    "fileName": "business-stock-market-finance-7.mp4",
+    "videoUrl": "/footage/business-stock-market-finance-7.mp4",
+    "thumbnail": "/footage/business-stock-market-finance-7.jpg",
+    "query": "business stock market finance",
+    "tags": [
+      "business",
+      "finance",
+      "money",
+      "stock",
+      "market",
+      "chart",
+      "investment",
+      "crypto"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.168Z"
+  },
+  {
+    "id": "local-space-cosmic-galaxy-stars-7",
+    "title": "Space Cosmic Galaxy Stars 7",
+    "fileName": "space-cosmic-galaxy-stars-7.mp4",
+    "videoUrl": "/footage/space-cosmic-galaxy-stars-7.mp4",
+    "thumbnail": "/footage/space-cosmic-galaxy-stars-7.jpg",
+    "query": "space cosmic galaxy stars",
+    "tags": [
+      "space",
+      "universe",
+      "galaxy",
+      "stars",
+      "cosmos",
+      "nebula",
+      "astronomy"
+    ],
+    "duration": 15,
+    "source": "local",
+    "createdAt": "2026-09-14T11:09:57.171Z"
+  }
+]

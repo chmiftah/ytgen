@@ -1,5 +1,6 @@
 import { exportToASS } from '$lib/services/subtitleService.js';
 import { getSpokenVoiceoverText } from '$lib/services/scriptAnalyzer.js';
+import { getLocalCatalog, saveLocalCatalog, generateGeneralFileName, extractThumbnail } from '$lib/services/localFootageService.js';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -60,27 +61,60 @@ async function downloadFile(url, destPath, timeoutMs = 30000, retries = 2) {
 	}
 }
 
-// Persistent Local Footage Cache: Never re-download footage that was already fetched
-const footageCacheDir = path.resolve('./static/renders/footage-cache');
-async function getCachedOrDownloadFootage(url, destPath) {
+// Persistent General-Name Local Footage Library: Save with descriptive names, never re-download
+const footageLibraryDir = path.resolve('./static/footage');
+async function getCachedOrDownloadFootage(url, destPath, queryHint = 'cinematic') {
 	if (!url || !url.startsWith('http')) return false;
 	try {
-		await fs.promises.mkdir(footageCacheDir, { recursive: true });
-		const urlHash = crypto.createHash('md5').update(url).digest('hex');
-		const cachedFilePath = path.join(footageCacheDir, `${urlHash}.mp4`);
+		await fs.promises.mkdir(footageLibraryDir, { recursive: true });
+		const catalog = await getLocalCatalog();
 
-		if (fs.existsSync(cachedFilePath)) {
-			// Instant read from fast local SSD
-			await fs.promises.copyFile(cachedFilePath, destPath);
-			return true;
+		// Check if sourceUrl or videoUrl is already registered in local catalog
+		const existingItem = catalog.find((c) => c.sourceUrl === url || c.videoUrl === url);
+		if (existingItem) {
+			const existingPath = path.join(footageLibraryDir, existingItem.fileName);
+			if (fs.existsSync(existingPath)) {
+				await fs.promises.copyFile(existingPath, destPath);
+				return true;
+			}
 		}
 
-		// Download to persistent cache first, then copy
-		await downloadFile(url, cachedFilePath, 35000, 2);
-		await fs.promises.copyFile(cachedFilePath, destPath);
+		// Download to local library with general descriptive name
+		const existingNames = catalog.map((c) => c.fileName);
+		const generalFileName = generateGeneralFileName(queryHint, existingNames);
+		const targetFootagePath = path.join(footageLibraryDir, generalFileName);
+
+		await downloadFile(url, targetFootagePath, 45000, 2);
+
+		// Extract thumbnail and register to catalog
+		const baseName = generalFileName.replace(/\.mp4$/, '');
+		const thumbPath = path.join(footageLibraryDir, `${baseName}.jpg`);
+		await extractThumbnail(targetFootagePath, thumbPath).catch(() => {});
+
+		const cleanWords = queryHint.toLowerCase().split(/[\s-]+/).filter((w) => w.length > 2);
+		const newCatalogItem = {
+			id: `local-${baseName}`,
+			title: queryHint
+				.split(/\s+/)
+				.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+				.join(' '),
+			fileName: generalFileName,
+			videoUrl: `/footage/${generalFileName}`,
+			thumbnail: fs.existsSync(thumbPath) ? `/footage/${baseName}.jpg` : '',
+			query: queryHint,
+			tags: cleanWords,
+			sourceUrl: url,
+			source: 'local',
+			createdAt: new Date().toISOString()
+		};
+
+		catalog.unshift(newCatalogItem);
+		await saveLocalCatalog(catalog);
+
+		await fs.promises.copyFile(targetFootagePath, destPath);
 		return true;
 	} catch (err) {
-		console.warn(`Footage download/cache failed for ${url}:`, err.message);
+		console.warn(`Footage download/library save failed for ${url}:`, err.message);
 		return false;
 	}
 }
@@ -292,8 +326,20 @@ export async function POST({ request }) {
 						const lavfiFilter = rawVideoUrl.slice('lavfi:'.length);
 						await makeLavfiVideo(lavfiFilter, videoDest, sceneDuration + 2);
 						videoDownloaded = true;
+					} else if (rawVideoUrl && rawVideoUrl.includes('/footage/')) {
+						// Local video from static/footage bank
+						const fileName = rawVideoUrl.split('/footage/').pop().split('?')[0];
+						const localPath = path.resolve(`./static/footage/${fileName}`);
+						if (fs.existsSync(localPath)) {
+							await fs.promises.copyFile(localPath, videoDest);
+							videoDownloaded = true;
+						}
 					} else if (rawVideoUrl && rawVideoUrl.startsWith('http')) {
-						videoDownloaded = await getCachedOrDownloadFootage(rawVideoUrl, videoDest);
+						videoDownloaded = await getCachedOrDownloadFootage(
+							rawVideoUrl,
+							videoDest,
+							scene.visualQuery || scene.footage?.title || 'cinematic'
+						);
 					}
 
 					if (!videoDownloaded) {

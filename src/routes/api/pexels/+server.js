@@ -1,12 +1,32 @@
 import { json } from '@sveltejs/kit';
 import { STOCK_COLLECTION } from '$lib/services/stockLibrary.js';
+import { searchLocalFootage, getLocalCatalog } from '$lib/services/localFootageService.js';
 
 export async function POST({ request }) {
 	try {
-		const { query, apiKey, page = 1 } = await request.json();
+		const { query, apiKey, page = 1, preferLocal = true } = await request.json();
 		const cleanQuery = (query || 'nature cinematic 4k').trim();
 
-		// If user provided a Pexels API Key, make actual request to Pexels API
+		// 1. FIRST: Check local footage library (Offline First)
+		let localMatches = [];
+		try {
+			localMatches = await searchLocalFootage(cleanQuery, 12);
+		} catch (locErr) {
+			console.warn('Local footage search error:', locErr.message);
+		}
+
+		// If user only wants local, or if good local matches are found and no API key
+		if (localMatches.length >= 2 && !apiKey) {
+			return json({
+				success: true,
+				videos: localMatches,
+				source: 'local',
+				message: `Ditemukan ${localMatches.length} video dari koleksi lokal Anda.`
+			});
+		}
+
+		// 2. Fetch Pexels API if API Key provided
+		let pexelsVideos = [];
 		if (apiKey && apiKey.trim().length > 10) {
 			try {
 				const pexelsRes = await fetch(
@@ -21,41 +41,50 @@ export async function POST({ request }) {
 				if (pexelsRes.ok) {
 					const data = await pexelsRes.json();
 					if (data.videos && data.videos.length > 0) {
-						const mappedVideos = data.videos.map((vid) => {
-							// Find best 1080p or 720p landscape file
-							const files = vid.video_files || [];
-							const hdFile = files.find(f => f.quality === 'hd' && f.width >= 1280) 
-								|| files.find(f => f.quality === 'sd') 
-								|| files[0];
+						pexelsVideos = data.videos
+							.map((vid) => {
+								const files = vid.video_files || [];
+								const hdFile =
+									files.find((f) => f.quality === 'hd' && f.width >= 1280) ||
+									files.find((f) => f.quality === 'sd') ||
+									files[0];
 
-							return {
-								id: `pexels-${vid.id}`,
-								title: `Pexels: ${cleanQuery} (${vid.duration}s)`,
-								thumbnail: vid.image,
-								videoUrl: hdFile ? hdFile.link : '',
-								duration: vid.duration || 15,
-								width: vid.width,
-								height: vid.height,
-								author: vid.user ? vid.user.name : 'Pexels Creator',
-								source: 'pexels'
-							};
-						}).filter(v => Boolean(v.videoUrl));
-
-						if (mappedVideos.length > 0) {
-							return json({ success: true, videos: mappedVideos, source: 'pexels' });
-						}
+								return {
+									id: `pexels-${vid.id}`,
+									title: `Pexels: ${cleanQuery} (${vid.duration}s)`,
+									thumbnail: vid.image,
+									videoUrl: hdFile ? hdFile.link : '',
+									duration: vid.duration || 15,
+									width: vid.width,
+									height: vid.height,
+									author: vid.user ? vid.user.name : 'Pexels Creator',
+									source: 'pexels',
+									queryHint: cleanQuery
+								};
+							})
+							.filter((v) => Boolean(v.videoUrl));
 					}
 				}
 			} catch (err) {
-				console.warn('Pexels API fetch failed, falling back to curated stock:', err);
+				console.warn('Pexels API fetch failed, falling back to local/curated stock:', err);
 			}
 		}
 
-		// Fallback to internal curated stock library
-		const qLower = cleanQuery.toLowerCase();
-		const words = qLower.split(/\s+/).filter(w => w.length > 2);
+		// Combine results: Local matches first, then Pexels videos
+		const combined = [...localMatches, ...pexelsVideos];
+		if (combined.length > 0) {
+			return json({
+				success: true,
+				videos: combined,
+				source: localMatches.length > 0 ? 'mixed' : 'pexels'
+			});
+		}
 
-		const scoredClips = STOCK_COLLECTION.map(item => {
+		// 3. Fallback to internal curated stock library
+		const qLower = cleanQuery.toLowerCase();
+		const words = qLower.split(/\s+/).filter((w) => w.length > 2);
+
+		const scoredClips = STOCK_COLLECTION.map((item) => {
 			let score = 0;
 			for (const word of words) {
 				if (item.category.includes(word)) score += 5;
@@ -69,7 +98,7 @@ export async function POST({ request }) {
 
 		return json({
 			success: true,
-			videos: scoredClips,
+			videos: [...localMatches, ...scoredClips],
 			source: 'curated-stock',
 			message: apiKey ? 'Pexels API fallback used' : 'Using curated stock library'
 		});
@@ -78,3 +107,4 @@ export async function POST({ request }) {
 		return json({ success: false, error: error.message, videos: STOCK_COLLECTION });
 	}
 }
+

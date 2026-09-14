@@ -25,3 +25,10 @@ vite.config.ts.timestamp-*
 # Render outputs & audio cache
 /static/renders/*
 !/static/renders/.gitkeep
+
+# Local footage media files
+/static/footage/*.mp4
+/static/footage/*.jpg
+!/static/footage/catalog.json
+!/static/footage/.gitkeep
+
