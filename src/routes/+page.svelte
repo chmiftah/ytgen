@@ -9,6 +9,7 @@
 	import SettingsModal from '$lib/components/SettingsModal.svelte';
 	import ExportModal from '$lib/components/ExportModal.svelte';
 	import ScriptGeneratorModal from '$lib/components/ScriptGeneratorModal.svelte';
+	import GenerationProgressConsole from '$lib/components/GenerationProgressConsole.svelte';
 
 	import { analyzeScript, SCRIPT_PRESETS, getSpokenVoiceoverText } from '$lib/services/scriptAnalyzer.js';
 	import { findMatchingStockVideo } from '$lib/services/stockLibrary.js';
@@ -51,6 +52,29 @@
 	let footageSceneIndex = $state(0);
 	let elevenLabsError = $state(''); // Show ElevenLabs errors to user
 
+	// Live Pipeline Generation Progress State
+	let genProgress = $state({
+		active: false,
+		percent: 0,
+		currentStep: '',
+		currentScene: 0,
+		totalScenes: 0,
+		activeQuery: '',
+		activeNarration: '',
+		stats: { localFootage: 0, pexelsFootage: 0, ttsClips: 0 },
+		logs: []
+	});
+
+	function addGenLog(tag, message, type = 'info') {
+		const now = new Date();
+		const time = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0').slice(0, 2);
+		genProgress.logs = [
+			...genProgress.logs,
+			{ id: `${Date.now()}-${Math.random()}`, time, tag, message, type }
+		];
+		genProgress.currentStep = message;
+	}
+
 
 	onMount(() => {
 		// Load stored keys and preferences if present
@@ -86,6 +110,21 @@
 		if (!script.trim() || isGenerating) return;
 		isGenerating = true;
 
+		// Initialize Live Pipeline Monitor
+		genProgress.active = true;
+		genProgress.percent = 5;
+		genProgress.currentStep = 'Menganalisis naskah dengan DeepSeek AI...';
+		genProgress.currentScene = 0;
+		genProgress.totalScenes = 0;
+		genProgress.activeQuery = '';
+		genProgress.activeNarration = '';
+		genProgress.stats = { localFootage: 0, pexelsFootage: 0, ttsClips: 0 };
+		genProgress.logs = [];
+
+		const wordCount = script.trim().split(/\s+/).filter(Boolean).length;
+		addGenLog('SYSTEM', `Memulai pipeline video otomatis untuk naskah (${wordCount} kata)...`, 'info');
+		addGenLog('DEEPSEEK', `Mengirim teks ke DeepSeek AI untuk segmentasi adegan dan pembuatan visual query...`, 'info');
+
 		try {
 			// 1. Analyze script using DeepSeek AI
 			let parsedScenes = [];
@@ -98,22 +137,41 @@
 				const analyzeData = await analyzeRes.json();
 				if (analyzeData.success && analyzeData.scenes && analyzeData.scenes.length > 0) {
 					parsedScenes = analyzeData.scenes;
+					addGenLog('DEEPSEEK', `✓ DeepSeek AI sukses membagi naskah menjadi ${parsedScenes.length} adegan sinematik.`, 'success');
 				}
 			} catch (err) {
 				console.warn('DeepSeek analyze failed, using local fallback:', err);
+				addGenLog('WARN', `DeepSeek AI offline / timeout, beralih ke parser naskah lokal.`, 'warn');
 			}
 
 			if (parsedScenes.length === 0) {
 				parsedScenes = analyzeScript(script);
+				addGenLog('FALLBACK', `Naskah dibagi menjadi ${parsedScenes.length} adegan menggunakan pemecah naskah lokal.`, 'info');
 			}
+
+			genProgress.totalScenes = parsedScenes.length;
+			genProgress.percent = 15;
 			
 			// Process each scene to attach footage and audio
 			const populatedScenes = [];
+			scenes = []; // reset for live streaming
 
 			for (let i = 0; i < parsedScenes.length; i++) {
 				const sc = parsedScenes[i];
+				const sceneNum = i + 1;
+				const total = parsedScenes.length;
+
+				genProgress.currentScene = sceneNum;
+				genProgress.activeQuery = sc.visualQuery;
+				const spokenText = getSpokenVoiceoverText(sc);
+				genProgress.activeNarration = spokenText;
+				genProgress.currentStep = `Adegan ${sceneNum}/${total}: Mencari footage & voiceover...`;
+				genProgress.percent = Math.round(15 + (i / total) * 80);
+
+				addGenLog('SCENE', `─── [Adegan ${sceneNum}/${total}] Visual: "${sc.visualQuery}" ───`, 'highlight');
 
 				// 1. Fetch Footage (Pexels or internal curated)
+				addGenLog('FOOTAGE', `[Adegan ${sceneNum}] Mencari video dengan kata kunci: "${sc.visualQuery}"...`, 'info');
 				let chosenFootage = null;
 				try {
 					const pexelsRes = await fetch('/api/pexels', {
@@ -123,7 +181,6 @@
 					});
 					const pexelsData = await pexelsRes.json();
 					if (pexelsData.videos && pexelsData.videos.length > 0) {
-						// Pick video matching scene index or first
 						chosenFootage = pexelsData.videos[i % pexelsData.videos.length];
 					}
 				} catch (e) {
@@ -134,35 +191,52 @@
 					chosenFootage = findMatchingStockVideo(sc.visualQuery);
 				}
 
+				if (chosenFootage.source === 'local') {
+					genProgress.stats.localFootage++;
+					addGenLog('LOCAL-SSD', `✓ [Adegan ${sceneNum}] Ditemukan di Koleksi Lokal: "${chosenFootage.title}" (Tanpa download, offline ready)`, 'success');
+				} else if (chosenFootage.source === 'pexels' || chosenFootage.videoUrl?.includes('pexels')) {
+					genProgress.stats.pexelsFootage++;
+					addGenLog('PEXELS', `✓ [Adegan ${sceneNum}] Diambil dari Pexels API: "${chosenFootage.title || sc.visualQuery}"`, 'info');
+				} else {
+					addGenLog('FOOTAGE', `✓ [Adegan ${sceneNum}] Video dipilih: "${chosenFootage.title || sc.visualQuery}"`, 'info');
+				}
+
 				// 2. Fetch Voiceover / Audio Timestamps (Edge TTS, ElevenLabs, or fallback)
 				let voiceData = null;
 				elevenLabsError = '';
 
 				if (voiceMode === 'edge_tts') {
+					addGenLog('EDGE-TTS', `[Adegan ${sceneNum}] Men-generate suara Edge TTS (${selectedVoiceId})...`, 'info');
 					try {
 						const ttsRes = await fetch('/api/edge-tts', {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({
-								text: getSpokenVoiceoverText(sc),
+								text: spokenText,
 								voiceId: selectedVoiceId || DEFAULT_EDGE_VOICE_ID
 							})
 						});
 						voiceData = await ttsRes.json();
 						if (voiceData && !voiceData.success && voiceData.error) {
 							console.warn('Edge TTS error:', voiceData.error);
+							addGenLog('WARN', `[Adegan ${sceneNum}] Edge TTS error: ${voiceData.error}`, 'warn');
 							voiceData = null;
+						} else if (voiceData && voiceData.success) {
+							genProgress.stats.ttsClips++;
+							addGenLog('EDGE-TTS', `✓ [Adegan ${sceneNum}] Audio siap (${voiceData.duration}s, ${voiceData.wordTimings?.length || 0} kata sinkron)`, 'success');
 						}
 					} catch (e) {
 						console.warn('Edge TTS API error, using fallback:', e);
+						addGenLog('WARN', `[Adegan ${sceneNum}] Gagal terhubung ke Edge TTS.`, 'warn');
 					}
 				} else if (voiceMode === 'elevenlabs') {
+					addGenLog('ELEVENLABS', `[Adegan ${sceneNum}] Menghubungi ElevenLabs AI (${selectedVoiceId})...`, 'info');
 					try {
 						const ttsRes = await fetch('/api/elevenlabs', {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({
-								text: getSpokenVoiceoverText(sc),
+								text: spokenText,
 								voiceId: selectedVoiceId,
 								apiKey: elevenLabsApiKey
 							})
@@ -170,11 +244,17 @@
 						voiceData = await ttsRes.json();
 						if (voiceData && !voiceData.success && voiceData.error) {
 							elevenLabsError = voiceData.error;
-							voiceData = null; // treat as no audio
+							addGenLog('WARN', `[Adegan ${sceneNum}] ElevenLabs error: ${voiceData.error}`, 'warn');
+							voiceData = null;
+						} else if (voiceData && voiceData.success) {
+							genProgress.stats.ttsClips++;
+							addGenLog('ELEVENLABS', `✓ [Adegan ${sceneNum}] Voiceover siap (${voiceData.duration}s)`, 'success');
 						}
 					} catch (e) {
 						console.warn('ElevenLabs API error, using fallback:', e);
 					}
+				} else {
+					addGenLog('AUDIO', `[Adegan ${sceneNum}] Mode Rekaman/Upload: slot audio siap diisi`, 'info');
 				}
 
 				sc.footage = chosenFootage;
@@ -187,6 +267,7 @@
 
 					// If real audio, save to server disk to avoid huge JSON in render request
 					if (voiceData.isRealVoice && voiceData.audioUrl) {
+						addGenLog('FFMPEG', `[Adegan ${sceneNum}] Normalisasi audio ke 44.1kHz Stereo via FFmpeg...`, 'info');
 						try {
 							const saveRes = await fetch('/api/audio-save', {
 								method: 'POST',
@@ -199,6 +280,7 @@
 							const saveData = await saveRes.json();
 							if (saveData.success) {
 								sc.serverAudioPath = saveData.serverAudioPath;
+								addGenLog('CACHE', `✓ [Adegan ${sceneNum}] Audio tersimpan: ${saveData.audioFileKey}`, 'success');
 							}
 						} catch (e) {
 							console.warn('Could not save audio to server, will use base64 fallback:', e);
@@ -213,12 +295,17 @@
 				}
 
 				populatedScenes.push(sc);
+				// Real-time timeline update so scenes stream into the UI!
+				scenes = [...populatedScenes];
 			}
 
-			scenes = populatedScenes;
+			genProgress.percent = 100;
+			genProgress.currentStep = 'Semua adegan selesai diproses!';
+			addGenLog('FINISH', `🎉 Sukses! Semua ${parsedScenes.length} adegan siap diputar. Total Audio: ${genProgress.stats.ttsClips}, Footage Lokal SSD: ${genProgress.stats.localFootage}, Pexels: ${genProgress.stats.pexelsFootage}.`, 'success');
 			activeSceneIndex = 0;
 		} catch (error) {
 			console.error('Workflow error:', error);
+			addGenLog('ERROR', `Terjadi error: ${error.message}`, 'warn');
 		} finally {
 			isGenerating = false;
 		}
@@ -439,6 +526,20 @@
 				onGenerate={generateWorkflow}
 				isGenerating={isGenerating}
 				onOpenScriptGenerator={() => showScriptGeneratorModal = true}
+			/>
+
+			<!-- Live Background Pipeline Monitor -->
+			<GenerationProgressConsole
+				isGenerating={isGenerating}
+				progress={genProgress.percent}
+				currentStep={genProgress.currentStep}
+				currentScene={genProgress.currentScene}
+				totalScenes={genProgress.totalScenes}
+				activeQuery={genProgress.activeQuery}
+				activeNarration={genProgress.activeNarration}
+				stats={genProgress.stats}
+				logs={genProgress.logs}
+				onDismiss={() => { genProgress.logs = []; genProgress.active = false; }}
 			/>
 
 			<!-- Mode Voiceover Selector -->
