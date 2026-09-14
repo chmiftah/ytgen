@@ -1,21 +1,32 @@
 <script>
 	import { onMount } from 'svelte';
-	import { X, Key, ShieldCheck, ExternalLink, Play, Square, EyeOff, Eye, Check, RefreshCw, Wifi } from 'lucide-svelte';
-	import { POPULAR_VOICES } from '$lib/services/voiceService.js';
+	import { X, Key, ShieldCheck, ExternalLink, Play, Square, EyeOff, Eye, Check, RefreshCw, Wifi, Sparkles } from 'lucide-svelte';
+	import { 
+		POPULAR_VOICES, 
+		EDGE_TTS_VOICES, 
+		DEFAULT_EDGE_VOICE_ID, 
+		DEFAULT_ELEVEN_VOICE_ID, 
+		isEdgeVoice 
+	} from '$lib/services/voiceService.js';
 
 	let {
 		isOpen = false,
 		pexelsApiKey = $bindable(''),
 		elevenLabsApiKey = $bindable(''),
 		deepseekApiKey = $bindable('sk-0802f45e1d4e41c8ae8d46396c97b746'),
-		selectedVoiceId = $bindable('pNInz6obpgDQGcFmaJgB'),
+		selectedVoiceId = $bindable('id-ID-GadisNeural'),
+		voiceMode = $bindable('edge_tts'),
 		onClose
 	} = $props();
 
 	let showDeepseekKey = $state(false);
 	let showPexelsKey = $state(false);
 	let showElevenKey = $state(false);
-	let availableVoices = $state(POPULAR_VOICES);
+
+	let selectedVoiceEngine = $state('edge_tts'); // 'edge_tts' | 'elevenlabs'
+	let edgeVoiceFilter = $state('all'); // 'all' | 'id' | 'local' | 'en'
+
+	let availableElevenVoices = $state(POPULAR_VOICES);
 	let isFetchingVoices = $state(false);
 	let voiceFetchStatus = $state(''); // '', 'ok', 'error'
 	let elevenSubscription = $state(null); // ElevenLabs subscription info & character limits
@@ -26,19 +37,42 @@
 	let playingVoiceId = $state(null);
 	let audioEl = $state(null);
 
+	let filteredEdgeVoices = $derived.by(() => {
+		if (edgeVoiceFilter === 'id') return EDGE_TTS_VOICES.filter(v => v.lang === 'id-ID');
+		if (edgeVoiceFilter === 'local') return EDGE_TTS_VOICES.filter(v => v.lang === 'jv-ID' || v.lang === 'su-ID');
+		if (edgeVoiceFilter === 'en') return EDGE_TTS_VOICES.filter(v => v.lang === 'en-US');
+		return EDGE_TTS_VOICES;
+	});
+
+	$effect(() => {
+		if (isOpen) {
+			if (isEdgeVoice(selectedVoiceId)) {
+				selectedVoiceEngine = 'edge_tts';
+			} else if (voiceMode === 'elevenlabs' || (!isEdgeVoice(selectedVoiceId) && selectedVoiceId !== '')) {
+				selectedVoiceEngine = 'elevenlabs';
+			}
+		}
+	});
+
 	onMount(() => {
 		const savedDeepseek = localStorage.getItem('yt_deepseek_key');
 		const savedPexels = localStorage.getItem('yt_pexels_key');
 		const savedEleven = localStorage.getItem('yt_eleven_key');
 		const savedVoice = localStorage.getItem('yt_voice_id');
+		const savedProvider = localStorage.getItem('yt_voice_provider');
+
 		if (savedDeepseek) deepseekApiKey = savedDeepseek;
 		if (savedPexels) pexelsApiKey = savedPexels;
 		if (savedEleven) {
 			elevenLabsApiKey = savedEleven;
-			// Auto-fetch voices & quota if key already saved
 			fetchElevenLabsVoices(savedEleven);
 		}
 		if (savedVoice) selectedVoiceId = savedVoice;
+		if (savedProvider) {
+			selectedVoiceEngine = savedProvider;
+		} else if (isEdgeVoice(selectedVoiceId)) {
+			selectedVoiceEngine = 'edge_tts';
+		}
 	});
 
 	async function fetchElevenLabsVoices(key) {
@@ -49,8 +83,7 @@
 			const res = await fetch(`/api/elevenlabs?apiKey=${encodeURIComponent(key.trim())}`);
 			const data = await res.json();
 			if (data.success && data.voices && data.voices.length > 0) {
-				// Merge fetched voices with sampleUrl from POPULAR_VOICES where possible
-				availableVoices = data.voices.map(v => {
+				availableElevenVoices = data.voices.map(v => {
 					const local = POPULAR_VOICES.find(p => p.id === v.id);
 					return {
 						...v,
@@ -58,9 +91,8 @@
 						sampleUrl: local?.sampleUrl || null
 					};
 				});
-				// Make sure current selection is valid
-				if (!availableVoices.find(v => v.id === selectedVoiceId)) {
-					selectedVoiceId = availableVoices[0]?.id || selectedVoiceId;
+				if (selectedVoiceEngine === 'elevenlabs' && !availableElevenVoices.find(v => v.id === selectedVoiceId)) {
+					selectedVoiceId = availableElevenVoices[0]?.id || selectedVoiceId;
 				}
 				if (data.subscription) {
 					elevenSubscription = data.subscription;
@@ -117,9 +149,26 @@
 		}
 	}
 
+	function switchEngine(engine) {
+		selectedVoiceEngine = engine;
+		if (engine === 'edge_tts') {
+			if (!isEdgeVoice(selectedVoiceId)) {
+				selectedVoiceId = DEFAULT_EDGE_VOICE_ID;
+			}
+		} else {
+			if (isEdgeVoice(selectedVoiceId)) {
+				selectedVoiceId = availableElevenVoices[0]?.id || DEFAULT_ELEVEN_VOICE_ID;
+			}
+		}
+		if (audioEl && !audioEl.paused) {
+			audioEl.pause();
+			audioEl.currentTime = 0;
+			playingVoiceId = null;
+		}
+	}
+
 	async function saveSettings() {
 		isSaving = true;
-		// Validate keys before save
 		const hasEleven = elevenLabsApiKey && elevenLabsApiKey.trim().length > 10;
 		const hasPexels = pexelsApiKey && pexelsApiKey.trim().length > 10;
 
@@ -133,13 +182,18 @@
 		localStorage.setItem('yt_deepseek_key', deepseekApiKey || 'sk-0802f45e1d4e41c8ae8d46396c97b746');
 		localStorage.setItem('yt_pexels_key', pexelsApiKey || '');
 		localStorage.setItem('yt_eleven_key', elevenLabsApiKey || '');
-		localStorage.setItem('yt_voice_id', selectedVoiceId || 'pNInz6obpgDQGcFmaJgB');
+		localStorage.setItem('yt_voice_provider', selectedVoiceEngine);
+		localStorage.setItem('yt_voice_id', selectedVoiceId || (selectedVoiceEngine === 'edge_tts' ? DEFAULT_EDGE_VOICE_ID : DEFAULT_ELEVEN_VOICE_ID));
+		
+		if (voiceMode !== 'custom_upload') {
+			voiceMode = selectedVoiceEngine;
+		}
+
 		if (audioEl) { audioEl.pause(); playingVoiceId = null; }
 		isSaving = false;
 		onClose();
 	}
 </script>
-
 
 <!-- Hidden audio element for sample preview -->
 <audio bind:this={audioEl} style="display:none"></audio>
@@ -151,8 +205,8 @@
 				<div class="header-title">
 					<Key size={20} color="var(--primary)" />
 					<div>
-						<h3>Konfigurasi API & Suara</h3>
-						<p>Kunci API disimpan secara aman di browser lokal Anda.</p>
+						<h3>Konfigurasi Voiceover & API Key</h3>
+						<p>Pilih mesin suara narasi dan atur kunci API lokal Anda.</p>
 					</div>
 				</div>
 				<button class="close-btn" onclick={onClose}>
@@ -161,151 +215,272 @@
 			</div>
 
 			<div class="modal-body">
-				<!-- Notice banner -->
-				<div class="notice-box">
-					<ShieldCheck size={18} color="var(--highlight-green)" />
-					<div class="notice-text">
-						<strong>Mode Fallback Siap Pakai:</strong> Tanpa API key, aplikasi tetap berfungsi menggunakan footage terkurasi dan suara sintetis otomatis.
-					</div>
-				</div>
-
-				<!-- Voice Selector -->
+				<!-- Engine Provider Switcher -->
 				<div class="field-group">
-					<label>Pilih Suara Narasi <span class="label-hint">— klik ▶ untuk preview sample</span></label>
-					<div class="voice-grid">
-						{#each availableVoices as voice}
-							<div
-								class="voice-card"
-								class:selected={selectedVoiceId === voice.id}
-								onclick={() => selectVoice(voice.id)}
-								role="button"
-								tabindex="0"
-								onkeydown={(e) => e.key === 'Enter' && selectVoice(voice.id)}
-							>
-								<div class="voice-card-top">
-									<span class="voice-emoji">{voice.emoji}</span>
-									<div class="voice-info">
-										<span class="voice-name">{voice.name}</span>
-										<span class="voice-cat">{voice.category}</span>
-									</div>
-									<div class="voice-actions">
-										{#if voice.sampleUrl}
-											<button
-												type="button"
-												class="preview-btn"
-												class:playing={playingVoiceId === voice.id}
-												onclick={(e) => { e.stopPropagation(); togglePreview(voice); }}
-												title="Preview suara"
-											>
-												{#if playingVoiceId === voice.id}
-													<Square size={12} />
-												{:else}
-													<Play size={12} />
-												{/if}
-											</button>
-										{/if}
-										{#if selectedVoiceId === voice.id}
-											<span class="selected-badge">
-												<Check size={11} />
-											</span>
-										{/if}
-									</div>
-								</div>
-								<p class="voice-desc">{voice.description}</p>
-								{#if playingVoiceId === voice.id}
-									<div class="waveform-bar">
-										<span></span><span></span><span></span><span></span><span></span>
-									</div>
-								{/if}
-							</div>
-						{/each}
-					</div>
-				</div>
-
-				<!-- ElevenLabs Key -->
-				<div class="field-group">
-					<div class="field-header">
-						<label for="eleven-key">ElevenLabs API Key
-							{#if voiceFetchStatus === 'ok'}
-								<span class="status-badge ok">✓ Terhubung — {availableVoices.length} suara dimuat</span>
-							{:else if voiceFetchStatus === 'error'}
-								<span class="status-badge err">✗ Key tidak valid</span>
-							{/if}
-						</label>
-						<a href="https://elevenlabs.io" target="_blank" rel="noreferrer" class="api-link">
-							<span>Dapatkan Key Gratis</span>
-							<ExternalLink size={12} />
-						</a>
-					</div>
-					<div class="key-input-wrapper">
-						<input
-							id="eleven-key"
-							type={showElevenKey ? 'text' : 'password'}
-							bind:value={elevenLabsApiKey}
-							placeholder="sk_..."
-						/>
-						<button type="button" class="eye-btn" onclick={() => showElevenKey = !showElevenKey}>
-							{#if showElevenKey}<EyeOff size={15} />{:else}<Eye size={15} />{/if}
-						</button>
-					</div>
-					<div class="key-actions">
+					<label>Pilihan Mesin Voiceover (TTS Engine)</label>
+					<div class="engine-tabs">
 						<button
 							type="button"
-							class="btn-test"
-							disabled={isFetchingVoices || !elevenLabsApiKey}
-							onclick={() => fetchElevenLabsVoices(elevenLabsApiKey)}
+							class="engine-tab"
+							class:active={selectedVoiceEngine === 'edge_tts'}
+							onclick={() => switchEngine('edge_tts')}
 						>
-							{#if isFetchingVoices}
-								<RefreshCw size={13} class="spin" /> Memuat voices & kuota...
-							{:else}
-								<Wifi size={13} /> Test, Muat Voices & Cek Kuota
-							{/if}
+							<div class="tab-label">
+								<span class="tab-icon">🌐</span>
+								<div class="tab-titles">
+									<strong>Microsoft Edge TTS</strong>
+									<span class="tab-sub">Gratis 100% · Tanpa Kuota</span>
+								</div>
+							</div>
+							<span class="pill-badge free">Rekomendasi</span>
 						</button>
-						<span class="field-hint">Eleven Multilingual v2 · word-level timestamps</span>
+
+						<button
+							type="button"
+							class="engine-tab"
+							class:active={selectedVoiceEngine === 'elevenlabs'}
+							onclick={() => switchEngine('elevenlabs')}
+						>
+							<div class="tab-label">
+								<span class="tab-icon">🤖</span>
+								<div class="tab-titles">
+									<strong>ElevenLabs AI</strong>
+									<span class="tab-sub">Ultra-Realistis (Butuh Key)</span>
+								</div>
+							</div>
+							<span class="pill-badge pro">Premium</span>
+						</button>
 					</div>
+				</div>
 
-					{#if elevenSubscription}
-						<div class="quota-card">
-							<div class="quota-header">
-								<div class="quota-tier-badge">
-									<span class="tier-dot"></span>
-									<span class="tier-name">{elevenSubscription.tier.toUpperCase()} PLAN</span>
-								</div>
-								<span class="reset-info">
-									{#if elevenSubscription.resetUnix}
-										Reset: {new Date(elevenSubscription.resetUnix * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
-									{:else}
-										Status: {elevenSubscription.status}
-									{/if}
-								</span>
-							</div>
-
-							<div class="quota-numbers">
-								<div class="quota-stat">
-									<span class="stat-label">Sisa Kuota Karakter</span>
-									<span class="stat-val highlight">{elevenSubscription.remainingCharacters.toLocaleString('id-ID')}</span>
-								</div>
-								<div class="quota-stat right">
-									<span class="stat-label">Terpakai / Limit</span>
-									<span class="stat-val">{elevenSubscription.characterCount.toLocaleString('id-ID')} / {elevenSubscription.characterLimit.toLocaleString('id-ID')}</span>
-								</div>
-							</div>
-
-							<div class="quota-bar-track">
-								<div 
-									class="quota-bar-fill" 
-									class:warning={elevenSubscription.percentUsed >= 70 && elevenSubscription.percentUsed < 90}
-									class:danger={elevenSubscription.percentUsed >= 90}
-									style="width: {elevenSubscription.percentUsed}%"
-								></div>
-							</div>
-							<div class="quota-footer">
-								<span>{elevenSubscription.percentUsed}% kuota terpakai</span>
-								<span>~{Math.floor(elevenSubscription.remainingCharacters / 750)} menit durasi narasi tersisa</span>
+				{#if selectedVoiceEngine === 'edge_tts'}
+					<!-- Edge TTS Voice Selector -->
+					<div class="field-group">
+						<div class="voice-header-row">
+							<label>Pilih Karakter Suara Edge TTS <span class="label-hint">— klik ▶ untuk preview sample</span></label>
+							<div class="filter-chips">
+								<button 
+									type="button" 
+									class="filter-chip" 
+									class:active={edgeVoiceFilter === 'all'} 
+									onclick={() => edgeVoiceFilter = 'all'}
+								>Semua ({EDGE_TTS_VOICES.length})</button>
+								<button 
+									type="button" 
+									class="filter-chip" 
+									class:active={edgeVoiceFilter === 'id'} 
+									onclick={() => edgeVoiceFilter = 'id'}
+								>🇮🇩 Indonesia (2)</button>
+								<button 
+									type="button" 
+									class="filter-chip" 
+									class:active={edgeVoiceFilter === 'local'} 
+									onclick={() => edgeVoiceFilter = 'local'}
+								>🇮🇩 Daerah (4)</button>
+								<button 
+									type="button" 
+									class="filter-chip" 
+									class:active={edgeVoiceFilter === 'en'} 
+									onclick={() => edgeVoiceFilter = 'en'}
+								>🇺🇸 English (4)</button>
 							</div>
 						</div>
-					{/if}
-				</div>
+
+						<div class="voice-grid">
+							{#each filteredEdgeVoices as voice}
+								<div
+									class="voice-card"
+									class:selected={selectedVoiceId === voice.id}
+									onclick={() => selectVoice(voice.id)}
+									role="button"
+									tabindex="0"
+									onkeydown={(e) => e.key === 'Enter' && selectVoice(voice.id)}
+								>
+									<div class="voice-card-top">
+										<span class="voice-emoji">{voice.emoji}</span>
+										<div class="voice-info">
+											<span class="voice-name">{voice.name}</span>
+											<span class="voice-cat">{voice.category}</span>
+										</div>
+										<div class="voice-actions">
+											{#if voice.sampleUrl}
+												<button
+													type="button"
+													class="preview-btn"
+													class:playing={playingVoiceId === voice.id}
+													onclick={(e) => { e.stopPropagation(); togglePreview(voice); }}
+													title="Preview sample suara"
+												>
+													{#if playingVoiceId === voice.id}
+														<Square size={12} />
+													{:else}
+														<Play size={12} />
+													{/if}
+												</button>
+											{/if}
+											{#if selectedVoiceId === voice.id}
+												<span class="selected-badge">
+													<Check size={11} />
+												</span>
+											{/if}
+										</div>
+									</div>
+									<p class="voice-desc">{voice.description}</p>
+									{#if playingVoiceId === voice.id}
+										<div class="waveform-bar">
+											<span></span><span></span><span></span><span></span><span></span>
+										</div>
+									{/if}
+								</div>
+							{/each}
+						</div>
+
+						<div class="edge-info-card">
+							<Sparkles size={16} color="var(--accent-cyan)" />
+							<div class="edge-info-text">
+								<strong>Keunggulan Edge TTS:</strong> 100% gratis tanpa API key, tanpa batasan kuota karakter, kualitas neural jernih, dan menyertakan metadata timestamp per-kata sehingga efek karaoke subtitle otomatis presisi 100%.
+							</div>
+						</div>
+					</div>
+				{:else}
+					<!-- ElevenLabs Section -->
+					<div class="field-group">
+						<label>Pilih Suara ElevenLabs <span class="label-hint">— klik ▶ untuk preview sample</span></label>
+						<div class="voice-grid">
+							{#each availableElevenVoices as voice}
+								<div
+									class="voice-card"
+									class:selected={selectedVoiceId === voice.id}
+									onclick={() => selectVoice(voice.id)}
+									role="button"
+									tabindex="0"
+									onkeydown={(e) => e.key === 'Enter' && selectVoice(voice.id)}
+								>
+									<div class="voice-card-top">
+										<span class="voice-emoji">{voice.emoji}</span>
+										<div class="voice-info">
+											<span class="voice-name">{voice.name}</span>
+											<span class="voice-cat">{voice.category}</span>
+										</div>
+										<div class="voice-actions">
+											{#if voice.sampleUrl}
+												<button
+													type="button"
+													class="preview-btn"
+													class:playing={playingVoiceId === voice.id}
+													onclick={(e) => { e.stopPropagation(); togglePreview(voice); }}
+													title="Preview suara"
+												>
+													{#if playingVoiceId === voice.id}
+														<Square size={12} />
+													{:else}
+														<Play size={12} />
+													{/if}
+												</button>
+											{/if}
+											{#if selectedVoiceId === voice.id}
+												<span class="selected-badge">
+													<Check size={11} />
+												</span>
+											{/if}
+										</div>
+									</div>
+									<p class="voice-desc">{voice.description}</p>
+									{#if playingVoiceId === voice.id}
+										<div class="waveform-bar">
+											<span></span><span></span><span></span><span></span><span></span>
+										</div>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					</div>
+
+					<!-- ElevenLabs Key -->
+					<div class="field-group">
+						<div class="field-header">
+							<label for="eleven-key">ElevenLabs API Key
+								{#if voiceFetchStatus === 'ok'}
+									<span class="status-badge ok">✓ Terhubung — {availableElevenVoices.length} suara dimuat</span>
+								{:else if voiceFetchStatus === 'error'}
+									<span class="status-badge err">✗ Key tidak valid</span>
+								{/if}
+							</label>
+							<a href="https://elevenlabs.io" target="_blank" rel="noreferrer" class="api-link">
+								<span>Dapatkan Key</span>
+								<ExternalLink size={12} />
+							</a>
+						</div>
+						<div class="key-input-wrapper">
+							<input
+								id="eleven-key"
+								type={showElevenKey ? 'text' : 'password'}
+								bind:value={elevenLabsApiKey}
+								placeholder="sk_..."
+							/>
+							<button type="button" class="eye-btn" onclick={() => showElevenKey = !showElevenKey}>
+								{#if showElevenKey}<EyeOff size={15} />{:else}<Eye size={15} />{/if}
+							</button>
+						</div>
+						<div class="key-actions">
+							<button
+								type="button"
+								class="btn-test"
+								disabled={isFetchingVoices || !elevenLabsApiKey}
+								onclick={() => fetchElevenLabsVoices(elevenLabsApiKey)}
+							>
+								{#if isFetchingVoices}
+									<RefreshCw size={13} class="spin" /> Memuat voices & kuota...
+								{:else}
+									<Wifi size={13} /> Test & Cek Kuota
+								{/if}
+							</button>
+							<span class="field-hint">Eleven Multilingual v2 · word-level timestamps</span>
+						</div>
+
+						{#if elevenSubscription}
+							<div class="quota-card">
+								<div class="quota-header">
+									<div class="quota-tier-badge">
+										<span class="tier-dot"></span>
+										<span class="tier-name">{elevenSubscription.tier.toUpperCase()} PLAN</span>
+									</div>
+									<span class="reset-info">
+										{#if elevenSubscription.resetUnix}
+											Reset: {new Date(elevenSubscription.resetUnix * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+										{:else}
+											Status: {elevenSubscription.status}
+										{/if}
+									</span>
+								</div>
+
+								<div class="quota-numbers">
+									<div class="quota-stat">
+										<span class="stat-label">Sisa Kuota Karakter</span>
+										<span class="stat-val highlight">{elevenSubscription.remainingCharacters.toLocaleString('id-ID')}</span>
+									</div>
+									<div class="quota-stat right">
+										<span class="stat-label">Terpakai / Limit</span>
+										<span class="stat-val">{elevenSubscription.characterCount.toLocaleString('id-ID')} / {elevenSubscription.characterLimit.toLocaleString('id-ID')}</span>
+									</div>
+								</div>
+
+								<div class="quota-bar-track">
+									<div 
+										class="quota-bar-fill" 
+										class:warning={elevenSubscription.percentUsed >= 70 && elevenSubscription.percentUsed < 90}
+										class:danger={elevenSubscription.percentUsed >= 90}
+										style="width: {elevenSubscription.percentUsed}%"
+									></div>
+								</div>
+								<div class="quota-footer">
+									<span>{elevenSubscription.percentUsed}% kuota terpakai</span>
+									<span>~{Math.floor(elevenSubscription.remainingCharacters / 750)} menit durasi narasi tersisa</span>
+								</div>
+							</div>
+						{/if}
+					</div>
+				{/if}
 
 				<!-- DeepSeek Key -->
 				<div class="field-group">
@@ -479,6 +654,139 @@
 		font-size: 0.72rem;
 		font-weight: 400;
 		color: var(--text-muted);
+	}
+
+	/* ── Engine Switcher Tabs ── */
+	.engine-tabs {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 10px;
+	}
+
+	.engine-tab {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 12px 14px;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1.5px solid var(--border-subtle);
+		border-radius: var(--radius-lg);
+		cursor: pointer;
+		transition: all 0.2s ease;
+		text-align: left;
+	}
+
+	.engine-tab:hover {
+		background: rgba(99, 102, 241, 0.06);
+		border-color: rgba(99, 102, 241, 0.35);
+	}
+
+	.engine-tab.active {
+		background: rgba(99, 102, 241, 0.12);
+		border-color: var(--primary);
+		box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+	}
+
+	.tab-label {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.tab-icon {
+		font-size: 1.35rem;
+		line-height: 1;
+	}
+
+	.tab-titles {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.tab-titles strong {
+		font-size: 0.85rem;
+		color: var(--text-primary);
+		font-weight: 600;
+	}
+
+	.tab-sub {
+		font-size: 0.7rem;
+		color: var(--text-muted);
+	}
+
+	.pill-badge {
+		font-size: 0.68rem;
+		font-weight: 700;
+		padding: 3px 8px;
+		border-radius: 9999px;
+		letter-spacing: 0.02em;
+	}
+
+	.pill-badge.free {
+		background: rgba(16, 185, 129, 0.16);
+		color: #34d399;
+		border: 1px solid rgba(16, 185, 129, 0.3);
+	}
+
+	.pill-badge.pro {
+		background: rgba(168, 85, 247, 0.16);
+		color: #c084fc;
+		border: 1px solid rgba(168, 85, 247, 0.3);
+	}
+
+	/* ── Voice Header & Filter Chips ── */
+	.voice-header-row {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.filter-chips {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+
+	.filter-chip {
+		font-size: 0.72rem;
+		padding: 4px 10px;
+		border-radius: 9999px;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid var(--border-subtle);
+		color: var(--text-secondary);
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.filter-chip:hover {
+		background: rgba(255, 255, 255, 0.08);
+		color: var(--text-primary);
+	}
+
+	.filter-chip.active {
+		background: var(--primary);
+		border-color: var(--primary);
+		color: #ffffff;
+		font-weight: 600;
+	}
+
+	.edge-info-card {
+		display: flex;
+		align-items: flex-start;
+		gap: 10px;
+		background: rgba(6, 182, 212, 0.08);
+		border: 1px solid rgba(6, 182, 212, 0.25);
+		border-radius: var(--radius-md);
+		padding: 10px 14px;
+		margin-top: 4px;
+	}
+
+	.edge-info-text {
+		font-size: 0.75rem;
+		color: #a5f3fc;
+		line-height: 1.4;
 	}
 
 	/* ── Voice Cards Grid ── */

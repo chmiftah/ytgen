@@ -440,9 +440,15 @@
 									</button>
 
 									{#if scene.voiceAudioUrl}
-										<span class="ai-voice-indicator" title="Audio disiapkan dari ElevenLabs AI">
-											🤖 ElevenLabs Ready ({(scene.audioDuration || 5).toFixed(1)}s)
-										</span>
+										{#if scene.voiceProvider === 'edge_tts'}
+											<span class="ai-voice-indicator edge" title="Audio disiapkan dari Microsoft Edge TTS (Gratis, Subtitle Sinkron)">
+												🌐 Edge TTS Ready ({(scene.audioDuration || 5).toFixed(1)}s)
+											</span>
+										{:else}
+											<span class="ai-voice-indicator" title="Audio disiapkan dari ElevenLabs AI">
+												🤖 ElevenLabs Ready ({(scene.audioDuration || 5).toFixed(1)}s)
+											</span>
+										{/if}
 									{/if}
 								</div>
 							{/if}
@@ -922,11 +928,17 @@
 
 	.ai-voice-indicator {
 		font-size: 0.7rem;
-		color: #38bdf8;
-		background: rgba(56, 189, 248, 0.1);
-		border: 1px solid rgba(56, 189, 248, 0.2);
+		color: #a855f7;
+		background: rgba(168, 85, 247, 0.1);
+		border: 1px solid rgba(168, 85, 247, 0.25);
 		padding: 2px 7px;
 		border-radius: 4px;
+	}
+
+	.ai-voice-indicator.edge {
+		color: #34d399;
+		background: rgba(16, 185, 129, 0.12);
+		border: 1px solid rgba(16, 185, 129, 0.3);
 	}
 
 	/* Custom Audio Pill */

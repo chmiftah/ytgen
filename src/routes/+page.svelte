@@ -14,6 +14,13 @@
 	import { findMatchingStockVideo } from '$lib/services/stockLibrary.js';
 	import { analyzeAudioFile } from '$lib/services/audioAnalysisService.js';
 	import { calculateAudioSyncedWordTimings, generateSyntheticWordTimings } from '$lib/services/subtitleService.js';
+	import { 
+		EDGE_TTS_VOICES, 
+		POPULAR_VOICES, 
+		DEFAULT_EDGE_VOICE_ID, 
+		DEFAULT_ELEVEN_VOICE_ID, 
+		isEdgeVoice 
+	} from '$lib/services/voiceService.js';
 
 	// Main App State
 	let script = $state(SCRIPT_PRESETS[0].text);
@@ -32,8 +39,8 @@
 	let deepseekApiKey = $state('sk-0802f45e1d4e41c8ae8d46396c97b746');
 	let pexelsApiKey = $state('');
 	let elevenLabsApiKey = $state('');
-	let selectedVoiceId = $state('pNInz6obpgDQGcFmaJgB'); // Adam
-	let voiceMode = $state('custom_upload'); // 'custom_upload' | 'elevenlabs'
+	let selectedVoiceId = $state(DEFAULT_EDGE_VOICE_ID); // Default to id-ID-GadisNeural
+	let voiceMode = $state('edge_tts'); // 'edge_tts' | 'custom_upload' | 'elevenlabs'
 
 	// Modals State
 	let showSettingsModal = $state(false);
@@ -53,7 +60,9 @@
 
 			pexelsApiKey = localStorage.getItem('yt_pexels_key') || '';
 			elevenLabsApiKey = localStorage.getItem('yt_eleven_key') || '';
-			selectedVoiceId = localStorage.getItem('yt_voice_id') || 'pNInz6obpgDQGcFmaJgB';
+			selectedVoiceId = localStorage.getItem('yt_voice_id') || DEFAULT_EDGE_VOICE_ID;
+			const savedMode = localStorage.getItem('yt_voice_mode');
+			if (savedMode) voiceMode = savedMode;
 
 			const savedKaraoke = localStorage.getItem('yt_karaoke_enabled');
 			if (savedKaraoke !== null) karaokeEnabled = savedKaraoke === 'true';
@@ -125,11 +134,29 @@
 					chosenFootage = findMatchingStockVideo(sc.visualQuery);
 				}
 
-				// 2. Fetch Voiceover / Audio Timestamps (ElevenLabs or fallback)
+				// 2. Fetch Voiceover / Audio Timestamps (Edge TTS, ElevenLabs, or fallback)
 				let voiceData = null;
 				elevenLabsError = '';
 
-				if (voiceMode === 'elevenlabs') {
+				if (voiceMode === 'edge_tts') {
+					try {
+						const ttsRes = await fetch('/api/edge-tts', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({
+								text: getSpokenVoiceoverText(sc),
+								voiceId: selectedVoiceId || DEFAULT_EDGE_VOICE_ID
+							})
+						});
+						voiceData = await ttsRes.json();
+						if (voiceData && !voiceData.success && voiceData.error) {
+							console.warn('Edge TTS error:', voiceData.error);
+							voiceData = null;
+						}
+					} catch (e) {
+						console.warn('Edge TTS API error, using fallback:', e);
+					}
+				} else if (voiceMode === 'elevenlabs') {
 					try {
 						const ttsRes = await fetch('/api/elevenlabs', {
 							method: 'POST',
@@ -156,8 +183,9 @@
 					sc.wordTimings = voiceData.wordTimings || [];
 					sc.audioDuration = voiceData.duration || sc.estimatedDuration;
 					sc.isCustomAudio = false;
+					sc.voiceProvider = voiceData.provider || (voiceMode === 'edge_tts' ? 'edge_tts' : 'elevenlabs');
 
-					// If real ElevenLabs audio, save to server disk to avoid huge JSON in render request
+					// If real audio, save to server disk to avoid huge JSON in render request
 					if (voiceData.isRealVoice && voiceData.audioUrl) {
 						try {
 							const saveRes = await fetch('/api/audio-save', {
@@ -179,7 +207,7 @@
 				} else {
 					// Custom upload mode baseline or fallback
 					sc.voiceAudioUrl = null;
-					sc.isCustomAudio = false;
+					sc.isCustomAudio = (voiceMode === 'custom_upload');
 					const words = (sc.narration || sc.words?.join(' ') || '').trim().split(/\s+/).filter(Boolean);
 					sc.wordTimings = generateSyntheticWordTimings(words, sc.estimatedDuration, !!sc.chapter);
 				}
@@ -213,20 +241,31 @@
 		if (!targetScene) return;
 
 		try {
-			const res = await fetch('/api/elevenlabs', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
+			const isEdge = (voiceMode === 'edge_tts' || targetScene.voiceProvider === 'edge_tts' || isEdgeVoice(selectedVoiceId));
+			const endpoint = isEdge ? '/api/edge-tts' : '/api/elevenlabs';
+			const payload = isEdge
+				? {
+					text: getSpokenVoiceoverText(targetScene),
+					voiceId: selectedVoiceId || DEFAULT_EDGE_VOICE_ID
+				}
+				: {
 					text: getSpokenVoiceoverText(targetScene),
 					voiceId: selectedVoiceId,
 					apiKey: elevenLabsApiKey
-				})
+				};
+
+			const res = await fetch(endpoint, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload)
 			});
 			const data = await res.json();
 			if (data.success) {
 				targetScene.voiceAudioUrl = data.audioUrl;
 				targetScene.wordTimings = data.wordTimings || [];
 				targetScene.audioDuration = data.duration || targetScene.estimatedDuration;
+				targetScene.voiceProvider = data.provider || (isEdge ? 'edge_tts' : 'elevenlabs');
+				targetScene.isCustomAudio = false;
 
 				if (data.isRealVoice && data.audioUrl) {
 					try {
@@ -405,13 +444,25 @@
 			<!-- Mode Voiceover Selector -->
 			<div class="voice-mode-banner glass-panel">
 				<div class="mode-info">
-					<span class="mode-icon">🎙️</span>
+					<span class="mode-icon">
+						{#if voiceMode === 'edge_tts'}
+							🌐
+						{:else if voiceMode === 'custom_upload'}
+							🎙️
+						{:else}
+							🤖
+						{/if}
+					</span>
 					<div>
 						<div class="mode-title">Mode Voiceover & Narasi:</div>
 						<div class="mode-desc">
-							{voiceMode === 'custom_upload'
-								? 'Upload file audio rekaman sendiri atau rekam langsung via mic per adegan (ElevenLabs dimatikan, hemat kuota 100%).'
-								: 'Generate suara otomatis menggunakan ElevenLabs AI (membutuhkan kuota karakter ElevenLabs).'}
+							{#if voiceMode === 'edge_tts'}
+								Microsoft Edge TTS (100% Gratis, Tanpa Kuota, Suara Neural Indonesia & Global, Subtitle Sinkron Presisi).
+							{:else if voiceMode === 'custom_upload'}
+								Upload file audio rekaman sendiri atau rekam langsung via mic per adegan (Tanpa kuota, 100% suara asli Anda).
+							{:else}
+								Generate suara otomatis menggunakan ElevenLabs AI (Membutuhkan API key & kuota karakter ElevenLabs).
+							{/if}
 						</div>
 					</div>
 				</div>
@@ -420,23 +471,61 @@
 					<button 
 						type="button" 
 						class="mode-pill-btn" 
+						class:active={voiceMode === 'edge_tts'} 
+						onclick={() => { voiceMode = 'edge_tts'; if (!isEdgeVoice(selectedVoiceId)) selectedVoiceId = DEFAULT_EDGE_VOICE_ID; }}
+					>
+						<span>🌐 Edge TTS</span>
+						<span class="badge-free">Gratis 100%</span>
+					</button>
+
+					<button 
+						type="button" 
+						class="mode-pill-btn" 
 						class:active={voiceMode === 'custom_upload'} 
 						onclick={() => voiceMode = 'custom_upload'}
 					>
 						<span>🎧 Rekaman Sendiri</span>
-						<span class="badge-free">Hemat Kuota 100%</span>
+						<span class="badge-free">Mic / Upload</span>
 					</button>
 
 					<button 
 						type="button" 
 						class="mode-pill-btn" 
 						class:active={voiceMode === 'elevenlabs'} 
-						onclick={() => voiceMode = 'elevenlabs'}
+						onclick={() => { voiceMode = 'elevenlabs'; if (isEdgeVoice(selectedVoiceId)) selectedVoiceId = DEFAULT_ELEVEN_VOICE_ID; }}
 					>
 						<span>🤖 ElevenLabs AI</span>
-						<span class="badge-ai">Otomatis</span>
+						<span class="badge-ai">Premium</span>
 					</button>
 				</div>
+
+				{#if voiceMode === 'edge_tts'}
+					<div class="quick-voice-bar">
+						<span class="quick-voice-label">Pilihan Suara Edge TTS:</span>
+						<div class="quick-voice-chips">
+							{#each EDGE_TTS_VOICES.slice(0, 6) as v}
+								<button
+									type="button"
+									class="quick-voice-chip"
+									class:active={selectedVoiceId === v.id}
+									onclick={() => selectedVoiceId = v.id}
+									title="{v.name} – {v.description}"
+								>
+									<span>{v.emoji} {v.name.split(' (')[0]}</span>
+									<span class="chip-gender">{v.gender === 'Female' ? '♀' : '♂'}</span>
+								</button>
+							{/each}
+							<button
+								type="button"
+								class="quick-voice-chip more-btn"
+								onclick={() => showSettingsModal = true}
+								title="Buka pengaturan suara lengkap"
+							>
+								<span>Semua ({EDGE_TTS_VOICES.length}) ⚙️</span>
+							</button>
+						</div>
+					</div>
+				{/if}
 			</div>
 
 			<SceneTimeline
@@ -515,6 +604,7 @@
 		bind:pexelsApiKey={pexelsApiKey}
 		bind:elevenLabsApiKey={elevenLabsApiKey}
 		bind:selectedVoiceId={selectedVoiceId}
+		bind:voiceMode={voiceMode}
 		onClose={() => showSettingsModal = false}
 	/>
 
@@ -741,6 +831,76 @@
 		border-radius: 4px;
 		background: rgba(56, 189, 248, 0.2);
 		color: #38bdf8;
+	}
+
+	/* Quick Voice Selector Chips */
+	.quick-voice-bar {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding-top: 10px;
+		margin-top: 6px;
+		border-top: 1px solid rgba(255, 255, 255, 0.06);
+		flex-wrap: wrap;
+	}
+
+	.quick-voice-label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--text-muted);
+		flex-shrink: 0;
+	}
+
+	.quick-voice-chips {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+
+	.quick-voice-chip {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		padding: 4px 10px;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid var(--border-subtle);
+		border-radius: 9999px;
+		font-size: 0.74rem;
+		color: var(--text-secondary);
+		cursor: pointer;
+		transition: all 0.18s ease;
+	}
+
+	.quick-voice-chip:hover {
+		background: rgba(255, 255, 255, 0.08);
+		border-color: rgba(255, 255, 255, 0.2);
+		color: var(--text-primary);
+	}
+
+	.quick-voice-chip.active {
+		background: rgba(16, 185, 129, 0.15);
+		border-color: #10b981;
+		color: #34d399;
+		font-weight: 600;
+		box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+	}
+
+	.quick-voice-chip.more-btn {
+		background: rgba(99, 102, 241, 0.1);
+		border-color: rgba(99, 102, 241, 0.25);
+		color: #a5b4fc;
+	}
+
+	.quick-voice-chip.more-btn:hover {
+		background: rgba(99, 102, 241, 0.2);
+		color: #ffffff;
+	}
+
+	.chip-gender {
+		font-size: 0.75rem;
+		opacity: 0.7;
 	}
 
 	@media (max-width: 1100px) {
