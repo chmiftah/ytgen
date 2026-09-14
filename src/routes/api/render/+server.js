@@ -270,7 +270,7 @@ export async function POST({ request }) {
 
 			await fs.promises.mkdir(tempDir, { recursive: true });
 			await fs.promises.mkdir(path.resolve('./static/renders'), { recursive: true });
-			await fs.promises.mkdir(footageCacheDir, { recursive: true });
+			await fs.promises.mkdir(footageLibraryDir, { recursive: true });
 
 			// =========================================================================
 			// PHASE 1: Parallel Footage Ingestion & Audio Prep (Concurrency = 4)
