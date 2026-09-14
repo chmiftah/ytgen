@@ -1,53 +1,69 @@
 export const AUDIO_EFFECT_PRESETS = [
 	{
+		id: 'movie_trailer',
+		name: 'Trailer Bioskop (Titan Narrator)',
+		emoji: '🎬',
+		description: 'Suara dewa bioskop IMAX: nada sangat berat (-55Hz), tempo tenang (-10%), sub-bass 75Hz menggelegar & surround stereo',
+		tag: 'Epic Sinematik',
+		edgePitch: '-55Hz',
+		edgeRate: '-10%',
+		sampleUrl: '/voice-samples/effect-movie_trailer.mp3',
+		ffmpegFilter: 'bass=g=12:f=75:w=0.5,equalizer=f=3000:t=q:w=1.5:g=2,extrastereo=m=1.35,acompressor=threshold=-18dB:ratio=4:attack=5:release=80'
+	},
+	{
+		id: 'cyber_jarvis',
+		name: 'Cyberpunk AI (Jarvis Sci-Fi)',
+		emoji: '🤖',
+		description: 'Robot AI futuristik dengan metallic flanger resonance & artikulasi jernih ala Tony Stark / sci-fi movie',
+		tag: 'Sci-Fi AI',
+		edgePitch: '-8Hz',
+		edgeRate: '-2%',
+		sampleUrl: '/voice-samples/effect-cyber_jarvis.mp3',
+		ffmpegFilter: 'flanger=delay=3:depth=2:regen=25:width=80:speed=0.6,equalizer=f=3200:t=q:w=1:g=3,acompressor=threshold=-14dB:ratio=3'
+	},
+	{
+		id: 'creepy_horror',
+		name: 'Horor Gaib (Creepypasta)',
+		emoji: '💀',
+		description: 'Sangat berat & lambat (-75Hz, -12%) dengan gema dingin goa misterius (cold cavernous reverb)',
+		tag: 'Horor Ekstrem',
+		edgePitch: '-75Hz',
+		edgeRate: '-12%',
+		sampleUrl: '/voice-samples/effect-creepy_horror.mp3',
+		ffmpegFilter: 'bass=g=12:f=70:w=0.4,aecho=0.8:0.75:80|160:0.35|0.25,volume=1.2'
+	},
+	{
+		id: 'storyteller',
+		name: 'Storyteller Kuno (Kakek Bijak)',
+		emoji: '📜',
+		description: 'Intonasi mendongeng berwibawa, hangat & berkarakter untuk cerita legenda, sejarah & hikayat rakyat',
+		tag: 'Storytelling',
+		edgePitch: '-30Hz',
+		edgeRate: '-8%',
+		sampleUrl: '/voice-samples/effect-storyteller.mp3',
+		ffmpegFilter: 'bass=g=8:f=100:w=0.5,equalizer=f=2400:t=q:w=1.2:g=-2,aecho=0.7:0.5:40:0.2,volume=1.3'
+	},
+	{
 		id: 'studio_podcast',
-		name: 'Studio Podcast (SM7B)',
+		name: 'Studio Broadcast Pro (SM7B)',
 		emoji: '🎙️',
-		description: 'Bass hangat (+5dB), vokal tebal, dan kompresi punchy ala mikrofon radio broadcast',
-		tag: 'Rekomendasi',
-		edgePitch: '-4Hz',
-		edgeRate: '0%',
-		ffmpegFilter: 'bass=g=5:f=110:w=0.6,equalizer=f=3200:t=q:w=1.2:g=2,acompressor=threshold=-16dB:ratio=3.5:attack=5:release=50'
+		description: 'Vokal tebal, empuk, dan kompresi punchy Shure SM7B ala ruang rekaman podcast profesional',
+		tag: 'Podcast & Edukasi',
+		edgePitch: '-10Hz',
+		edgeRate: '-2%',
+		sampleUrl: '/voice-samples/effect-studio_podcast.mp3',
+		ffmpegFilter: 'bass=g=8:f=100:w=0.6,equalizer=f=3200:t=q:w=1.2:g=2.5,acompressor=threshold=-16dB:ratio=4:attack=5:release=50'
 	},
 	{
-		id: 'deep_baritone',
-		name: 'Deep Baritone (Suara Berat)',
-		emoji: '🗿',
-		description: 'Nada lebih rendah & berat, berwibawa dan maskulin untuk dokumenter & motivasi',
-		tag: 'Dokumenter',
-		edgePitch: '-16Hz',
-		edgeRate: '-3%',
-		ffmpegFilter: 'bass=g=7:f=100:w=0.5,equalizer=f=2800:t=q:w=1.2:g=1.5,acompressor=threshold=-18dB:ratio=4:attack=5:release=50'
-	},
-	{
-		id: 'dark_mystery',
-		name: 'Dark Mystery (Horor & Kasus)',
-		emoji: '🕵️',
-		description: 'Berat, dingin, dengan reverb tipis mencekam untuk kisah misteri & investigasi',
-		tag: 'Misteri',
-		edgePitch: '-24Hz',
-		edgeRate: '-6%',
-		ffmpegFilter: 'bass=g=8:f=90:w=0.5,aecho=0.8:0.7:50:0.25'
-	},
-	{
-		id: 'crisp_viral',
-		name: 'Crisp Viral (Renyah & Cepat)',
-		emoji: '⚡',
-		description: 'Treble renyah, kompresi rapat, tempo sedikit lebih energik untuk YouTube modern',
-		tag: 'Viral',
-		edgePitch: '+4Hz',
-		edgeRate: '+4%',
-		ffmpegFilter: 'equalizer=f=4000:t=q:w=1.5:g=3,acompressor=threshold=-14dB:ratio=4:attack=2:release=40'
-	},
-	{
-		id: 'retro_radio',
-		name: 'Vintage Radio / Walkie-Talkie',
+		id: 'tactical_radio',
+		name: 'Radio Taktis (Intercom Militer)',
 		emoji: '📻',
-		description: 'Efek suara transmisi radio jadul / walkie-talkie militer (bandpass filter)',
-		tag: 'Kilas Balik',
+		description: 'Transmisi walkie-talkie militer / pilot kokpit dengan bandpass filter dan saturasi analog',
+		tag: 'Taktis Militer',
 		edgePitch: '0Hz',
 		edgeRate: '0%',
-		ffmpegFilter: 'highpass=f=450,lowpass=f=3200,volume=1.8'
+		sampleUrl: '/voice-samples/effect-tactical_radio.mp3',
+		ffmpegFilter: 'highpass=f=450,lowpass=f=2600,acrusher=bits=10:mode=lin:aa=1,volume=2.2'
 	},
 	{
 		id: 'natural',
@@ -57,11 +73,12 @@ export const AUDIO_EFFECT_PRESETS = [
 		tag: 'Bawaan',
 		edgePitch: '0Hz',
 		edgeRate: '0%',
+		sampleUrl: '',
 		ffmpegFilter: ''
 	}
 ];
 
-export const DEFAULT_AUDIO_EFFECT_ID = 'studio_podcast';
+export const DEFAULT_AUDIO_EFFECT_ID = 'movie_trailer';
 
 export function getAudioEffectById(id) {
 	return AUDIO_EFFECT_PRESETS.find((e) => e.id === id) || AUDIO_EFFECT_PRESETS[0];

@@ -1,5 +1,5 @@
 <script>
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import Navbar from '$lib/components/Navbar.svelte';
 	import ScriptEditor from '$lib/components/ScriptEditor.svelte';
 	import SceneTimeline from '$lib/components/SceneTimeline.svelte';
@@ -47,7 +47,38 @@
 	let elevenLabsApiKey = $state('');
 	let selectedVoiceId = $state(DEFAULT_EDGE_VOICE_ID); // Default to id-ID-GadisNeural
 	let voiceMode = $state('edge_tts'); // 'edge_tts' | 'custom_upload' | 'elevenlabs'
-	let selectedAudioEffect = $state(DEFAULT_AUDIO_EFFECT_ID); // Default: Studio Podcast Warmth/Bass/Compressor
+	let selectedAudioEffect = $state(DEFAULT_AUDIO_EFFECT_ID); // Default: Epic Movie Trailer
+
+	// Audio Effect Audition Preview
+	let previewAudioEl = null;
+	let playingEffectPreviewId = $state(null);
+
+	function toggleEffectPreview(eff, e) {
+		if (e) e.stopPropagation();
+		if (!eff.sampleUrl) return;
+		if (playingEffectPreviewId === eff.id) {
+			if (previewAudioEl) {
+				previewAudioEl.pause();
+				previewAudioEl.currentTime = 0;
+			}
+			playingEffectPreviewId = null;
+			return;
+		}
+		if (previewAudioEl) {
+			previewAudioEl.pause();
+		}
+		previewAudioEl = new Audio(eff.sampleUrl);
+		previewAudioEl.onended = () => { playingEffectPreviewId = null; };
+		previewAudioEl.play().catch(() => {});
+		playingEffectPreviewId = eff.id;
+	}
+
+	onDestroy(() => {
+		if (previewAudioEl) {
+			previewAudioEl.pause();
+			previewAudioEl = null;
+		}
+	});
 
 	// Modals State
 	let showSettingsModal = $state(false);
@@ -720,19 +751,32 @@
 					</div>
 					<div class="quick-effect-chips">
 						{#each AUDIO_EFFECT_PRESETS as eff}
-							<button
-								type="button"
+							<div
 								class="quick-effect-chip"
 								class:active={selectedAudioEffect === eff.id}
 								onclick={() => handleApplyEffectToAll(eff.id)}
 								title="{eff.name}: {eff.description}"
+								role="button"
+								tabindex="0"
+								onkeydown={(e) => e.key === 'Enter' && handleApplyEffectToAll(eff.id)}
 							>
 								<span class="chip-eff-emoji">{eff.emoji}</span>
 								<span class="chip-eff-name">{eff.name.split(' (')[0]}</span>
+								{#if eff.sampleUrl}
+									<button
+										type="button"
+										class="chip-preview-play-btn"
+										class:playing={playingEffectPreviewId === eff.id}
+										onclick={(e) => toggleEffectPreview(eff, e)}
+										title={playingEffectPreviewId === eff.id ? 'Stop preview' : 'Dengarkan contoh karakter suara ini'}
+									>
+										{playingEffectPreviewId === eff.id ? '⏹' : '▶'}
+									</button>
+								{/if}
 								{#if eff.tag}
 									<span class="chip-eff-tag">{eff.tag}</span>
 								{/if}
-							</button>
+							</div>
 						{/each}
 					</div>
 				</div>
@@ -1190,6 +1234,35 @@
 
 	.chip-eff-name {
 		font-size: 0.74rem;
+	}
+
+	.chip-preview-play-btn {
+		width: 17px;
+		height: 17px;
+		border-radius: 50%;
+		border: none;
+		background: rgba(255, 255, 255, 0.15);
+		color: #fff;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.55rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 0;
+		transition: all 0.15s ease;
+	}
+
+	.chip-preview-play-btn:hover {
+		background: var(--accent-cyan);
+		color: #000;
+		transform: scale(1.18);
+	}
+
+	.chip-preview-play-btn.playing {
+		background: #f43f5e;
+		color: #fff;
+		box-shadow: 0 0 8px #f43f5e;
 	}
 
 	.chip-eff-tag {

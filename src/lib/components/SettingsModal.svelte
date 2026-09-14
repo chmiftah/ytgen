@@ -512,11 +512,28 @@
 										<span class="effect-name">{eff.name}</span>
 										<span class="effect-tag">{eff.tag}</span>
 									</div>
-									{#if selectedAudioEffect === eff.id}
-										<span class="selected-badge">
-											<Check size={11} />
-										</span>
-									{/if}
+									<div class="effect-card-actions">
+										{#if eff.sampleUrl}
+											<button
+												type="button"
+												class="btn-voice-preview"
+												class:playing={playingVoiceId === eff.id}
+												onclick={(e) => { e.stopPropagation(); togglePreview(eff); }}
+												title={playingVoiceId === eff.id ? 'Berhenti' : 'Dengarkan contoh karakter suara ini'}
+											>
+												{#if playingVoiceId === eff.id}
+													<Square size={11} fill="currentColor" />
+												{:else}
+													<Play size={11} fill="currentColor" />
+												{/if}
+											</button>
+										{/if}
+										{#if selectedAudioEffect === eff.id}
+											<span class="selected-badge">
+												<Check size={11} />
+											</span>
+										{/if}
+									</div>
 								</div>
 								<p class="effect-desc">{eff.description}</p>
 							</div>
@@ -906,6 +923,39 @@
 		color: var(--text-muted);
 		line-height: 1.35;
 		margin: 0;
+	}
+
+	.effect-card-actions {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-shrink: 0;
+	}
+
+	.btn-voice-preview {
+		width: 26px;
+		height: 26px;
+		border-radius: 50%;
+		background: rgba(6, 182, 212, 0.15);
+		border: 1px solid rgba(6, 182, 212, 0.3);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--accent-cyan);
+		cursor: pointer;
+		transition: all 0.18s ease;
+	}
+
+	.btn-voice-preview:hover {
+		background: rgba(6, 182, 212, 0.3);
+		transform: scale(1.1);
+	}
+
+	.btn-voice-preview.playing {
+		background: #f43f5e;
+		border-color: #f43f5e;
+		color: white;
+		box-shadow: 0 0 10px rgba(244, 63, 94, 0.5);
 	}
 
 	.voice-card {

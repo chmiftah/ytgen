@@ -365,6 +365,24 @@
 														</div>
 														<div class="opt-desc">{eff.description}</div>
 													</div>
+													{#if eff.sampleUrl}
+														<button
+															type="button"
+															class="opt-preview-btn"
+															class:playing={previewPlayingIndex === `eff-${eff.id}`}
+															onclick={(e) => {
+																e.stopPropagation();
+																togglePreviewAudio(`eff-${eff.id}`, eff.sampleUrl);
+															}}
+															title={previewPlayingIndex === `eff-${eff.id}` ? 'Berhenti' : 'Dengarkan contoh karakter suara ini'}
+														>
+															{#if previewPlayingIndex === `eff-${eff.id}`}
+																<Square size={10} fill="currentColor" />
+															{:else}
+																<Play size={10} fill="currentColor" />
+															{/if}
+														</button>
+													{/if}
 													{#if (scene.audioEffect || selectedAudioEffect) === eff.id}
 														<CheckCircle2 size={13} color="var(--accent-cyan)" />
 													{/if}
@@ -932,6 +950,35 @@
 		color: var(--text-muted);
 		margin-top: 2px;
 		line-height: 1.3;
+	}
+
+	.opt-preview-btn {
+		width: 22px;
+		height: 22px;
+		border-radius: 50%;
+		border: 1px solid rgba(6, 182, 212, 0.35);
+		background: rgba(6, 182, 212, 0.15);
+		color: var(--accent-cyan);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		padding: 0;
+		flex-shrink: 0;
+		transition: all 0.15s ease;
+	}
+
+	.opt-preview-btn:hover {
+		background: var(--accent-cyan);
+		color: #000;
+		transform: scale(1.15);
+	}
+
+	.opt-preview-btn.playing {
+		background: #f43f5e;
+		border-color: #f43f5e;
+		color: #fff;
+		box-shadow: 0 0 8px #f43f5e;
 	}
 
 	.dropdown-foot {
