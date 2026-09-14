@@ -2,7 +2,7 @@
 	import { SCRIPT_PRESETS } from '$lib/services/scriptAnalyzer.js';
 	import { Wand2, Sparkles, Clock, FileText, RefreshCw } from 'lucide-svelte';
 
-	let { script = $bindable(''), onGenerate, isGenerating = false } = $props();
+	let { script = $bindable(''), onGenerate, isGenerating = false, onOpenScriptGenerator } = $props();
 
 	let wordCount = $derived(script.trim() ? script.trim().split(/\s+/).length : 0);
 	let estimatedSeconds = $derived(Math.round(wordCount * 0.45));
@@ -22,15 +22,22 @@
 			</div>
 			<div>
 				<h2 class="panel-title">1. Masukkan Naskah YouTube</h2>
-				<p class="panel-desc">Ketik atau tempel naskah video Anda. Sistem akan memotong per adegan, mencari video Pexels, dan menghasilkan voiceover.</p>
+				<p class="panel-desc">Ketik, tempel, atau generate naskah otomatis dengan DeepSeek AI. Sistem akan membagi bab dan footage.</p>
 			</div>
 		</div>
 
 		<div class="stats-bar">
-			<div class="stat-item ai-badge">
-				<Sparkles size={13} color="var(--accent-cyan)" />
-				<span>DeepSeek AI Active</span>
-			</div>
+			{#if onOpenScriptGenerator}
+				<button 
+					type="button" 
+					class="btn-ai-header-trigger"
+					onclick={onOpenScriptGenerator}
+					title="Buka AI Script Generator"
+				>
+					<Sparkles size={14} color="#38bdf8" />
+					<span>✨ Tulis Naskah AI (DeepSeek)</span>
+				</button>
+			{/if}
 			<div class="stat-item">
 				<FileText size={14} />
 				<span>{wordCount} Kata</span>
@@ -44,7 +51,9 @@
 
 	<!-- Presets -->
 	<div class="preset-section">
-		<span class="preset-label">Contoh Naskah Siap Pakai:</span>
+		<div class="preset-top-row">
+			<span class="preset-label">Contoh Naskah Siap Pakai:</span>
+		</div>
 		<div class="preset-chips">
 			{#each SCRIPT_PRESETS as preset}
 				<button 
@@ -155,17 +164,28 @@
 		font-weight: 500;
 	}
 
-	.ai-badge {
-		border-color: rgba(6, 182, 212, 0.35);
-		background: rgba(6, 182, 212, 0.08);
-		color: var(--accent-cyan);
+	.btn-ai-header-trigger {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 14px;
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(6, 182, 212, 0.2) 100%);
+		border: 1px solid rgba(56, 189, 248, 0.45);
+		border-radius: var(--radius-md);
+		font-size: 0.8rem;
 		font-weight: 600;
-		animation: pulse-badge 2.5s ease-in-out infinite;
+		color: #e0f2fe;
+		cursor: pointer;
+		transition: all 0.25s ease;
+		box-shadow: 0 0 15px rgba(6, 182, 212, 0.2);
 	}
 
-	@keyframes pulse-badge {
-		0%, 100% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0); }
-		50% { box-shadow: 0 0 8px 2px rgba(6, 182, 212, 0.2); }
+	.btn-ai-header-trigger:hover {
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.4) 0%, rgba(6, 182, 212, 0.35) 100%);
+		border-color: #38bdf8;
+		transform: translateY(-1px);
+		box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+		color: #ffffff;
 	}
 
 	.preset-section {

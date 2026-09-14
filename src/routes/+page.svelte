@@ -8,6 +8,7 @@
 	import SubtitleStyleModal from '$lib/components/SubtitleStyleModal.svelte';
 	import SettingsModal from '$lib/components/SettingsModal.svelte';
 	import ExportModal from '$lib/components/ExportModal.svelte';
+	import ScriptGeneratorModal from '$lib/components/ScriptGeneratorModal.svelte';
 
 	import { analyzeScript, SCRIPT_PRESETS, getSpokenVoiceoverText } from '$lib/services/scriptAnalyzer.js';
 	import { findMatchingStockVideo } from '$lib/services/stockLibrary.js';
@@ -36,6 +37,7 @@
 	let showSubtitleModal = $state(false);
 	let showExportModal = $state(false);
 	let showFootageModal = $state(false);
+	let showScriptGeneratorModal = $state(false);
 	let footageSceneIndex = $state(0);
 	let elevenLabsError = $state(''); // Show ElevenLabs errors to user
 
@@ -287,6 +289,7 @@
 				bind:script={script}
 				onGenerate={generateWorkflow}
 				isGenerating={isGenerating}
+				onOpenScriptGenerator={() => showScriptGeneratorModal = true}
 			/>
 
 			<SceneTimeline
@@ -329,6 +332,15 @@
 	</main>
 
 	<!-- Modals -->
+	<ScriptGeneratorModal
+		isOpen={showScriptGeneratorModal}
+		deepseekApiKey={deepseekApiKey}
+		onSelectScript={(newScript) => {
+			script = newScript;
+		}}
+		onClose={() => showScriptGeneratorModal = false}
+	/>
+
 	<FootagePickerModal
 		isOpen={showFootageModal}
 		sceneIndex={footageSceneIndex}
