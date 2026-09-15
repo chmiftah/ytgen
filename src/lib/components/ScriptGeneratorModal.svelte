@@ -4,14 +4,25 @@
 	let {
 		isOpen = false,
 		deepseekApiKey = '',
+		initialTopic = '',
+		initialHookStyle = '',
 		onSelectScript,
+		onOpenTopicGenerator,
 		onClose
 	} = $props();
 
 	let topic = $state('');
 	let durationTarget = $state('medium'); // 'short' | 'medium' | 'long'
-	let tone = $state('documentary'); // 'documentary' | 'casual' | 'business' | 'mystery'
+	let tone = $state('storytelling'); // 'storytelling' | 'casual' | 'mystery' | 'business'
+	let hookStyle = $state('curiosity_gap'); // 'curiosity_gap' | 'high_stakes' | 'mystery_investigative' | 'in_media_res' | 'provocative_question'
 	let customInstructions = $state('');
+
+	$effect(() => {
+		if (isOpen && initialTopic) {
+			topic = initialTopic;
+			if (initialHookStyle) hookStyle = initialHookStyle;
+		}
+	});
 
 	let generatedScript = $state('');
 	let isGenerating = $state(false);
@@ -20,11 +31,11 @@
 	let streamOutputEl = $state(null);
 
 	const QUICK_TOPICS = [
-		{ label: '🤖 Revolusi AGI', prompt: 'Masa Depan Kecerdasan Buatan: Mengapa AGI Akan Mengubah Segalanya dalam 5 Tahun ke Depan' },
-		{ label: '🧠 Rahasia Dopamin', prompt: 'Psikologi Kebiasaan: Cara Melepaskan Diri dari Perangkap Dopamin Murah dan Menemukan Fokus Mendalam' },
-		{ label: '💰 Jebakan Finansial', prompt: 'Psikologi Uang: 3 Kesalahan Finansial Fatal yang Sering Dilakukan Orang Berpendidikan Tinggi' },
-		{ label: '🌌 Misteri Alam Semesta', prompt: 'Di Luar Batas Kosmos: Penemuan Terbaru Teleskop Luar Angkasa yang Membingungkan Fisikawan' },
-		{ label: '🏛️ Sejarah Peradaban', prompt: 'Pelajaran Keruntuhan Peradaban Kuno: Mengapa Kerajaan Hebat Selalu Hancur dari Dalam' }
+		{ label: '🤖 Eksperimen Lab AI', prompt: 'Cerita di Balik Pintu Lab AI: Mengapa Para Peneliti Top Mendadak Resign dan Bikin Publik Penasaran' },
+		{ label: '🧠 Jebakan Dopamin', prompt: 'Ilusi Produktivitas: Cara Halus Algoritma Medsos Bikin Otak Kita Kecanduan Tanpa Pernah Kita Sadari' },
+		{ label: '💰 Jebakan Finansial', prompt: 'Psikologi Uang: Alasan Kenapa Kerja Keras Banting Tulang Saja Seringkali Bikin Orang Muter-Muter di Tempat yang Sama' },
+		{ label: '🌌 Misteri Luar Angkasa', prompt: 'Sinyal Ganjil dari Luar Angkasa: Penemuan Aneh Teleskop James Webb yang Bikin Para Astronom Garuk-Garuk Kepala' },
+		{ label: '⏳ Pola Sejarah Menarik', prompt: 'Pola Aneh Sejarah: 3 Tanda Tak Terduga Sebelum Peradaban Besar Berubah Total yang Mulai Kelihatan Sekarang' }
 	];
 
 	let wordCount = $derived(generatedScript.trim() ? generatedScript.trim().split(/\s+/).length : 0);
@@ -51,6 +62,7 @@
 					topic: topic.trim(),
 					durationTarget,
 					tone,
+					hookStyle,
 					customInstructions: customInstructions.trim(),
 					apiKey: deepseekApiKey
 				})
@@ -145,10 +157,23 @@
 				<div class="settings-col">
 					<!-- Topic Input -->
 					<div class="form-group">
-						<label for="script-topic">
-							<span>Topik / Judul Naskah</span>
-							<span class="required">*</span>
-						</label>
+						<div class="topic-label-header">
+							<label for="script-topic">
+								<span>Topik / Judul Naskah</span>
+								<span class="required">*</span>
+							</label>
+							{#if onOpenTopicGenerator}
+								<button
+									type="button"
+									class="btn-open-topic-finder"
+									onclick={onOpenTopicGenerator}
+									title="Buka Generator Ide Topik Viral"
+								>
+									<Lightbulb size={13} color="#facc15" />
+									<span>💡 Buntu ide? Cari Topik Viral</span>
+								</button>
+							{/if}
+						</div>
 						<textarea
 							id="script-topic"
 							class="topic-textarea"
@@ -174,6 +199,88 @@
 									{item.label}
 								</button>
 							{/each}
+						</div>
+					</div>
+
+					<!-- Viral Hook Framework Selector -->
+					<div class="form-group">
+						<div class="hook-header-row">
+							<label>
+								<Sparkles size={13} color="#f59e0b" />
+								<span>Formula Hook Pembuka (0–15 Detik Pertama)</span>
+							</label>
+							<span class="hook-badge-viral">Anti-Skip</span>
+						</div>
+						<div class="hooks-grid">
+							<button
+								type="button"
+								class="hook-pill-btn"
+								class:active={hookStyle === 'curiosity_gap'}
+								onclick={() => hookStyle = 'curiosity_gap'}
+								disabled={isGenerating}
+							>
+								<span class="hook-emoji">🎯</span>
+								<div class="hook-btn-text">
+									<strong>Paradoks & Fakta Terbalik</strong>
+									<small>Bongkar mitos yang bikin penonton berhenti scrolling</small>
+								</div>
+							</button>
+
+							<button
+								type="button"
+								class="hook-pill-btn"
+								class:active={hookStyle === 'high_stakes'}
+								onclick={() => hookStyle = 'high_stakes'}
+								disabled={isGenerating}
+							>
+								<span class="hook-emoji">⚡</span>
+								<div class="hook-btn-text">
+									<strong>High Stakes & Situasi Kritis</strong>
+									<small>Risiko darurat & titik balik masa depan penonton</small>
+								</div>
+							</button>
+
+							<button
+								type="button"
+								class="hook-pill-btn"
+								class:active={hookStyle === 'mystery_investigative'}
+								onclick={() => hookStyle = 'mystery_investigative'}
+								disabled={isGenerating}
+							>
+								<span class="hook-emoji">🕵️</span>
+								<div class="hook-btn-text">
+									<strong>Misteri & Dokumen Rahasia</strong>
+									<small>Arsip tersembunyi ala Vox, Lemmino & Johnny Harris</small>
+								</div>
+							</button>
+
+							<button
+								type="button"
+								class="hook-pill-btn"
+								class:active={hookStyle === 'in_media_res'}
+								onclick={() => hookStyle = 'in_media_res'}
+								disabled={isGenerating}
+							>
+								<span class="hook-emoji">🎬</span>
+								<div class="hook-btn-text">
+									<strong>In-Media-Res (Puncak Aksi)</strong>
+									<small>Mulai tepat di detik paling genting tanpa intro bertele-tele</small>
+								</div>
+							</button>
+
+							<button
+								type="button"
+								class="hook-pill-btn"
+								class:active={hookStyle === 'provocative_question'}
+								onclick={() => hookStyle = 'provocative_question'}
+								disabled={isGenerating}
+							>
+								<span class="hook-emoji">💡</span>
+								<div class="hook-btn-text">
+									<strong>Pertanyaan Provokatif</strong>
+									<small>Menampar asumsi logika & langsung mengikat emosi penonton</small>
+								</div>
+							</button>
 						</div>
 					</div>
 
@@ -229,14 +336,14 @@
 							<button
 								type="button"
 								class="tone-card"
-								class:active={tone === 'documentary'}
-								onclick={() => tone = 'documentary'}
+								class:active={tone === 'storytelling'}
+								onclick={() => tone = 'storytelling'}
 								disabled={isGenerating}
 							>
-								<span class="tone-icon">🎥</span>
+								<span class="tone-icon">☕</span>
 								<div class="tone-text">
-									<strong>Dokumenter Sinematik</strong>
-									<small>Dramatis, elegan, storytelling mendalam</small>
+									<strong>Storytelling Santai ⭐</strong>
+									<small>Luwes, mengalir, kayak lagi cerita seru ke teman</small>
 								</div>
 							</button>
 
@@ -250,21 +357,7 @@
 								<span class="tone-icon">💡</span>
 								<div class="tone-text">
 									<strong>Edukasi Santai</strong>
-									<small>Ramah, mudah dicerna, analogi sehari-hari</small>
-								</div>
-							</button>
-
-							<button
-								type="button"
-								class="tone-card"
-								class:active={tone === 'business'}
-								onclick={() => tone = 'business'}
-								disabled={isGenerating}
-							>
-								<span class="tone-icon">💼</span>
-								<div class="tone-text">
-									<strong>Bisnis & Pola Pikir</strong>
-									<small>Tegas, strategis, berbasis data & aksi</small>
+									<small>Ramah, mudah dicerna, analogi simpel sehari-hari</small>
 								</div>
 							</button>
 
@@ -277,8 +370,22 @@
 							>
 								<span class="tone-icon">🕵️</span>
 								<div class="tone-text">
-									<strong>Misteri & Investigasi</strong>
-									<small>Atmosferik, tegang, memicu rasa ingin tahu</small>
+									<strong>Misteri Bikin Penasaran</strong>
+									<small>Santai tapi bikin merinding & teka-teki seru</small>
+								</div>
+							</button>
+
+							<button
+								type="button"
+								class="tone-card"
+								class:active={tone === 'business'}
+								onclick={() => tone = 'business'}
+								disabled={isGenerating}
+							>
+								<span class="tone-icon">💬</span>
+								<div class="tone-text">
+									<strong>Deep Talk & Mindset</strong>
+									<small>Obrolan santai reflektif, menyentuh realitas hidup</small>
 								</div>
 							</button>
 						</div>
@@ -500,6 +607,35 @@
 		gap: 6px;
 	}
 
+	.topic-label-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+	}
+
+	.btn-open-topic-finder {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		background: rgba(250, 204, 21, 0.12);
+		border: 1px solid rgba(250, 204, 21, 0.35);
+		border-radius: 9999px;
+		padding: 2px 8px;
+		color: #facc15;
+		font-size: 0.72rem;
+		font-weight: 700;
+		cursor: pointer;
+		transition: all 0.18s ease;
+	}
+
+	.btn-open-topic-finder:hover {
+		background: rgba(250, 204, 21, 0.25);
+		border-color: #facc15;
+		color: #ffffff;
+		transform: translateY(-1px);
+	}
+
 	.form-group label {
 		font-size: 0.775rem;
 		font-weight: 600;
@@ -568,6 +704,91 @@
 		background: rgba(99, 102, 241, 0.15);
 		border-color: rgba(99, 102, 241, 0.4);
 		color: #ffffff;
+	}
+
+	/* ── Hook Selector Grid ── */
+	.hook-header-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 6px;
+	}
+
+	.hook-header-row label {
+		margin-bottom: 0;
+	}
+
+	.hook-badge-viral {
+		font-size: 0.64rem;
+		font-weight: 700;
+		padding: 2px 7px;
+		border-radius: var(--radius-sm);
+		background: rgba(245, 158, 11, 0.2);
+		color: #f59e0b;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+	}
+
+	.hooks-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 5px;
+	}
+
+	.hook-pill-btn {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 7px 11px;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: var(--radius-md);
+		cursor: pointer;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		text-align: left;
+	}
+
+	.hook-pill-btn:hover:not(:disabled) {
+		background: rgba(255, 255, 255, 0.07);
+		border-color: rgba(255, 255, 255, 0.16);
+		transform: translateX(2px);
+	}
+
+	.hook-pill-btn.active {
+		background: linear-gradient(135deg, rgba(245, 158, 11, 0.14) 0%, rgba(99, 102, 241, 0.12) 100%);
+		border-color: #f59e0b;
+		box-shadow: 0 0 14px rgba(245, 158, 11, 0.15);
+	}
+
+	.hook-emoji {
+		font-size: 1.1rem;
+		line-height: 1;
+		flex-shrink: 0;
+	}
+
+	.hook-btn-text {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		min-width: 0;
+	}
+
+	.hook-btn-text strong {
+		font-size: 0.78rem;
+		color: var(--text-main);
+	}
+
+	.hook-pill-btn.active .hook-btn-text strong {
+		color: #fbbf24;
+	}
+
+	.hook-btn-text small {
+		font-size: 0.69rem;
+		color: var(--text-muted);
+		line-height: 1.25;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.pills-grid {

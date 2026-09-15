@@ -15,7 +15,9 @@
 		Square,
 		Play,
 		FolderUp,
-		Sliders
+		Sliders,
+		RotateCw,
+		Check
 	} from 'lucide-svelte';
 	import { VoiceRecorder } from '$lib/services/audioAnalysisService.js';
 	import {
@@ -23,7 +25,7 @@
 		DEFAULT_AUDIO_EFFECT_ID,
 		getAudioEffectById
 	} from '$lib/services/audioEffectService.js';
-	import { getSpokenVoiceoverText, getChapterSpokenIntro } from '$lib/services/scriptAnalyzer.js';
+	import { getSpokenVoiceoverText, getChapterSpokenIntro, getGlobalChapterConfig } from '$lib/services/scriptAnalyzer.js';
 
 	let {
 		scenes = $bindable([]),
@@ -74,18 +76,120 @@
 		}
 	}
 
+	let globalTagPreset = $state('bab');
+	let globalPauseDuration = $state(5);
+	let globalOutroPause = $state(0);
+	let isApplyingGlobal = $state(false);
+
+	const chapterScenesCount = $derived(scenes.filter((s) => s.chapter).length);
+
 	function addChapter(index) {
 		const existingChapters = scenes.slice(0, index).filter((s) => s.chapter).length;
 		const num = existingChapters + 1;
+		let tag = `BAB ${String(num).padStart(2, '0')}`;
+		if (globalTagPreset === 'bagian') tag = `BAGIAN ${num}`;
+		else if (globalTagPreset === 'part') tag = `PART ${num}`;
+		else if (globalTagPreset === 'none') tag = '';
+
 		scenes[index].chapter = {
 			number: num,
-			tag: `BAB ${String(num).padStart(2, '0')}`,
+			tag,
 			title: `Bab ${num}`,
 			subtitle: 'Pengantar topik pada segmen ini',
 			style: 'center',
-			pauseDuration: 5,
-			outroPause: 0
+			pauseDuration: globalPauseDuration,
+			outroPause: globalOutroPause
 		};
+		scenes = [...scenes];
+	}
+
+	function setGlobalTag(preset) {
+		globalTagPreset = preset;
+		if (typeof window !== 'undefined') {
+			localStorage.setItem('yt_global_chapter_tag', preset);
+		}
+		for (const sc of scenes) {
+			if (!sc.chapter) continue;
+			const num = sc.chapter.number || 1;
+			if (preset === 'bab') sc.chapter.tag = `BAB ${String(num).padStart(2, '0')}`;
+			else if (preset === 'bagian') sc.chapter.tag = `BAGIAN ${num}`;
+			else if (preset === 'part') sc.chapter.tag = `PART ${num}`;
+			else if (preset === 'none') sc.chapter.tag = '';
+		}
+		scenes = [...scenes];
+	}
+
+	function setGlobalPause(sec) {
+		globalPauseDuration = sec;
+		if (typeof window !== 'undefined') {
+			localStorage.setItem('yt_global_chapter_pause', String(sec));
+		}
+		for (const sc of scenes) {
+			if (!sc.chapter) continue;
+			sc.chapter.pauseDuration = sec;
+		}
+		scenes = [...scenes];
+	}
+
+	function setGlobalOutro(sec) {
+		globalOutroPause = sec;
+		if (typeof window !== 'undefined') {
+			localStorage.setItem('yt_global_chapter_outro', String(sec));
+		}
+		for (const sc of scenes) {
+			if (!sc.chapter) continue;
+			sc.chapter.outroPause = sec;
+		}
+		scenes = [...scenes];
+	}
+
+	async function applyAllGlobalChapterSettings() {
+		if (isApplyingGlobal) return;
+		isApplyingGlobal = true;
+
+		try {
+			if (typeof window !== 'undefined') {
+				localStorage.setItem('yt_global_chapter_tag', globalTagPreset);
+				localStorage.setItem('yt_global_chapter_pause', String(globalPauseDuration));
+				localStorage.setItem('yt_global_chapter_outro', String(globalOutroPause));
+			}
+
+			// Apply to all scenes with chapters
+			for (let i = 0; i < scenes.length; i++) {
+				const sc = scenes[i];
+				if (!sc.chapter) continue;
+				const num = sc.chapter.number || 1;
+				if (globalTagPreset === 'bab') sc.chapter.tag = `BAB ${String(num).padStart(2, '0')}`;
+				else if (globalTagPreset === 'bagian') sc.chapter.tag = `BAGIAN ${num}`;
+				else if (globalTagPreset === 'part') sc.chapter.tag = `PART ${num}`;
+				else if (globalTagPreset === 'none') sc.chapter.tag = '';
+
+				sc.chapter.pauseDuration = globalPauseDuration;
+				sc.chapter.outroPause = globalOutroPause;
+			}
+			scenes = [...scenes];
+
+			// If voiceover is generated for these chapter scenes, re-synthesize so audio timing & spoken tag updates
+			if (onRegenerateVoice) {
+				for (let i = 0; i < scenes.length; i++) {
+					const sc = scenes[i];
+					if (sc.chapter && sc.voiceAudioUrl && !sc.isCustomAudio) {
+						regeneratingSceneIndices.add(i);
+						regeneratingSceneIndices = new Set(regeneratingSceneIndices);
+						try {
+							await onRegenerateVoice(i);
+						} catch (err) {
+							console.error('Failed to regenerate chapter scene voice', i, err);
+						} finally {
+							regeneratingSceneIndices.delete(i);
+							regeneratingSceneIndices = new Set(regeneratingSceneIndices);
+						}
+					}
+				}
+			}
+		} finally {
+			isApplyingGlobal = false;
+		}
 	}
 
 	let regeneratingSceneIndices = $state(new Set());
@@ -287,6 +391,11 @@
 
 	let windowClickHandler = null;
 	onMount(() => {
+		const globalCfg = getGlobalChapterConfig();
+		globalTagPreset = globalCfg.tagPreset;
+		globalPauseDuration = globalCfg.pauseDuration;
+		globalOutroPause = globalCfg.outroPause;
+
 		windowClickHandler = () => {
 			activeEffectDropdownIndex = -1;
 		};
@@ -342,6 +451,125 @@
 			</button>
 		</div>
 	</div>
+
+	<!-- Master Global Chapter Settings Panel -->
+	{#if chapterScenesCount > 0}
+		<div class="global-chapter-card">
+			<div class="global-chapter-header">
+				<div class="global-chapter-title-group">
+					<div class="global-icon-badge">
+						<Bookmark size={16} />
+					</div>
+					<div>
+						<div class="global-title-row">
+							<span class="global-title-text">Pengaturan Global Bab</span>
+							<span class="global-badge-count">{chapterScenesCount} Bab Terdeteksi</span>
+						</div>
+						<p class="global-desc-text">
+							Atur format label dan jeda musik sekaligus untuk seluruh bab naskah tanpa perlu ubah satu per satu.
+						</p>
+					</div>
+				</div>
+
+				<button
+					type="button"
+					class="btn-apply-all-chapters"
+					onclick={applyAllGlobalChapterSettings}
+					disabled={isApplyingGlobal}
+					title="Terapkan pengaturan ke seluruh bab dan sesuaikan jeda audio voiceover"
+				>
+					{#if isApplyingGlobal}
+						<RotateCw size={13} class="spin-icon" />
+						<span>Menerapkan...</span>
+					{:else}
+						<Check size={14} />
+						<span>Terapkan ke Semua Bab</span>
+					{/if}
+				</button>
+			</div>
+
+			<div class="global-chapter-controls-grid">
+				<!-- Control 1: Tag Format -->
+				<div class="global-control-col">
+					<span class="global-control-label">Format Label Bab:</span>
+					<div class="global-pills-row">
+						<button
+							type="button"
+							class="global-pill-btn"
+							class:active={globalTagPreset === 'bab'}
+							onclick={() => setGlobalTag('bab')}
+							title="Format: BAB 01, BAB 02, dst."
+						>
+							BAB 01
+						</button>
+						<button
+							type="button"
+							class="global-pill-btn"
+							class:active={globalTagPreset === 'bagian'}
+							onclick={() => setGlobalTag('bagian')}
+							title="Format: BAGIAN 1, BAGIAN 2, dst."
+						>
+							BAGIAN 1
+						</button>
+						<button
+							type="button"
+							class="global-pill-btn"
+							class:active={globalTagPreset === 'part'}
+							onclick={() => setGlobalTag('part')}
+							title="Format: PART 1, PART 2, dst."
+						>
+							PART 1
+						</button>
+						<button
+							type="button"
+							class="global-pill-btn"
+							class:active={globalTagPreset === 'none'}
+							onclick={() => setGlobalTag('none')}
+							title="Hanya Judul Bab Saja (Tanpa awalan Bab/Part)"
+						>
+							Hanya Judul
+						</button>
+					</div>
+				</div>
+
+				<!-- Control 2: Title Pause (Music swell) -->
+				<div class="global-control-col">
+					<span class="global-control-label">⏱️ Jeda Judul (Musik Mengalun):</span>
+					<div class="global-pills-row">
+						{#each [0, 3, 5, 7, 10] as sec}
+							<button
+								type="button"
+								class="global-pill-btn"
+								class:active={globalPauseDuration === sec}
+								onclick={() => setGlobalPause(sec)}
+								title={sec === 5 ? 'Rekomendasi YouTube Cinematic (5 detik jeda)' : `${sec} detik jeda`}
+							>
+								{sec}s {sec === 5 ? '⭐' : ''}
+							</button>
+						{/each}
+					</div>
+				</div>
+
+				<!-- Control 3: Chapter Outro Pause -->
+				<div class="global-control-col">
+					<span class="global-control-label">⏳ Jeda Akhir Bab:</span>
+					<div class="global-pills-row">
+						{#each [0, 2, 3, 5] as sec}
+							<button
+								type="button"
+								class="global-pill-btn"
+								class:active={globalOutroPause === sec}
+								onclick={() => setGlobalOutro(sec)}
+								title={`${sec} detik hening sebelum ganti bab berikutnya`}
+							>
+								{sec}s {sec === 0 ? '(Lancar)' : ''}
+							</button>
+						{/each}
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	<!-- Scene Cards List -->
 	<div class="scenes-list">
@@ -1303,6 +1531,170 @@
 	.action-btn.danger:hover:not(:disabled) {
 		background: rgba(239, 68, 68, 0.15);
 		color: var(--danger);
+	}
+
+	/* Master Global Chapter Settings Card */
+	.global-chapter-card {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		margin-bottom: 16px;
+		padding: 14px 16px;
+		background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(15, 23, 42, 0.75) 100%);
+		border: 1px solid rgba(16, 185, 129, 0.35);
+		border-left: 4px solid #10b981;
+		border-radius: var(--radius-lg);
+		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25), 0 0 15px rgba(16, 185, 129, 0.08);
+	}
+
+	.global-chapter-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		flex-wrap: wrap;
+	}
+
+	.global-chapter-title-group {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.global-icon-badge {
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(16, 185, 129, 0.2);
+		border: 1px solid rgba(16, 185, 129, 0.4);
+		border-radius: 8px;
+		color: #34d399;
+		flex-shrink: 0;
+	}
+
+	.global-title-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.global-title-text {
+		font-size: 0.92rem;
+		font-weight: 700;
+		color: #f1f5f9;
+		letter-spacing: -0.01em;
+	}
+
+	.global-badge-count {
+		font-size: 0.7rem;
+		font-weight: 600;
+		padding: 2px 8px;
+		background: rgba(16, 185, 129, 0.25);
+		color: #34d399;
+		border: 1px solid rgba(16, 185, 129, 0.4);
+		border-radius: 9999px;
+	}
+
+	.global-desc-text {
+		font-size: 0.76rem;
+		color: #94a3b8;
+		margin-top: 2px;
+		line-height: 1.3;
+	}
+
+	.btn-apply-all-chapters {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 7px 14px;
+		background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+		color: #0b1120;
+		font-size: 0.78rem;
+		font-weight: 700;
+		border: none;
+		border-radius: var(--radius-md);
+		cursor: pointer;
+		transition: all 0.2s ease;
+		box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+		white-space: nowrap;
+	}
+
+	.btn-apply-all-chapters:hover:not(:disabled) {
+		background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 14px rgba(16, 185, 129, 0.45);
+	}
+
+	.btn-apply-all-chapters:disabled {
+		opacity: 0.65;
+		cursor: not-allowed;
+	}
+
+	.spin-icon {
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		from { transform: rotate(0deg); }
+		to { transform: rotate(360deg); }
+	}
+
+	.global-chapter-controls-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 12px;
+		padding: 10px 12px;
+		background: rgba(0, 0, 0, 0.3);
+		border: 1px solid rgba(255, 255, 255, 0.06);
+		border-radius: 8px;
+	}
+
+	.global-control-col {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.global-control-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: #cbd5e1;
+	}
+
+	.global-pills-row {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		flex-wrap: wrap;
+	}
+
+	.global-pill-btn {
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		color: #cbd5e1;
+		font-size: 0.7rem;
+		font-weight: 600;
+		padding: 3px 8px;
+		border-radius: 6px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		white-space: nowrap;
+	}
+
+	.global-pill-btn:hover {
+		background: rgba(16, 185, 129, 0.2);
+		color: #ffffff;
+		border-color: rgba(16, 185, 129, 0.4);
+	}
+
+	.global-pill-btn.active {
+		background: #10b981;
+		color: #0b1120;
+		font-weight: 700;
+		border-color: #10b981;
+		box-shadow: 0 1px 6px rgba(16, 185, 129, 0.35);
 	}
 
 	/* Chapter Divider Banner */

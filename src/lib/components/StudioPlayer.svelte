@@ -11,7 +11,7 @@
 		subtitleFontSize = 34,
 		karaokeEnabled = true,
 		selectedBgmId = $bindable('ambient-focus'),
-		bgmVolume = $bindable(0.15)
+		bgmVolume = $bindable(0.06)
 	} = $props();
 
 	let videoElement = $state(null);

@@ -4,8 +4,11 @@
 	import { 
 		POPULAR_VOICES, 
 		EDGE_TTS_VOICES, 
+		F5_LOCAL_VOICES,
+		DEFAULT_F5_VOICE_ID,
 		DEFAULT_EDGE_VOICE_ID, 
 		DEFAULT_ELEVEN_VOICE_ID, 
+		isF5Voice,
 		isEdgeVoice 
 	} from '$lib/services/voiceService.js';
 
@@ -26,8 +29,10 @@
 	let showPexelsKey = $state(false);
 	let showElevenKey = $state(false);
 
-	let selectedVoiceEngine = $state('edge_tts'); // 'edge_tts' | 'elevenlabs'
+	let selectedVoiceEngine = $state('f5_tts'); // 'f5_tts' | 'edge_tts' | 'elevenlabs'
 	let edgeVoiceFilter = $state('all'); // 'all' | 'id' | 'local' | 'en'
+
+	let f5Status = $state({ online: false, device: 'mps', checking: false });
 
 	let availableElevenVoices = $state(POPULAR_VOICES);
 	let isFetchingVoices = $state(false);
@@ -49,13 +54,31 @@
 
 	$effect(() => {
 		if (isOpen) {
-			if (isEdgeVoice(selectedVoiceId)) {
+			checkF5Status();
+			if (isF5Voice(selectedVoiceId) || voiceMode === 'f5_tts') {
+				selectedVoiceEngine = 'f5_tts';
+			} else if (isEdgeVoice(selectedVoiceId)) {
 				selectedVoiceEngine = 'edge_tts';
 			} else if (voiceMode === 'elevenlabs' || (!isEdgeVoice(selectedVoiceId) && selectedVoiceId !== '')) {
 				selectedVoiceEngine = 'elevenlabs';
 			}
 		}
 	});
+
+	async function checkF5Status() {
+		f5Status.checking = true;
+		try {
+			const res = await fetch('/api/f5-tts');
+			const data = await res.json();
+			f5Status = {
+				online: !!data.online,
+				device: data.device || 'mps',
+				checking: false
+			};
+		} catch (e) {
+			f5Status = { online: false, device: 'mps', checking: false };
+		}
+	}
 
 	onMount(() => {
 		const savedDeepseek = localStorage.getItem('yt_deepseek_key');
@@ -75,9 +98,12 @@
 		if (savedEffect) selectedAudioEffect = savedEffect;
 		if (savedProvider) {
 			selectedVoiceEngine = savedProvider;
+		} else if (isF5Voice(selectedVoiceId)) {
+			selectedVoiceEngine = 'f5_tts';
 		} else if (isEdgeVoice(selectedVoiceId)) {
 			selectedVoiceEngine = 'edge_tts';
 		}
+		checkF5Status();
 	});
 
 	async function fetchElevenLabsVoices(key) {
@@ -156,12 +182,17 @@
 
 	function switchEngine(engine) {
 		selectedVoiceEngine = engine;
-		if (engine === 'edge_tts') {
+		if (engine === 'f5_tts') {
+			checkF5Status();
+			if (!isF5Voice(selectedVoiceId)) {
+				selectedVoiceId = DEFAULT_F5_VOICE_ID;
+			}
+		} else if (engine === 'edge_tts') {
 			if (!isEdgeVoice(selectedVoiceId)) {
 				selectedVoiceId = DEFAULT_EDGE_VOICE_ID;
 			}
 		} else {
-			if (isEdgeVoice(selectedVoiceId)) {
+			if (isEdgeVoice(selectedVoiceId) || isF5Voice(selectedVoiceId)) {
 				selectedVoiceId = availableElevenVoices[0]?.id || DEFAULT_ELEVEN_VOICE_ID;
 			}
 		}
@@ -188,7 +219,10 @@
 		localStorage.setItem('yt_pexels_key', pexelsApiKey || '');
 		localStorage.setItem('yt_eleven_key', elevenLabsApiKey || '');
 		localStorage.setItem('yt_voice_provider', selectedVoiceEngine);
-		localStorage.setItem('yt_voice_id', selectedVoiceId || (selectedVoiceEngine === 'edge_tts' ? DEFAULT_EDGE_VOICE_ID : DEFAULT_ELEVEN_VOICE_ID));
+		const defaultVoiceForEngine = selectedVoiceEngine === 'f5_tts' 
+			? DEFAULT_F5_VOICE_ID 
+			: (selectedVoiceEngine === 'edge_tts' ? DEFAULT_EDGE_VOICE_ID : DEFAULT_ELEVEN_VOICE_ID);
+		localStorage.setItem('yt_voice_id', selectedVoiceId || defaultVoiceForEngine);
 		localStorage.setItem('yt_audio_effect', selectedAudioEffect || DEFAULT_AUDIO_EFFECT_ID);
 		
 		if (voiceMode !== 'custom_upload') {
@@ -228,6 +262,22 @@
 						<button
 							type="button"
 							class="engine-tab"
+							class:active={selectedVoiceEngine === 'f5_tts'}
+							onclick={() => switchEngine('f5_tts')}
+						>
+							<div class="tab-label">
+								<span class="tab-icon">⚡</span>
+								<div class="tab-titles">
+									<strong>F5-TTS Lokal (Natural AI)</strong>
+									<span class="tab-sub">Offline M1 Metal · Sangat Alami</span>
+								</div>
+							</div>
+							<span class="pill-badge ai">Rekomendasi</span>
+						</button>
+
+						<button
+							type="button"
+							class="engine-tab"
 							class:active={selectedVoiceEngine === 'edge_tts'}
 							onclick={() => switchEngine('edge_tts')}
 						>
@@ -235,10 +285,10 @@
 								<span class="tab-icon">🌐</span>
 								<div class="tab-titles">
 									<strong>Microsoft Edge TTS</strong>
-									<span class="tab-sub">Gratis 100% · Tanpa Kuota</span>
+									<span class="tab-sub">Gratis 100% · Cepat Instan</span>
 								</div>
 							</div>
-							<span class="pill-badge free">Rekomendasi</span>
+							<span class="pill-badge free">Gratis</span>
 						</button>
 
 						<button
@@ -254,12 +304,101 @@
 									<span class="tab-sub">Ultra-Realistis (Butuh Key)</span>
 								</div>
 							</div>
-							<span class="pill-badge pro">Premium</span>
+							<span class="pill-badge pro">Cloud</span>
 						</button>
 					</div>
 				</div>
 
-				{#if selectedVoiceEngine === 'edge_tts'}
+				{#if selectedVoiceEngine === 'f5_tts'}
+					<!-- F5-TTS Section -->
+					<div class="field-group">
+						<!-- Server Health Status Banner -->
+						<div class="f5-status-banner" class:online={f5Status.online}>
+							<div class="f5-status-icon">
+								{#if f5Status.online}
+									<span class="status-pulse-dot online"></span>
+								{:else}
+									<span class="status-pulse-dot offline"></span>
+								{/if}
+							</div>
+							<div class="f5-status-content">
+								{#if f5Status.online}
+									<div class="status-title">Server F5-TTS Lokal Aktif di Port 8888</div>
+									<div class="status-sub">Akselerasi Apple Silicon Metal ({f5Status.device.toUpperCase()}) siap menghasilkan narasi natural non-robotik.</div>
+								{:else}
+									<div class="status-title">Server F5-TTS Lokal Belum Berjalan</div>
+									<div class="status-sub">
+										Buka Terminal dan jalankan: <code>cd /Users/user/development/local-tts && ./run_server.sh</code>
+									</div>
+								{/if}
+							</div>
+							<button type="button" class="f5-refresh-btn" onclick={checkF5Status} title="Cek status server">
+								<RefreshCw size={13} class={f5Status.checking ? 'spin' : ''} />
+								<span>{f5Status.checking ? 'Mengecek...' : 'Cek Status'}</span>
+							</button>
+						</div>
+
+						<div class="voice-header-row">
+							<label>Pilihan Karakter Suara Alami (F5-TTS) <span class="label-hint">— klik ▶ untuk mendengarkan gaya bicara</span></label>
+						</div>
+
+						<div class="voice-grid">
+							{#each F5_LOCAL_VOICES as voice}
+								<div
+									class="voice-card"
+									class:selected={selectedVoiceId === voice.id}
+									onclick={() => selectVoice(voice.id)}
+									role="button"
+									tabindex="0"
+									onkeydown={(e) => e.key === 'Enter' && selectVoice(voice.id)}
+								>
+									<div class="voice-card-top">
+										<span class="voice-emoji">{voice.emoji}</span>
+										<div class="voice-info">
+											<span class="voice-name">{voice.name}</span>
+											<span class="voice-cat">{voice.category}</span>
+										</div>
+										<div class="voice-actions">
+											{#if voice.sampleUrl}
+												<button
+													type="button"
+													class="preview-btn"
+													class:playing={playingVoiceId === voice.id}
+													onclick={(e) => { e.stopPropagation(); togglePreview(voice); }}
+													title="Preview sample suara"
+												>
+													{#if playingVoiceId === voice.id}
+														<Square size={12} />
+													{:else}
+														<Play size={12} />
+													{/if}
+												</button>
+											{/if}
+											{#if selectedVoiceId === voice.id}
+												<span class="selected-badge">
+													<Check size={11} />
+												</span>
+											{/if}
+										</div>
+									</div>
+									<p class="voice-desc">{voice.description}</p>
+									{#if playingVoiceId === voice.id}
+										<div class="waveform-bar">
+											<span></span><span></span><span></span><span></span><span></span>
+										</div>
+									{/if}
+								</div>
+							{/each}
+						</div>
+
+						<div class="edge-info-card">
+							<Sparkles size={16} color="#34d399" />
+							<div class="edge-info-text">
+								<strong>Keunggulan F5-TTS Lokal:</strong> Menggunakan model Flow-Matching diffusion suara asli manusia Indonesia. Intonasi dinamis, ada tarikan nafas alami, dan tidak terdengar seperti robot pembaca datar.
+							</div>
+						</div>
+					</div>
+				{:else if selectedVoiceEngine === 'edge_tts'}
 					<!-- Edge TTS Voice Selector -->
 					<div class="field-group">
 						<div class="voice-header-row">
@@ -718,8 +857,106 @@
 	/* ── Engine Switcher Tabs ── */
 	.engine-tabs {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 		gap: 10px;
+	}
+
+	/* F5 Server Status Banner */
+	.f5-status-banner {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 10px 14px;
+		background: rgba(239, 68, 68, 0.08);
+		border: 1px solid rgba(239, 68, 68, 0.25);
+		border-radius: var(--radius-md);
+		margin-bottom: 12px;
+		transition: all 0.25s ease;
+	}
+
+	.f5-status-banner.online {
+		background: rgba(16, 185, 129, 0.08);
+		border-color: rgba(16, 185, 129, 0.3);
+	}
+
+	.f5-status-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.status-pulse-dot {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		display: inline-block;
+	}
+
+	.status-pulse-dot.online {
+		background: #10b981;
+		box-shadow: 0 0 10px #10b981;
+	}
+
+	.status-pulse-dot.offline {
+		background: #f43f5e;
+		box-shadow: 0 0 8px #f43f5e;
+	}
+
+	.f5-status-content {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.status-title {
+		font-size: 0.82rem;
+		font-weight: 700;
+		color: var(--text-primary);
+	}
+
+	.status-sub {
+		font-size: 0.74rem;
+		color: var(--text-secondary);
+		margin-top: 2px;
+		line-height: 1.35;
+	}
+
+	.status-sub code {
+		background: rgba(0, 0, 0, 0.35);
+		padding: 2px 5px;
+		border-radius: 4px;
+		font-family: monospace;
+		font-size: 0.72rem;
+		color: var(--accent-cyan);
+	}
+
+	.f5-refresh-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 10px;
+		background: rgba(255, 255, 255, 0.06);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: var(--radius-sm);
+		color: var(--text-primary);
+		font-size: 0.72rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		flex-shrink: 0;
+	}
+
+	.f5-refresh-btn:hover {
+		background: rgba(255, 255, 255, 0.12);
+	}
+
+	.spin {
+		animation: spinAnim 1s linear infinite;
+	}
+
+	@keyframes spinAnim {
+		from { transform: rotate(0deg); }
+		to { transform: rotate(360deg); }
 	}
 
 	.engine-tab {

@@ -44,6 +44,20 @@ function getAudioDurationFromFile(filePath) {
 	});
 }
 
+function hasVideoStream(filePath) {
+	if (!filePath || !fs.existsSync(filePath)) return Promise.resolve(false);
+	return new Promise((resolve) => {
+		const proc = spawn(ffmpegPath || 'ffmpeg', ['-i', filePath]);
+		let stderr = '';
+		proc.stderr.on('data', (d) => { stderr += d.toString(); });
+		proc.on('close', () => {
+			const hasVideo = /Stream #\d+:\d+.*Video:/i.test(stderr);
+			resolve(hasVideo);
+		});
+		proc.on('error', () => resolve(false));
+	});
+}
+
 // Concurrency pool limiter to process items in parallel without overloading system
 async function asyncPool(limit, items, iteratorFn) {
 	const results = [];
@@ -86,6 +100,10 @@ async function downloadFile(url, destPath, timeoutMs = 30000, retries = 2) {
 const footageLibraryDir = path.resolve('./static/footage');
 async function getCachedOrDownloadFootage(url, destPath, queryHint = 'cinematic') {
 	if (!url || !url.startsWith('http')) return false;
+	// Do not attempt to download audio files as video footage
+	if (url.endsWith('.mp3') || url.endsWith('.wav') || url.endsWith('.m4a') || url.endsWith('.aac') || url.includes('SoundHelix')) {
+		return false;
+	}
 	try {
 		await fs.promises.mkdir(footageLibraryDir, { recursive: true });
 		const catalog = await getLocalCatalog();
@@ -95,8 +113,11 @@ async function getCachedOrDownloadFootage(url, destPath, queryHint = 'cinematic'
 		if (existingItem) {
 			const existingPath = path.join(footageLibraryDir, existingItem.fileName);
 			if (fs.existsSync(existingPath)) {
-				await fs.promises.copyFile(existingPath, destPath);
-				return true;
+				const isValid = await hasVideoStream(existingPath);
+				if (isValid) {
+					await fs.promises.copyFile(existingPath, destPath);
+					return true;
+				}
 			}
 		}
 
@@ -106,6 +127,14 @@ async function getCachedOrDownloadFootage(url, destPath, queryHint = 'cinematic'
 		const targetFootagePath = path.join(footageLibraryDir, generalFileName);
 
 		await downloadFile(url, targetFootagePath, 45000, 2);
+
+		// Validate that the downloaded file actually contains a video stream!
+		const isValidVideo = await hasVideoStream(targetFootagePath);
+		if (!isValidVideo) {
+			console.warn(`Downloaded file ${targetFootagePath} is not a valid video stream. Removing.`);
+			await fs.promises.unlink(targetFootagePath).catch(() => {});
+			return false;
+		}
 
 		// Extract thumbnail and register to catalog
 		const baseName = generalFileName.replace(/\.mp4$/, '');
@@ -219,7 +248,7 @@ async function makeTTSAudio(text, destPath, durationSec) {
 
 async function synthesizeRawEdgeSpeech(text, voice, rate, pitch) {
 	const tts = new MsEdgeTTS();
-	await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3, {
+	await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3, {
 		wordBoundaryEnabled: false
 	});
 	const { audioStream } = tts.toStream(text, { rate, pitch });
@@ -407,7 +436,7 @@ export async function POST({ request }) {
 				karaokeEnabled = true,
 				fontSize = 34,
 				bgmUrl,
-				bgmVolume = 0.15,
+				bgmVolume = 0.06,
 				renderQuality = '1080p'
 			} = await request.json();
 
@@ -520,8 +549,13 @@ export async function POST({ request }) {
 						const fileName = rawVideoUrl.split('/footage/').pop().split('?')[0];
 						const localPath = path.resolve(`./static/footage/${fileName}`);
 						if (fs.existsSync(localPath)) {
-							await fs.promises.copyFile(localPath, videoDest);
-							videoDownloaded = true;
+							const isValid = await hasVideoStream(localPath);
+							if (isValid) {
+								await fs.promises.copyFile(localPath, videoDest);
+								videoDownloaded = true;
+							} else {
+								console.warn(`Local footage ${localPath} is not a valid video stream!`);
+							}
 						}
 					} else if (rawVideoUrl && rawVideoUrl.startsWith('http')) {
 						videoDownloaded = await getCachedOrDownloadFootage(
@@ -529,6 +563,14 @@ export async function POST({ request }) {
 							videoDest,
 							scene.visualQuery || scene.footage?.title || 'cinematic'
 						);
+					}
+
+					if (videoDownloaded) {
+						const isValidVideo = await hasVideoStream(videoDest);
+						if (!isValidVideo) {
+							console.warn(`Scene ${index}: videoDest has no video stream! Falling back to gradient video.`);
+							videoDownloaded = false;
+						}
 					}
 
 					if (!videoDownloaded) {
@@ -566,6 +608,13 @@ export async function POST({ request }) {
 					const audioDest = path.join(tempDir, `audio-${index}.mp3`);
 					const sceneOutput = path.join(tempDir, `scene-${index}-norm.mp4`);
 					const sceneDuration = Number(scene.audioDuration || scene.estimatedDuration || 5);
+
+					// Double check videoDest before running normalization filter
+					const isValidVideo = await hasVideoStream(videoDest);
+					if (!isValidVideo) {
+						console.warn(`Scene ${index}: videoDest missing video stream before normalization, regenerating gradient video.`);
+						await makeGradientVideo(videoDest, sceneDuration + 2);
+					}
 
 					await runFFmpeg(
 						[
@@ -635,11 +684,20 @@ export async function POST({ request }) {
 			// PHASE 5: BGM Preparation (Local Cache)
 			// =========================================================================
 			let bgmAudioPath = null;
-			if (bgmUrl && bgmUrl.startsWith('http')) {
+			if (bgmUrl) {
 				sendEvent({ progress: 83, step: 'Memuat musik latar...' });
-				bgmAudioPath = path.join(tempDir, 'bgm.mp3');
-				const downloaded = await getCachedOrDownloadFootage(bgmUrl, bgmAudioPath);
-				if (!downloaded) bgmAudioPath = null;
+				const localBgmTrack = path.resolve('./static/bgm/bgm-soundhelix-1.mp3');
+				if (fs.existsSync(localBgmTrack)) {
+					bgmAudioPath = localBgmTrack;
+				} else if (bgmUrl.startsWith('http')) {
+					bgmAudioPath = path.join(tempDir, 'bgm.mp3');
+					try {
+						await downloadFile(bgmUrl, bgmAudioPath, 30000, 2);
+					} catch (e) {
+						console.warn('Failed to download BGM:', e.message);
+						bgmAudioPath = null;
+					}
+				}
 			}
 
 			// =========================================================================
@@ -654,8 +712,11 @@ export async function POST({ request }) {
 			const ffmpegArgs = ['-i', concatenatedVideo];
 
 			if (bgmAudioPath) {
-				const duckVol = Number(bgmVolume) || 0.15;
-				const swellVol = Math.min(0.48, Math.max(0.28, duckVol * 2.2));
+				const userBgmVol = Number(bgmVolume) || 0.06;
+				// Duck volume during narration: 0.03 - 0.06 so narration always sits high and clear
+				const duckVol = Math.min(0.08, Math.max(0.02, userBgmVol * 0.6));
+				// Swell volume during chapter card opening: 0.10 - 0.16
+				const swellVol = Math.min(0.18, Math.max(0.08, duckVol * 2.2));
 
 				// Calculate chapter swell intervals for dynamic music volume
 				let cumulativeSec = 0;
@@ -680,7 +741,7 @@ export async function POST({ request }) {
 				ffmpegArgs.push('-stream_loop', '-1', '-i', bgmAudioPath);
 				ffmpegArgs.push(
 					'-filter_complex',
-					`[0:v]subtitles='${safeAssPath}'[v];[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a0];[1:a]${bgmFilterExpr},aformat=sample_rates=44100:channel_layouts=stereo[bgm];[a0][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]`,
+					`[0:v]subtitles='${safeAssPath}'[v];[0:a]volume=1.0,aformat=sample_rates=44100:channel_layouts=stereo[a0];[1:a]${bgmFilterExpr},equalizer=f=1800:t=q:w=1.2:g=-3.5,aformat=sample_rates=44100:channel_layouts=stereo[bgm];[a0][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[a]`,
 					'-map',
 					'[v]',
 					'-map',

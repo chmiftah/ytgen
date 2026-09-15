@@ -37,7 +37,7 @@ function normalizeToMP3(inputPath, outputPath, filter = '') {
 // Save audio base64 to server cache, apply audio effect preset, and normalize to 44.1kHz stereo MP3
 export async function POST({ request }) {
 	try {
-		const { audioBase64, sceneId, audioEffect = 'studio_podcast' } = await request.json();
+		const { audioBase64, sceneId, audioEffect = 'studio_podcast', applyFilter = false } = await request.json();
 
 		if (!audioBase64) {
 			return json({ success: false, error: 'No audio data' }, { status: 400 });
@@ -56,10 +56,13 @@ export async function POST({ request }) {
 		const base64Data = audioBase64.replace(/^data:audio\/[^;]+;base64,/, '');
 		await fs.promises.writeFile(tempRawPath, Buffer.from(base64Data, 'base64'));
 
-		// Convert, apply effect filter, and normalize to standard 44.1kHz stereo MP3
+		// Normalize to standard 44.1kHz stereo MP3.
+		// NOTE: Incoming audio from edge-tts is already mastered by edge-tts DSP pipeline!
+		// We only apply the filter if applyFilter === true (e.g. for raw custom audio uploads).
 		let targetPath = finalMp3Path;
 		try {
-			await normalizeToMP3(tempRawPath, finalMp3Path, effectPreset?.ffmpegFilter || '');
+			const filterToApply = applyFilter ? (effectPreset?.ffmpegFilter || '') : '';
+			await normalizeToMP3(tempRawPath, finalMp3Path, filterToApply);
 			await fs.promises.unlink(tempRawPath).catch(() => {});
 		} catch (convErr) {
 			console.warn('Audio normalization via FFmpeg failed, using raw file:', convErr.message);

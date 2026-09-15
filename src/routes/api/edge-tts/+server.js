@@ -15,13 +15,24 @@ export async function GET() {
 	});
 }
 
+// Enhance punctuation & breathing pauses for more human-like rhythm
+function enhanceTextCadence(rawText) {
+	if (!rawText) return '';
+	let t = rawText.trim();
+	t = t.replace(/\s*--\s*/g, ' ... ');
+	t = t.replace(/\s*—\s*/g, ' ... ');
+	t = t.replace(/([?!])\s+/g, '$1 ... ');
+	t = t.replace(/\.{4,}/g, '...');
+	return t;
+}
+
 // Synthesize a single piece of text and extract word boundary timestamps
 async function synthesizeStream(text, voiceId, effectiveRate, effectivePitch) {
-	const cleanText = text.trim();
+	const cleanText = enhanceTextCadence(text);
 	const words = cleanText.split(/\s+/).filter(Boolean);
 
 	const tts = new MsEdgeTTS();
-	await tts.setMetadata(voiceId, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3, {
+	await tts.setMetadata(voiceId, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3, {
 		wordBoundaryEnabled: true
 	});
 
@@ -229,6 +240,61 @@ function appendSilence(buf, outroSec) {
 	});
 }
 
+// Apply Studio Mastering DSP filter (Broadcast EQ, Dynamic Compression, Warm Tube & Presence)
+function applyAudioPostProcessing(inputBuffer, filterString) {
+	return new Promise(async (resolve) => {
+		if (!filterString || !filterString.trim()) {
+			resolve(inputBuffer);
+			return;
+		}
+		const tempId = `dsp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+		const dir = path.resolve('./static/renders/audio-cache');
+		await fs.promises.mkdir(dir, { recursive: true });
+
+		const pathIn = path.join(dir, `${tempId}-in.mp3`);
+		const pathOut = path.join(dir, `${tempId}-out.mp3`);
+
+		await fs.promises.writeFile(pathIn, inputBuffer);
+
+		const args = [
+			'-i', pathIn,
+			'-af', filterString,
+			'-c:a', 'libmp3lame',
+			'-b:a', '192k',
+			'-ar', '44100',
+			'-y', pathOut
+		];
+
+		const proc = spawn(ffmpegPath || 'ffmpeg', args);
+		let stderr = '';
+		proc.stderr.on('data', (d) => { stderr += d.toString(); });
+		proc.on('close', async (code) => {
+			if (code === 0) {
+				try {
+					const outBuf = await fs.promises.readFile(pathOut);
+					await Promise.all([
+						fs.promises.unlink(pathIn).catch(() => {}),
+						fs.promises.unlink(pathOut).catch(() => {})
+					]);
+					resolve(outBuf);
+				} catch (err) {
+					console.warn('Error reading DSP audio:', err);
+					resolve(inputBuffer);
+				}
+			} else {
+				console.warn('FFmpeg DSP warning, using raw audio:', stderr);
+				await fs.promises.unlink(pathIn).catch(() => {});
+				await fs.promises.unlink(pathOut).catch(() => {});
+				resolve(inputBuffer);
+			}
+		});
+		proc.on('error', (err) => {
+			console.warn('FFmpeg DSP process error:', err);
+			resolve(inputBuffer);
+		});
+	});
+}
+
 export async function POST({ request }) {
 	try {
 		const { 
@@ -292,6 +358,13 @@ export async function POST({ request }) {
 			const appendRes = await appendSilence(singleResult.audioBuffer, sceneOutro);
 			finalBuffer = appendRes.audioBuffer;
 			finalDuration = appendRes.exactDuration || Number((singleResult.duration + sceneOutro).toFixed(2));
+		}
+
+		// Apply Studio Mastering DSP filter (Presence EQ, Compression, Warmth)
+		if (effectPreset?.ffmpegFilter) {
+			finalBuffer = await applyAudioPostProcessing(finalBuffer, effectPreset.ffmpegFilter);
+			const masteredDur = await getAudioDurationFromBuffer(finalBuffer);
+			if (masteredDur) finalDuration = masteredDur;
 		}
 
 		const audioBase64 = finalBuffer.toString('base64');

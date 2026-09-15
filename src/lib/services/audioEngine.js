@@ -40,7 +40,7 @@ class AudioController {
 	constructor() {
 		this.bgmAudio = null;
 		this.voiceAudio = null;
-		this.bgmVolume = 0.15;
+		this.bgmVolume = 0.06;
 		this.voiceVolume = 1.0;
 		this.isDucking = false;
 	}
@@ -61,7 +61,7 @@ class AudioController {
 	setBGMVolume(vol) {
 		this.bgmVolume = Math.max(0, Math.min(1, vol));
 		if (this.bgmAudio) {
-			this.bgmAudio.volume = this.isDucking ? this.bgmVolume * 0.3 : this.bgmVolume;
+			this.bgmAudio.volume = this.isDucking ? this.bgmVolume * 0.25 : this.bgmVolume;
 		}
 	}
 
@@ -90,7 +90,8 @@ class AudioController {
 			this.swellTimer = null;
 		}
 		if (this.bgmAudio) {
-			const targetVol = shouldDuck ? this.bgmVolume * 0.3 : this.bgmVolume;
+			// Deep ducking: drops background music volume to 25% while voice is speaking
+			const targetVol = shouldDuck ? this.bgmVolume * 0.25 : this.bgmVolume;
 			this.bgmAudio.volume = targetVol;
 		}
 	}
@@ -102,8 +103,8 @@ class AudioController {
 		}
 
 		if (this.bgmAudio) {
-			// Swell up volume to full/audible level for chapter transition
-			const swelledVol = Math.min(1.0, Math.max(0.28, this.bgmVolume * 1.8));
+			// Swell up volume to audible level for chapter transition (max 0.16)
+			const swelledVol = Math.min(0.18, Math.max(0.10, this.bgmVolume * 2.2));
 			this.bgmAudio.volume = swelledVol;
 			this.isDucking = false;
 

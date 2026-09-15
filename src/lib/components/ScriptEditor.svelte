@@ -1,8 +1,15 @@
 <script>
 	import { SCRIPT_PRESETS } from '$lib/services/scriptAnalyzer.js';
-	import { Wand2, Sparkles, Clock, FileText, RefreshCw } from 'lucide-svelte';
+	import { Wand2, Sparkles, Clock, FileText, RefreshCw, Lightbulb } from 'lucide-svelte';
 
-	let { script = $bindable(''), onGenerate, isGenerating = false, onOpenScriptGenerator } = $props();
+	let {
+		script = $bindable(''),
+		onGenerate,
+		isGenerating = false,
+		onOpenScriptGenerator,
+		onOpenTopicGenerator,
+		showGenerateButton = false
+	} = $props();
 
 	let wordCount = $derived(script.trim() ? script.trim().split(/\s+/).length : 0);
 	let estimatedSeconds = $derived(Math.round(wordCount * 0.45));
@@ -27,6 +34,17 @@
 		</div>
 
 		<div class="stats-bar">
+			{#if onOpenTopicGenerator}
+				<button 
+					type="button" 
+					class="btn-topic-header-trigger"
+					onclick={onOpenTopicGenerator}
+					title="Cari ide topik video YouTube viral dan formula hook 10 detik"
+				>
+					<Lightbulb size={14} color="#facc15" />
+					<span>💡 Ide Topik Viral</span>
+				</button>
+			{/if}
 			{#if onOpenScriptGenerator}
 				<button 
 					type="button" 
@@ -35,7 +53,7 @@
 					title="Buka AI Script Generator"
 				>
 					<Sparkles size={14} color="#38bdf8" />
-					<span>✨ Tulis Naskah AI (DeepSeek)</span>
+					<span>✨ Tulis Naskah AI</span>
 				</button>
 			{/if}
 			<div class="stat-item">
@@ -53,6 +71,17 @@
 	<div class="preset-section">
 		<div class="preset-top-row">
 			<span class="preset-label">Contoh Naskah Siap Pakai:</span>
+			{#if onOpenTopicGenerator}
+				<button
+					type="button"
+					class="btn-inline-topic-hint"
+					onclick={onOpenTopicGenerator}
+					title="Buntu ide? Temukan topik viral teruji"
+				>
+					<Lightbulb size={12} color="#facc15" />
+					<span>Buntu ide? Cari topik viral di sini</span>
+				</button>
+			{/if}
 		</div>
 		<div class="preset-chips">
 			{#each SCRIPT_PRESETS as preset}
@@ -81,22 +110,23 @@
 	<!-- Action Footer -->
 	<div class="panel-footer">
 		<div class="hint">
-			💡 <em>Tip: Pacing terbaik untuk YouTube retention adalah 1 adegan berganti setiap 5–8 detik.</em>
+			💡 <em>Tip: Pacing ideal YouTube adalah 1 adegan tiap 5–8 detik. Atur suara & filter vokal di bawah lalu klik tombol <strong>Generate</strong>.</em>
 		</div>
-
-		<button 
-			class="btn btn-primary btn-lg generate-btn" 
-			onclick={onGenerate}
-			disabled={isGenerating || !script.trim()}
-		>
-			{#if isGenerating}
-				<RefreshCw size={18} class="spin" />
-				<span>Menganalisis & Mengambil Footage...</span>
-			{:else}
-				<Wand2 size={18} />
-				<span>Analisis Naskah & Generate Video</span>
-			{/if}
-		</button>
+		{#if showGenerateButton}
+			<button 
+				class="btn btn-primary btn-lg generate-btn" 
+				onclick={onGenerate}
+				disabled={isGenerating || !script.trim()}
+			>
+				{#if isGenerating}
+					<RefreshCw size={18} class="spin" />
+					<span>Menganalisis & Mengambil Footage...</span>
+				{:else}
+					<Wand2 size={18} />
+					<span>Analisis Naskah & Generate Video</span>
+				{/if}
+			</button>
+		{/if}
 	</div>
 </div>
 
@@ -162,6 +192,52 @@
 		font-size: 0.8rem;
 		color: var(--text-secondary);
 		font-weight: 500;
+	}
+
+	.btn-topic-header-trigger {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 14px;
+		background: linear-gradient(135deg, rgba(250, 204, 21, 0.2) 0%, rgba(234, 179, 8, 0.15) 100%);
+		border: 1px solid rgba(250, 204, 21, 0.45);
+		border-radius: var(--radius-md);
+		font-size: 0.8rem;
+		font-weight: 700;
+		color: #fef08a;
+		cursor: pointer;
+		transition: all 0.25s ease;
+		box-shadow: 0 0 15px rgba(250, 204, 21, 0.15);
+	}
+
+	.btn-topic-header-trigger:hover {
+		background: linear-gradient(135deg, rgba(250, 204, 21, 0.35) 0%, rgba(234, 179, 8, 0.25) 100%);
+		border-color: #facc15;
+		transform: translateY(-1px);
+		box-shadow: 0 0 20px rgba(250, 204, 21, 0.35);
+		color: #ffffff;
+	}
+
+	.btn-inline-topic-hint {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 2px 8px;
+		background: rgba(250, 204, 21, 0.1);
+		border: 1px dashed rgba(250, 204, 21, 0.35);
+		border-radius: 9999px;
+		color: #fde047;
+		font-size: 0.72rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.18s ease;
+		margin-left: 8px;
+	}
+
+	.btn-inline-topic-hint:hover {
+		background: rgba(250, 204, 21, 0.2);
+		border-color: #facc15;
+		color: #ffffff;
 	}
 
 	.btn-ai-header-trigger {

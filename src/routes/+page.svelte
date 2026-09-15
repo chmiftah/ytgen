@@ -1,5 +1,6 @@
 <script>
 	import { onMount, onDestroy } from 'svelte';
+	import { Wand2, RefreshCw } from 'lucide-svelte';
 	import Navbar from '$lib/components/Navbar.svelte';
 	import ScriptEditor from '$lib/components/ScriptEditor.svelte';
 	import SceneTimeline from '$lib/components/SceneTimeline.svelte';
@@ -9,6 +10,7 @@
 	import SettingsModal from '$lib/components/SettingsModal.svelte';
 	import ExportModal from '$lib/components/ExportModal.svelte';
 	import ScriptGeneratorModal from '$lib/components/ScriptGeneratorModal.svelte';
+	import TopicGeneratorModal from '$lib/components/TopicGeneratorModal.svelte';
 	import GenerationProgressConsole from '$lib/components/GenerationProgressConsole.svelte';
 
 	import { analyzeScript, SCRIPT_PRESETS, getSpokenVoiceoverText, getChapterSpokenIntro } from '$lib/services/scriptAnalyzer.js';
@@ -18,8 +20,11 @@
 	import { 
 		EDGE_TTS_VOICES, 
 		POPULAR_VOICES, 
+		F5_LOCAL_VOICES,
+		DEFAULT_F5_VOICE_ID,
 		DEFAULT_EDGE_VOICE_ID, 
 		DEFAULT_ELEVEN_VOICE_ID, 
+		isF5Voice,
 		isEdgeVoice 
 	} from '$lib/services/voiceService.js';
 	import {
@@ -39,14 +44,14 @@
 	let karaokeEnabled = $state(true);
 	let subtitleFontSize = $state(34);
 	let selectedBgmId = $state('ambient-focus');
-	let bgmVolume = $state(0.15);
+	let bgmVolume = $state(0.06);
 
 	// API Keys, Voices & Audio Effects
 	let deepseekApiKey = $state('sk-0802f45e1d4e41c8ae8d46396c97b746');
 	let pexelsApiKey = $state('');
 	let elevenLabsApiKey = $state('');
-	let selectedVoiceId = $state(DEFAULT_EDGE_VOICE_ID); // Default to id-ID-GadisNeural
-	let voiceMode = $state('edge_tts'); // 'edge_tts' | 'custom_upload' | 'elevenlabs'
+	let selectedVoiceId = $state(DEFAULT_F5_VOICE_ID); // Default to f5-reporter (Natural Indonesian)
+	let voiceMode = $state('f5_tts'); // 'f5_tts' | 'edge_tts' | 'custom_upload' | 'elevenlabs'
 	let selectedAudioEffect = $state(DEFAULT_AUDIO_EFFECT_ID); // Default: Epic Movie Trailer
 
 	// Audio Effect Audition Preview
@@ -86,8 +91,16 @@
 	let showExportModal = $state(false);
 	let showFootageModal = $state(false);
 	let showScriptGeneratorModal = $state(false);
+	let showTopicGeneratorModal = $state(false);
+	let pendingTopic = $state(null);
 	let footageSceneIndex = $state(0);
 	let elevenLabsError = $state(''); // Show ElevenLabs errors to user
+
+	function handleSelectTopicFromGenerator(topicItem) {
+		showTopicGeneratorModal = false;
+		pendingTopic = topicItem;
+		showScriptGeneratorModal = true;
+	}
 
 	// Live Pipeline Generation Progress State
 	let genProgress = $state({
@@ -121,9 +134,10 @@
 
 			pexelsApiKey = localStorage.getItem('yt_pexels_key') || '';
 			elevenLabsApiKey = localStorage.getItem('yt_eleven_key') || '';
-			selectedVoiceId = localStorage.getItem('yt_voice_id') || DEFAULT_EDGE_VOICE_ID;
+			selectedVoiceId = localStorage.getItem('yt_voice_id') || DEFAULT_F5_VOICE_ID;
 			const savedMode = localStorage.getItem('yt_voice_mode');
 			if (savedMode) voiceMode = savedMode;
+			else if (isF5Voice(selectedVoiceId)) voiceMode = 'f5_tts';
 
 			const savedEffect = localStorage.getItem('yt_audio_effect');
 			if (savedEffect) selectedAudioEffect = savedEffect;
@@ -244,11 +258,39 @@
 					addGenLog('FOOTAGE', `✓ [Adegan ${sceneNum}] Video dipilih: "${chosenFootage.title || sc.visualQuery}"`, 'info');
 				}
 
-				// 2. Fetch Voiceover / Audio Timestamps (Edge TTS, ElevenLabs, or fallback)
+				// 2. Fetch Voiceover / Audio Timestamps (F5-TTS, Edge TTS, ElevenLabs, or fallback)
 				let voiceData = null;
 				elevenLabsError = '';
 
-				if (voiceMode === 'edge_tts') {
+				if (voiceMode === 'f5_tts' || isF5Voice(selectedVoiceId)) {
+					addGenLog('F5-TTS', `[Adegan ${sceneNum}] Men-generate Suara Alami F5-TTS (${selectedVoiceId})...`, 'info');
+					try {
+						const ttsRes = await fetch('/api/f5-tts', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({
+								text: sc.narration || spokenText,
+								voiceId: selectedVoiceId || DEFAULT_F5_VOICE_ID,
+								speed: 1.0,
+								chapterIntro: sc.chapter ? getChapterSpokenIntro(sc) : '',
+								chapterPause: sc.chapter ? Number(sc.chapter.pauseDuration ?? 5) : 0,
+								outroPause: sc.chapter ? Number(sc.chapter.outroPause ?? 0) : 0
+							})
+						});
+						voiceData = await ttsRes.json();
+						if (voiceData && !voiceData.success && voiceData.error) {
+							console.warn('F5-TTS error:', voiceData.error);
+							addGenLog('WARN', `[Adegan ${sceneNum}] ${voiceData.error}`, 'warn');
+							voiceData = null;
+						} else if (voiceData && voiceData.success) {
+							genProgress.stats.ttsClips++;
+							addGenLog('F5-TTS', `✓ [Adegan ${sceneNum}] Audio F5-TTS siap (${voiceData.duration}s, natural voice)`, 'success');
+						}
+					} catch (e) {
+						console.warn('F5-TTS API error:', e);
+						addGenLog('WARN', `[Adegan ${sceneNum}] Gagal terhubung ke F5-TTS Lokal. Pastikan ./run_server.sh aktif.`, 'warn');
+					}
+				} else if (voiceMode === 'edge_tts') {
 					const effectObj = getAudioEffectById(sc.audioEffect || selectedAudioEffect);
 					addGenLog('EDGE-TTS', `[Adegan ${sceneNum}] Men-generate Edge TTS (${selectedVoiceId}) + Filter "${effectObj.name}"...`, 'info');
 					try {
@@ -386,9 +428,18 @@
 		const effectToUse = targetScene.audioEffect || selectedAudioEffect;
 
 		try {
-			const isEdge = (voiceMode === 'edge_tts' || targetScene.voiceProvider === 'edge_tts' || isEdgeVoice(selectedVoiceId));
-			const endpoint = isEdge ? '/api/edge-tts' : '/api/elevenlabs';
-			const payload = isEdge
+			const isF5 = (voiceMode === 'f5_tts' || targetScene.voiceProvider === 'f5_tts' || isF5Voice(selectedVoiceId));
+			const isEdge = !isF5 && (voiceMode === 'edge_tts' || targetScene.voiceProvider === 'edge_tts' || isEdgeVoice(selectedVoiceId));
+			const endpoint = isF5 ? '/api/f5-tts' : (isEdge ? '/api/edge-tts' : '/api/elevenlabs');
+			const payload = isF5
+				? {
+					text: targetScene.narration || getSpokenVoiceoverText(targetScene),
+					voiceId: selectedVoiceId || DEFAULT_F5_VOICE_ID,
+					chapterIntro: targetScene.chapter ? getChapterSpokenIntro(targetScene) : '',
+					chapterPause: targetScene.chapter ? Number(targetScene.chapter.pauseDuration ?? 5) : 0,
+					outroPause: targetScene.chapter ? Number(targetScene.chapter.outroPause ?? 0) : 0
+				}
+				: isEdge
 				? {
 					text: targetScene.narration || getSpokenVoiceoverText(targetScene),
 					voiceId: selectedVoiceId || DEFAULT_EDGE_VOICE_ID,
@@ -667,23 +718,10 @@
 				onGenerate={generateWorkflow}
 				isGenerating={isGenerating}
 				onOpenScriptGenerator={() => showScriptGeneratorModal = true}
+				onOpenTopicGenerator={() => showTopicGeneratorModal = true}
 			/>
 
-			<!-- Live Background Pipeline Monitor -->
-			<GenerationProgressConsole
-				isGenerating={isGenerating}
-				progress={genProgress.percent}
-				currentStep={genProgress.currentStep}
-				currentScene={genProgress.currentScene}
-				totalScenes={genProgress.totalScenes}
-				activeQuery={genProgress.activeQuery}
-				activeNarration={genProgress.activeNarration}
-				stats={genProgress.stats}
-				logs={genProgress.logs}
-				onDismiss={() => { genProgress.logs = []; genProgress.active = false; }}
-			/>
-
-			<!-- Mode Voiceover Selector -->
+			<!-- Mode Voiceover Selector & Vocal Filter -->
 			<div class="voice-mode-banner glass-panel">
 				<div class="mode-info">
 					<span class="mode-icon">
@@ -713,6 +751,16 @@
 					<button 
 						type="button" 
 						class="mode-pill-btn" 
+						class:active={voiceMode === 'f5_tts'} 
+						onclick={() => { voiceMode = 'f5_tts'; if (!isF5Voice(selectedVoiceId)) selectedVoiceId = DEFAULT_F5_VOICE_ID; }}
+					>
+						<span>⚡ F5-TTS Lokal</span>
+						<span class="badge-f5">Natural AI</span>
+					</button>
+
+					<button 
+						type="button" 
+						class="mode-pill-btn" 
 						class:active={voiceMode === 'edge_tts'} 
 						onclick={() => { voiceMode = 'edge_tts'; if (!isEdgeVoice(selectedVoiceId)) selectedVoiceId = DEFAULT_EDGE_VOICE_ID; }}
 					>
@@ -734,14 +782,40 @@
 						type="button" 
 						class="mode-pill-btn" 
 						class:active={voiceMode === 'elevenlabs'} 
-						onclick={() => { voiceMode = 'elevenlabs'; if (isEdgeVoice(selectedVoiceId)) selectedVoiceId = DEFAULT_ELEVEN_VOICE_ID; }}
+						onclick={() => { voiceMode = 'elevenlabs'; if (isEdgeVoice(selectedVoiceId) || isF5Voice(selectedVoiceId)) selectedVoiceId = DEFAULT_ELEVEN_VOICE_ID; }}
 					>
 						<span>🤖 ElevenLabs AI</span>
 						<span class="badge-ai">Premium</span>
 					</button>
 				</div>
 
-				{#if voiceMode === 'edge_tts'}
+				{#if voiceMode === 'f5_tts'}
+					<div class="quick-voice-bar">
+						<span class="quick-voice-label">Pilihan Suara Alami (F5-TTS M1):</span>
+						<div class="quick-voice-chips">
+							{#each F5_LOCAL_VOICES as v}
+								<button
+									type="button"
+									class="quick-voice-chip"
+									class:active={selectedVoiceId === v.id}
+									onclick={() => selectedVoiceId = v.id}
+									title="{v.name} – {v.description}"
+								>
+									<span>{v.emoji} {v.name.split(' (')[0]}</span>
+									<span class="chip-gender">{v.gender === 'Female' ? '♀' : '♂'}</span>
+								</button>
+							{/each}
+							<button
+								type="button"
+								class="quick-voice-chip more-btn"
+								onclick={() => showSettingsModal = true}
+								title="Buka status & pengaturan suara lengkap"
+							>
+								<span>Status Server & Suara ⚙️</span>
+							</button>
+						</div>
+					</div>
+				{:else if voiceMode === 'edge_tts'}
 					<div class="quick-voice-bar">
 						<span class="quick-voice-label">Pilihan Suara Edge TTS:</span>
 						<div class="quick-voice-chips">
@@ -806,7 +880,54 @@
 						{/each}
 					</div>
 				</div>
+
+				<!-- Tombol Generate Tepat di Bawah Pilihan Suara & Filter Vokal -->
+				<div class="banner-generate-action">
+					<div class="generate-config-summary">
+						<span class="config-dot"></span>
+						<div class="config-text">
+							<span>Mode: <strong>{voiceMode === 'f5_tts' ? 'F5-TTS Lokal' : voiceMode === 'edge_tts' ? 'Edge TTS' : voiceMode === 'custom_upload' ? 'Rekaman Sendiri' : 'ElevenLabs AI'}</strong></span>
+							{#if voiceMode === 'f5_tts'}
+								<span class="config-sub">({F5_LOCAL_VOICES.find(v => v.id === selectedVoiceId)?.name?.split(' (')[0] || selectedVoiceId})</span>
+							{:else if voiceMode === 'edge_tts'}
+								<span class="config-sub">({EDGE_TTS_VOICES.find(v => v.id === selectedVoiceId)?.name?.split(' (')[0] || selectedVoiceId})</span>
+							{/if}
+							<span class="config-sep">•</span>
+							<span>Filter Vokal: <strong class="config-effect">{AUDIO_EFFECT_PRESETS.find(e => e.id === selectedAudioEffect)?.emoji || '🎛️'} {AUDIO_EFFECT_PRESETS.find(e => e.id === selectedAudioEffect)?.name?.split(' (')[0] || 'Default'}</strong></span>
+						</div>
+					</div>
+
+					<button 
+						type="button"
+						class="btn btn-primary btn-lg banner-generate-btn" 
+						onclick={generateWorkflow}
+						disabled={isGenerating || !script.trim()}
+						title="Analisis naskah, potong adegan, unduh footage & generate voiceover"
+					>
+						{#if isGenerating}
+							<RefreshCw size={19} class="spin" />
+							<span>Menganalisis & Mengambil Footage...</span>
+						{:else}
+							<Wand2 size={19} />
+							<span>Analisis Naskah & Generate Video</span>
+						{/if}
+					</button>
+				</div>
 			</div>
+
+			<!-- Live Background Pipeline Monitor -->
+			<GenerationProgressConsole
+				isGenerating={isGenerating}
+				progress={genProgress.percent}
+				currentStep={genProgress.currentStep}
+				currentScene={genProgress.currentScene}
+				totalScenes={genProgress.totalScenes}
+				activeQuery={genProgress.activeQuery}
+				activeNarration={genProgress.activeNarration}
+				stats={genProgress.stats}
+				logs={genProgress.logs}
+				onDismiss={() => { genProgress.logs = []; genProgress.active = false; }}
+			/>
 
 			<SceneTimeline
 				bind:scenes={scenes}
@@ -855,11 +976,24 @@
 	</main>
 
 	<!-- Modals -->
+	<TopicGeneratorModal
+		isOpen={showTopicGeneratorModal}
+		deepseekApiKey={deepseekApiKey}
+		onSelectTopic={handleSelectTopicFromGenerator}
+		onClose={() => showTopicGeneratorModal = false}
+	/>
+
 	<ScriptGeneratorModal
 		isOpen={showScriptGeneratorModal}
 		deepseekApiKey={deepseekApiKey}
+		initialTopic={pendingTopic ? pendingTopic.title : ''}
+		initialHookStyle={pendingTopic?.hookFormula || ''}
 		onSelectScript={(newScript) => {
 			script = newScript;
+		}}
+		onOpenTopicGenerator={() => {
+			showScriptGeneratorModal = false;
+			showTopicGeneratorModal = true;
 		}}
 		onClose={() => showScriptGeneratorModal = false}
 	/>
@@ -909,7 +1043,11 @@
 		min-height: 100vh;
 		display: flex;
 		flex-direction: column;
-		background: radial-gradient(circle at 50% 0%, #0e1526 0%, #060910 100%);
+		background:
+			radial-gradient(ellipse at 15% 5%, rgba(99, 102, 241, 0.06) 0%, transparent 50%),
+			radial-gradient(ellipse at 85% 15%, rgba(6, 182, 212, 0.04) 0%, transparent 45%),
+			radial-gradient(ellipse at 50% 80%, rgba(168, 85, 247, 0.03) 0%, transparent 50%),
+			radial-gradient(circle at 50% 0%, #0a1020 0%, #050810 100%);
 	}
 
 	.api-error-banner {
@@ -917,11 +1055,12 @@
 		align-items: center;
 		gap: 12px;
 		flex-wrap: wrap;
-		background: rgba(239, 68, 68, 0.12);
-		border-bottom: 1px solid rgba(239, 68, 68, 0.35);
+		background: rgba(239, 68, 68, 0.1);
+		border-bottom: 1px solid rgba(239, 68, 68, 0.3);
 		padding: 10px 28px;
 		font-size: 0.82rem;
 		color: #fca5a5;
+		backdrop-filter: blur(8px);
 	}
 
 	.api-error-banner strong { color: #f87171; }
@@ -956,9 +1095,9 @@
 		flex: 1;
 		display: grid;
 		grid-template-columns: 1.15fr 0.85fr;
-		gap: 24px;
-		padding: 24px 28px;
-		max-width: 1720px;
+		gap: 28px;
+		padding: 28px 32px;
+		max-width: 1740px;
 		margin: 0 auto;
 		width: 100%;
 	}
@@ -966,7 +1105,7 @@
 	.left-workstation {
 		display: flex;
 		flex-direction: column;
-		gap: 24px;
+		gap: 22px;
 	}
 
 	.right-workstation {
@@ -975,57 +1114,86 @@
 
 	.player-sticky-wrap {
 		position: sticky;
-		top: 86px;
+		top: 80px;
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
+		gap: 18px;
 	}
 
 	.preview-header {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: 10px;
+		padding: 0 4px;
 	}
 
 	.pulse-indicator {
-		width: 8px;
-		height: 8px;
+		width: 10px;
+		height: 10px;
 		border-radius: 50%;
 		background: #f43f5e;
-		box-shadow: 0 0 10px #f43f5e;
+		box-shadow: 0 0 12px #f43f5e, 0 0 24px rgba(244, 63, 94, 0.25);
 		animation: pulseGlow 1.5s infinite ease-in-out;
 	}
 
 	.preview-title {
-		font-size: 0.95rem;
-		font-weight: 700;
+		font-size: 1rem;
+		font-weight: 800;
 		color: var(--text-primary);
 		letter-spacing: -0.01em;
+		background: linear-gradient(135deg, #f8fafc 0%, #cbd5e1 100%);
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
 	}
 
 	.tips-card {
-		padding: 18px 20px;
-		background: rgba(15, 23, 42, 0.4);
-		border-radius: var(--radius-md);
+		padding: 20px 22px;
+		background: rgba(10, 18, 36, 0.5);
+		border-radius: var(--radius-lg);
+		border: 1px solid rgba(99, 102, 241, 0.12);
+		position: relative;
+		overflow: hidden;
+	}
+
+	.tips-card::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 2px;
+		background: linear-gradient(90deg, var(--primary), var(--accent-cyan), var(--accent-purple));
+		opacity: 0.5;
 	}
 
 	.tips-card h4 {
-		font-size: 0.85rem;
-		margin-bottom: 8px;
+		font-size: 0.88rem;
+		margin-bottom: 10px;
 		color: #e2e8f0;
+		font-weight: 700;
 	}
 
 	.tips-card ul {
 		list-style: none;
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 8px;
 	}
 
 	.tips-card li {
 		font-size: 0.775rem;
 		color: var(--text-secondary);
-		line-height: 1.4;
+		line-height: 1.5;
+		padding-left: 12px;
+		position: relative;
+	}
+
+	.tips-card li::before {
+		content: '›';
+		position: absolute;
+		left: 0;
+		color: var(--accent-cyan);
+		font-weight: 700;
 	}
 
 	.tips-card strong {
@@ -1034,14 +1202,27 @@
 
 	/* Voice Mode Selector Banner */
 	.voice-mode-banner {
-		padding: 14px 18px;
+		padding: 16px 20px;
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: 16px;
 		flex-wrap: wrap;
-		background: rgba(15, 23, 42, 0.6);
-		border: 1px solid rgba(255, 255, 255, 0.08);
+		background: rgba(10, 16, 32, 0.7);
+		border: 1px solid rgba(255, 255, 255, 0.07);
+		position: relative;
+	}
+
+	.voice-mode-banner::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 30px;
+		right: 30px;
+		height: 1px;
+		background: linear-gradient(90deg, transparent, rgba(6, 182, 212, 0.2), transparent);
+		pointer-events: none;
+		z-index: 1;
 	}
 
 	.mode-info {
@@ -1051,11 +1232,12 @@
 	}
 
 	.mode-icon {
-		font-size: 1.4rem;
+		font-size: 1.5rem;
+		filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.1));
 	}
 
 	.mode-title {
-		font-size: 0.88rem;
+		font-size: 0.9rem;
 		font-weight: 700;
 		color: var(--text-primary);
 	}
@@ -1063,7 +1245,8 @@
 	.mode-desc {
 		font-size: 0.76rem;
 		color: var(--text-secondary);
-		margin-top: 2px;
+		margin-top: 3px;
+		line-height: 1.4;
 	}
 
 	.mode-options {
@@ -1076,45 +1259,59 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 8px 14px;
+		padding: 9px 16px;
 		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid var(--border-subtle);
-		border-radius: 8px;
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 10px;
 		font-size: 0.8rem;
 		font-weight: 600;
 		color: var(--text-secondary);
 		cursor: pointer;
-		transition: all 0.2s ease;
+		transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
 	.mode-pill-btn:hover {
 		background: rgba(255, 255, 255, 0.07);
 		color: var(--text-primary);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 	}
 
 	.mode-pill-btn.active {
-		background: rgba(6, 182, 212, 0.15);
+		background: linear-gradient(135deg, rgba(6, 182, 212, 0.18) 0%, rgba(99, 102, 241, 0.12) 100%);
 		border-color: var(--accent-cyan);
 		color: #fff;
-		box-shadow: 0 0 12px rgba(6, 182, 212, 0.25);
+		box-shadow: 0 0 16px rgba(6, 182, 212, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+	}
+
+	.badge-f5 {
+		font-size: 0.62rem;
+		font-weight: 700;
+		padding: 2px 7px;
+		border-radius: 5px;
+		background: rgba(99, 102, 241, 0.25);
+		color: #a5b4fc;
+		letter-spacing: 0.02em;
 	}
 
 	.badge-free {
-		font-size: 0.65rem;
+		font-size: 0.62rem;
 		font-weight: 700;
-		padding: 2px 6px;
-		border-radius: 4px;
+		padding: 2px 7px;
+		border-radius: 5px;
 		background: rgba(16, 185, 129, 0.2);
 		color: #34d399;
+		letter-spacing: 0.02em;
 	}
 
 	.badge-ai {
-		font-size: 0.65rem;
+		font-size: 0.62rem;
 		font-weight: 700;
-		padding: 2px 6px;
-		border-radius: 4px;
+		padding: 2px 7px;
+		border-radius: 5px;
 		background: rgba(56, 189, 248, 0.2);
 		color: #38bdf8;
+		letter-spacing: 0.02em;
 	}
 
 	/* Quick Voice Selector Chips */
@@ -1123,14 +1320,14 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		padding-top: 10px;
-		margin-top: 6px;
-		border-top: 1px solid rgba(255, 255, 255, 0.06);
+		padding-top: 12px;
+		margin-top: 8px;
+		border-top: 1px solid rgba(255, 255, 255, 0.05);
 		flex-wrap: wrap;
 	}
 
 	.quick-voice-label {
-		font-size: 0.75rem;
+		font-size: 0.73rem;
 		font-weight: 600;
 		color: var(--text-muted);
 		flex-shrink: 0;
@@ -1147,20 +1344,21 @@
 		display: flex;
 		align-items: center;
 		gap: 5px;
-		padding: 4px 10px;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid var(--border-subtle);
+		padding: 5px 11px;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.08);
 		border-radius: 9999px;
 		font-size: 0.74rem;
 		color: var(--text-secondary);
 		cursor: pointer;
-		transition: all 0.18s ease;
+		transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
 	.quick-voice-chip:hover {
 		background: rgba(255, 255, 255, 0.08);
 		border-color: rgba(255, 255, 255, 0.2);
 		color: var(--text-primary);
+		transform: translateY(-1px);
 	}
 
 	.quick-voice-chip.active {
@@ -1168,7 +1366,7 @@
 		border-color: #10b981;
 		color: #34d399;
 		font-weight: 600;
-		box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+		box-shadow: 0 0 12px rgba(16, 185, 129, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 	}
 
 	.quick-voice-chip.more-btn {
@@ -1180,6 +1378,7 @@
 	.quick-voice-chip.more-btn:hover {
 		background: rgba(99, 102, 241, 0.2);
 		color: #ffffff;
+		transform: translateY(-1px);
 	}
 
 	.chip-gender {
@@ -1192,10 +1391,10 @@
 		width: 100%;
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
-		padding-top: 10px;
-		margin-top: 6px;
-		border-top: 1px solid rgba(255, 255, 255, 0.06);
+		gap: 10px;
+		padding-top: 12px;
+		margin-top: 8px;
+		border-top: 1px solid rgba(255, 255, 255, 0.05);
 	}
 
 	.quick-effect-header {
@@ -1221,7 +1420,7 @@
 	.quick-effect-chips {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: 7px;
 		flex-wrap: wrap;
 	}
 
@@ -1229,21 +1428,22 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
-		padding: 5px 11px;
+		padding: 6px 13px;
 		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(255, 255, 255, 0.08);
+		border: 1px solid rgba(255, 255, 255, 0.07);
 		border-radius: 9999px;
 		font-size: 0.74rem;
 		color: var(--text-secondary);
 		cursor: pointer;
-		transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+		transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 	}
 
 	.quick-effect-chip:hover {
 		background: rgba(255, 255, 255, 0.08);
 		border-color: rgba(255, 255, 255, 0.2);
 		color: var(--text-primary);
-		transform: translateY(-1px);
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 	}
 
 	.quick-effect-chip.active {
@@ -1251,11 +1451,11 @@
 		border-color: var(--accent-cyan);
 		color: #ffffff;
 		font-weight: 600;
-		box-shadow: 0 0 14px rgba(6, 182, 212, 0.3);
+		box-shadow: 0 0 18px rgba(6, 182, 212, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 	}
 
 	.chip-eff-emoji {
-		font-size: 0.85rem;
+		font-size: 0.88rem;
 	}
 
 	.chip-eff-name {
@@ -1263,11 +1463,11 @@
 	}
 
 	.chip-preview-play-btn {
-		width: 17px;
-		height: 17px;
+		width: 18px;
+		height: 18px;
 		border-radius: 50%;
 		border: none;
-		background: rgba(255, 255, 255, 0.15);
+		background: rgba(255, 255, 255, 0.12);
 		color: #fff;
 		display: inline-flex;
 		align-items: center;
@@ -1276,25 +1476,27 @@
 		line-height: 1;
 		cursor: pointer;
 		padding: 0;
-		transition: all 0.15s ease;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
 	.chip-preview-play-btn:hover {
 		background: var(--accent-cyan);
 		color: #000;
-		transform: scale(1.18);
+		transform: scale(1.2);
+		box-shadow: 0 0 8px var(--accent-cyan);
 	}
 
 	.chip-preview-play-btn.playing {
 		background: #f43f5e;
 		color: #fff;
-		box-shadow: 0 0 8px #f43f5e;
+		box-shadow: 0 0 10px #f43f5e;
+		animation: pulseGlow 1s infinite;
 	}
 
 	.chip-eff-tag {
 		font-size: 0.6rem;
 		font-weight: 700;
-		padding: 1px 5px;
+		padding: 1px 6px;
 		border-radius: 4px;
 		background: rgba(6, 182, 212, 0.25);
 		color: var(--accent-cyan);
@@ -1307,13 +1509,117 @@
 		color: #041018;
 	}
 
+	/* Tombol Generate di bawah Pilihan Suara & Filter Vokal */
+	.banner-generate-action {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		padding-top: 16px;
+		margin-top: 12px;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+		flex-wrap: wrap;
+	}
+
+	.generate-config-summary {
+		display: inline-flex;
+		align-items: center;
+		gap: 10px;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.07);
+		border-radius: var(--radius-md);
+		padding: 8px 14px;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+	}
+
+	.config-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: #10b981;
+		box-shadow: 0 0 10px #10b981;
+		flex-shrink: 0;
+	}
+
+	.config-text {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+
+	.config-text strong {
+		color: #f1f5f9;
+	}
+
+	.config-sub {
+		color: #94a3b8;
+	}
+
+	.config-sep {
+		color: var(--text-muted);
+		opacity: 0.5;
+	}
+
+	.config-effect {
+		color: var(--accent-cyan) !important;
+	}
+
+	.banner-generate-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 10px;
+		padding: 13px 26px;
+		font-size: 0.95rem;
+		font-weight: 700;
+		letter-spacing: -0.01em;
+		border-radius: var(--radius-lg);
+		background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #4f46e5 100%);
+		box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		color: #ffffff;
+		cursor: pointer;
+		transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+	}
+
+	.banner-generate-btn:hover:not(:disabled) {
+		transform: translateY(-2px);
+		box-shadow: 0 8px 26px rgba(99, 102, 241, 0.55), 0 0 20px rgba(139, 92, 246, 0.35);
+		filter: brightness(1.1);
+	}
+
+	.banner-generate-btn:active:not(:disabled) {
+		transform: translateY(0);
+	}
+
+	.banner-generate-btn:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+		filter: grayscale(0.6);
+		box-shadow: none;
+	}
+
 	@media (max-width: 1100px) {
 		.studio-workspace {
 			grid-template-columns: 1fr;
+			padding: 20px 16px;
 		}
 
 		.player-sticky-wrap {
 			position: static;
 		}
+
+		.banner-generate-action {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.banner-generate-btn {
+			justify-content: center;
+			width: 100%;
+		}
 	}
 </style>
+

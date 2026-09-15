@@ -1,3 +1,50 @@
+/**
+ * Voice Service
+ * Manages voices for Local F5-TTS, Microsoft Edge TTS, and ElevenLabs.
+ */
+
+export const F5_LOCAL_VOICES = [
+	{
+		id: 'f5-reporter',
+		voiceKey: 'reporter',
+		name: 'Reporter TV (Wanita Natural)',
+		gender: 'Female',
+		lang: 'id-ID',
+		category: 'Berita & Jernih',
+		description: 'Artikulasi jernih, formal, dan berwawasan – gaya presenter berita TV Indonesia yang natural',
+		emoji: '🎙️',
+		sampleUrl: '/voice-samples/f5-reporter.mp3',
+		provider: 'f5_tts',
+		badge: 'Lokal M1 (Alami)'
+	},
+	{
+		id: 'f5-prabowo',
+		voiceKey: 'prabowo',
+		name: 'Prabowo (Pria Kharismatik)',
+		gender: 'Male',
+		lang: 'id-ID',
+		category: 'Berat & Berwibawa',
+		description: 'Suara pria berat, tegas, dan berwibawa – sangat cocok untuk dokumenter sejarah & narasi opini',
+		emoji: '🏛️',
+		sampleUrl: '/voice-samples/f5-prabowo.mp3',
+		provider: 'f5_tts',
+		badge: 'Lokal M1 (Alami)'
+	},
+	{
+		id: 'f5-windah',
+		voiceKey: 'windah',
+		name: 'Windah (Pria Santai & Dinamis)',
+		gender: 'Male',
+		lang: 'id-ID',
+		category: 'Kasual & Seru',
+		description: 'Gaya bicara luwes, santai, dan ekspresif – cocok untuk konten hiburan, gaming & storytelling viral',
+		emoji: '🎮',
+		sampleUrl: '/voice-samples/f5-windah.mp3',
+		provider: 'f5_tts',
+		badge: 'Lokal M1 (Alami)'
+	}
+];
+
 export const EDGE_TTS_VOICES = [
 	{
 		id: 'id-ID-GadisNeural',
@@ -168,14 +215,34 @@ export const POPULAR_VOICES = [
 	}
 ];
 
+export const DEFAULT_F5_VOICE_ID = 'f5-reporter';
 export const DEFAULT_EDGE_VOICE_ID = 'id-ID-GadisNeural';
 export const DEFAULT_ELEVEN_VOICE_ID = 'pNInz6obpgDQGcFmaJgB';
 
+export function isF5Voice(voiceId) {
+	if (!voiceId) return false;
+	return voiceId.startsWith('f5-') || F5_LOCAL_VOICES.some((v) => v.id === voiceId);
+}
+
 export function isEdgeVoice(voiceId) {
 	if (!voiceId) return false;
-	return EDGE_TTS_VOICES.some(v => v.id === voiceId) || voiceId.includes('Neural');
+	return EDGE_TTS_VOICES.some((v) => v.id === voiceId) || voiceId.includes('Neural');
 }
 
 export function getVoiceById(voiceId) {
-	return EDGE_TTS_VOICES.find(v => v.id === voiceId) || POPULAR_VOICES.find(v => v.id === voiceId) || null;
+	return (
+		F5_LOCAL_VOICES.find((v) => v.id === voiceId) ||
+		EDGE_TTS_VOICES.find((v) => v.id === voiceId) ||
+		POPULAR_VOICES.find((v) => v.id === voiceId) ||
+		null
+	);
+}
+
+export function getVoiceEngine(voiceId, explicitMode = null) {
+	if (explicitMode && ['f5_tts', 'edge_tts', 'elevenlabs'].includes(explicitMode)) {
+		return explicitMode;
+	}
+	if (isF5Voice(voiceId)) return 'f5_tts';
+	if (isEdgeVoice(voiceId)) return 'edge_tts';
+	return 'elevenlabs';
 }

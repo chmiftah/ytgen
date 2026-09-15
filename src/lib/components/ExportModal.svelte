@@ -10,7 +10,7 @@
 		karaokeEnabled = true,
 		subtitleFontSize = 34,
 		selectedBgmId = 'ambient-focus',
-		bgmVolume = 0.15,
+		bgmVolume = 0.06,
 		onClose
 	} = $props();
 
@@ -47,7 +47,7 @@
 			const bgmUrl =
 				selectedBgmId === 'none'
 					? null
-					: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+					: '/bgm/bgm-soundhelix-1.mp3';
 
 			const res = await fetch('/api/render', {
 				method: 'POST',

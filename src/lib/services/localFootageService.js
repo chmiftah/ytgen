@@ -70,7 +70,12 @@ export async function getLocalCatalog() {
 	if (fs.existsSync(CATALOG_PATH)) {
 		try {
 			const data = await fs.promises.readFile(CATALOG_PATH, 'utf-8');
-			return JSON.parse(data);
+			const parsed = JSON.parse(data);
+			if (Array.isArray(parsed)) {
+				return parsed.filter(
+					(item) => item.fileName && !item.fileName.endsWith('.mp3') && (!item.sourceUrl || !item.sourceUrl.includes('.mp3'))
+				);
+			}
 		} catch (err) {
 			console.warn('Failed to parse catalog.json, recreating:', err.message);
 		}
