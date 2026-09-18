@@ -3,6 +3,13 @@ import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { EDGE_TTS_VOICES, DEFAULT_EDGE_VOICE_ID } from '$lib/services/voiceService.js';
 import { generateSyntheticWordTimings } from '$lib/services/subtitleService.js';
 import { getAudioEffectById } from '$lib/services/audioEffectService.js';
+import { 
+	generateVoiceoverPipeline, 
+	DEFAULT_EDGE_VOICE, 
+	VOICE_RATES, 
+	synthesizeChunkWithRetry, 
+	getOrCreateSilence 
+} from '$lib/services/edgeTtsPipeline.js';
 import ffmpegPath from 'ffmpeg-static';
 import { spawn } from 'child_process';
 import fs from 'fs';
@@ -305,7 +312,8 @@ export async function POST({ request }) {
 			voiceId = DEFAULT_EDGE_VOICE_ID, 
 			rate, 
 			pitch, 
-			audioEffect = 'studio_podcast' 
+			audioEffect = 'studio_podcast',
+			humanize = true
 		} = await request.json();
 
 		if ((!text || !text.trim()) && (!chapterIntro || !chapterIntro.trim())) {
@@ -314,54 +322,81 @@ export async function POST({ request }) {
 
 		const effectPreset = getAudioEffectById(audioEffect);
 		const effectivePitch = pitch !== undefined && pitch !== null ? pitch : (effectPreset?.edgePitch || '0Hz');
-		const effectiveRate = rate !== undefined && rate !== null ? rate : (effectPreset?.edgeRate || '0%');
-
 		const cleanNarration = (text || '').trim();
 		const cleanIntro = (chapterIntro || '').trim();
 		const pauseSec = Number(chapterPause || 0);
 		const outroSec = Number(outroPause || 0);
-		// Always maintain at least 0.6s of natural breathing space at the end of each scene
-		const sceneOutro = Math.max(0.6, outroSec);
+		const targetVoiceId = voiceId || DEFAULT_EDGE_VOICE_ID || DEFAULT_EDGE_VOICE;
 
 		let finalBuffer = null;
 		let finalWordTimings = [];
 		let finalDuration = 0;
+		let finalAudioPath = null;
+		let chunksInfo = [];
+		let cacheStats = { total: 0, hits: 0, misses: 0 };
 
 		if (cleanIntro && pauseSec > 0 && cleanNarration) {
-			// 1. Synthesize chapter intro
-			const introResult = await synthesizeStream(cleanIntro, voiceId, effectiveRate, effectivePitch);
-			// 2. Synthesize narration
-			const narrResult = await synthesizeStream(cleanNarration, voiceId, effectiveRate, effectivePitch);
+			// 1. Synthesize chapter intro as a distinct announcement chunk
+			const introChunk = {
+				index: 0,
+				text: cleanIntro,
+				normalizedText: cleanIntro,
+				style: 'emphasis',
+				rate: VOICE_RATES.emphasis || '-6%',
+				pitch: effectivePitch,
+				pause_after: Math.round(pauseSec * 1000),
+				audio_path: null,
+				audio_hash: `intro-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+				status: 'pending'
+			};
+			await synthesizeChunkWithRetry(introChunk, { voiceId: targetVoiceId });
 
-			// Shift narration timings by: (introResult.duration + pauseSec)
-			const shiftAmount = Number((introResult.duration + pauseSec).toFixed(3));
+			// 2. Synthesize narration through the upgraded long-form voiceover pipeline
+			const narrResult = await generateVoiceoverPipeline(cleanNarration, {
+				voiceId: targetVoiceId,
+				pitch: effectivePitch,
+				humanize: humanize !== false,
+				includeOutroSilence: outroSec > 0
+			});
+
+			// Shift narration word timings by: (introChunk.duration + pauseSec)
+			const shiftAmount = Number((introChunk.duration + pauseSec).toFixed(3));
 			const shiftedNarrTimings = narrResult.wordTimings.map((w) => ({
 				word: w.word,
 				start: Number((w.start + shiftAmount).toFixed(3)),
 				end: Number((w.end + shiftAmount).toFixed(3))
 			}));
 
-			finalWordTimings = [...introResult.wordTimings, ...shiftedNarrTimings];
+			finalWordTimings = [...(introChunk.wordTimings || []), ...shiftedNarrTimings];
 
-			// Concatenate with silence using FFmpeg
-			const concatRes = await concatWithSilence(introResult.audioBuffer, pauseSec, narrResult.audioBuffer, sceneOutro);
+			// Concat intro + pause + narr via concatWithSilence
+			const introBuf = await fs.promises.readFile(introChunk.audio_path);
+			const narrBuf = await fs.promises.readFile(narrResult.audioPath);
+			const concatRes = await concatWithSilence(introBuf, pauseSec, narrBuf, outroSec);
 			finalBuffer = concatRes.audioBuffer;
-			finalDuration = concatRes.exactDuration || Number((shiftAmount + narrResult.duration + sceneOutro).toFixed(2));
+			finalDuration = concatRes.exactDuration || Number((shiftAmount + narrResult.duration + outroSec).toFixed(2));
+			chunksInfo = [introChunk, ...narrResult.chunks];
+			cacheStats = narrResult.cacheStats;
 		} else {
-			// Single speech stream (regular scene or chapter without extra pause)
+			// Single stream or standard scene: full pipeline with smart chunking, voice direction, and caching
 			const fullText = cleanIntro ? `${cleanIntro} ... ${cleanNarration}` : cleanNarration;
-			const singleResult = await synthesizeStream(fullText, voiceId, effectiveRate, effectivePitch);
+			const pipelineResult = await generateVoiceoverPipeline(fullText, {
+				voiceId: targetVoiceId,
+				pitch: effectivePitch,
+				humanize: humanize !== false,
+				includeOutroSilence: outroSec > 0
+			});
 
-			finalWordTimings = singleResult.wordTimings;
-
-			// Append natural breathing room (0.6s) to end of scene audio
-			const appendRes = await appendSilence(singleResult.audioBuffer, sceneOutro);
-			finalBuffer = appendRes.audioBuffer;
-			finalDuration = appendRes.exactDuration || Number((singleResult.duration + sceneOutro).toFixed(2));
+			finalAudioPath = pipelineResult.audioPath;
+			finalBuffer = await fs.promises.readFile(pipelineResult.audioPath);
+			finalWordTimings = pipelineResult.wordTimings;
+			finalDuration = pipelineResult.duration;
+			chunksInfo = pipelineResult.chunks;
+			cacheStats = pipelineResult.cacheStats;
 		}
 
-		// Apply Studio Mastering DSP filter (Presence EQ, Compression, Warmth)
-		if (effectPreset?.ffmpegFilter) {
+		// Apply Studio Mastering DSP filter if requested and not raw
+		if (effectPreset?.ffmpegFilter && effectPreset.id !== 'natural') {
 			finalBuffer = await applyAudioPostProcessing(finalBuffer, effectPreset.ffmpegFilter);
 			const masteredDur = await getAudioDurationFromBuffer(finalBuffer);
 			if (masteredDur) finalDuration = masteredDur;
@@ -369,15 +404,27 @@ export async function POST({ request }) {
 
 		const audioBase64 = finalBuffer.toString('base64');
 
+		// Save a copy to static audio-cache for direct static serving
+		const finalDir = path.resolve('./static/renders/audio-cache');
+		await fs.promises.mkdir(finalDir, { recursive: true });
+		const fileKey = `edge-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.mp3`;
+		const persistentPath = path.join(finalDir, fileKey);
+		await fs.promises.writeFile(persistentPath, finalBuffer);
+
 		return json({
 			success: true,
 			audioUrl: `data:audio/mp3;base64,${audioBase64}`,
+			serverAudioPath: persistentPath,
+			audioFileKey: fileKey,
+			staticAudioUrl: `/renders/audio-cache/${fileKey}`,
 			wordTimings: finalWordTimings,
 			duration: finalDuration,
 			isRealVoice: true,
 			provider: 'edge_tts',
-			voiceId,
-			audioEffect: effectPreset?.id || 'natural'
+			voiceId: targetVoiceId,
+			audioEffect: effectPreset?.id || 'natural',
+			chunks: chunksInfo,
+			cacheStats
 		});
 	} catch (error) {
 		console.error('Edge TTS generation error:', error);

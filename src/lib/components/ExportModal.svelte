@@ -2,6 +2,7 @@
 	import { X, Download, FileText, Film, CheckCircle2, AlertCircle, RefreshCw, Sparkles, Copy, Check } from 'lucide-svelte';
 	import { exportToSRT, exportToVTT, generateYouTubeTimestamps } from '$lib/services/subtitleService.js';
 	import { triggerDownload } from '$lib/services/clientExporter.js';
+	import { BGM_TRACKS } from '$lib/services/audioEngine.js';
 
 	let {
 		isOpen = false,
@@ -9,8 +10,9 @@
 		subtitleStyleKey = 'hormozi',
 		karaokeEnabled = true,
 		subtitleFontSize = 34,
-		selectedBgmId = 'ambient-focus',
-		bgmVolume = 0.06,
+		selectedBgmId = 'local-documentary',
+		bgmVolume = 0.10,
+		selectedVoiceId = 'id-ID-ArdiNeural',
 		onClose
 	} = $props();
 
@@ -44,10 +46,11 @@
 		renderStep = 'Menyiapkan pipeline render...';
 
 		try {
+			const matchedTrack = BGM_TRACKS.find((t) => t.id === selectedBgmId);
 			const bgmUrl =
 				selectedBgmId === 'none'
 					? null
-					: '/bgm/bgm-soundhelix-1.mp3';
+					: (matchedTrack?.url || '/bgm/bgm-soundhelix-1.mp3');
 
 			const res = await fetch('/api/render', {
 				method: 'POST',
@@ -59,7 +62,8 @@
 					fontSize: subtitleFontSize,
 					bgmUrl,
 					bgmVolume,
-					renderQuality
+					renderQuality,
+					voiceId: selectedVoiceId
 				})
 			});
 

@@ -1,5 +1,5 @@
 <script>
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import { Play, Pause, Volume2, VolumeX, RotateCcw, Maximize, Music, Layers } from 'lucide-svelte';
 	import { SUBTITLE_STYLES, getActiveSubtitleWindow } from '$lib/services/subtitleService.js';
 	import { audioController, BGM_TRACKS, playChapterStinger } from '$lib/services/audioEngine.js';
@@ -10,8 +10,8 @@
 		subtitleStyleKey = 'hormozi',
 		subtitleFontSize = 34,
 		karaokeEnabled = true,
-		selectedBgmId = $bindable('ambient-focus'),
-		bgmVolume = $bindable(0.06)
+		selectedBgmId = $bindable('local-documentary'),
+		bgmVolume = $bindable(0.10)
 	} = $props();
 
 	let videoElement = $state(null);
@@ -101,6 +101,8 @@
 	}
 
 
+	let isBgmPreviewPlaying = $state(false);
+
 	onMount(() => {
 		initBGM();
 		return () => {
@@ -113,25 +115,59 @@
 		const track = BGM_TRACKS.find(t => t.id === selectedBgmId);
 		if (track && track.url) {
 			audioController.initBGM(track.url);
-			audioController.setBGMVolume(bgmVolume);
+			audioController.setBGMVolume(isMuted ? 0 : bgmVolume);
+		} else {
+			audioController.initBGM('');
+			isBgmPreviewPlaying = false;
+		}
+	}
+
+	function toggleBgmPreviewOnly() {
+		if (isPlaying) {
+			pause();
+		}
+		if (isBgmPreviewPlaying) {
+			audioController.pauseBGM();
+			isBgmPreviewPlaying = false;
+		} else {
+			initBGM();
+			audioController.duckBGM(false);
+			audioController.setBGMVolume(isMuted ? 0 : Math.max(0.04, bgmVolume));
+			audioController.playBGM();
+			isBgmPreviewPlaying = true;
 		}
 	}
 
 	$effect(() => {
 		if (selectedBgmId) {
 			initBGM();
+			if (isBgmPreviewPlaying) {
+				audioController.playBGM();
+			}
 		}
 	});
 
 	$effect(() => {
-		audioController.setBGMVolume(bgmVolume);
+		audioController.setBGMVolume(isMuted ? 0 : bgmVolume);
 	});
+
+	function isSameMediaSource(currentSrc, targetUrl) {
+		if (!currentSrc || !targetUrl) return false;
+		if (currentSrc === targetUrl) return true;
+		try {
+			const u1 = new URL(currentSrc, window.location.href).href;
+			const u2 = new URL(targetUrl, window.location.href).href;
+			return u1 === u2;
+		} catch (_) {
+			return currentSrc.endsWith(targetUrl) || targetUrl.endsWith(currentSrc);
+		}
+	}
 
 	// Watch scene change to update video source
 	$effect(() => {
 		if (currentScene && videoElement && !isLavfiScene) {
 			const targetUrl = currentScene.footage?.videoUrl;
-			if (targetUrl && videoElement.src !== targetUrl) {
+			if (targetUrl && !isSameMediaSource(videoElement.src, targetUrl)) {
 				videoElement.src = targetUrl;
 				videoElement.currentTime = 0;
 				if (isPlaying) {
@@ -141,15 +177,25 @@
 		}
 	});
 
-	// Handle Voice audio playback for active scene
+	// Handle Voice audio playback when scene changes (untrack sceneCurrentTime to avoid 60fps abort loops!)
 	$effect(() => {
-		if (currentScene && currentScene.voiceAudioUrl && voiceAudioElement) {
-			if (voiceAudioElement.src !== currentScene.voiceAudioUrl) {
-				voiceAudioElement.src = currentScene.voiceAudioUrl;
-				voiceAudioElement.currentTime = sceneCurrentTime;
-				if (isPlaying) {
-					voiceAudioElement.play().catch(() => {});
+		const targetUrl = currentScene?.voiceAudioUrl;
+		if (voiceAudioElement) {
+			if (targetUrl) {
+				if (!isSameMediaSource(voiceAudioElement.src, targetUrl)) {
+					voiceAudioElement.src = targetUrl;
+					const timeToSeek = untrack(() => sceneCurrentTime);
+					voiceAudioElement.currentTime = Math.max(0, timeToSeek);
+					if (isPlaying) {
+						voiceAudioElement.play().catch((err) => {
+							console.warn('[StudioPlayer] voice play error:', err);
+						});
+					}
 				}
+			} else {
+				voiceAudioElement.pause();
+				voiceAudioElement.removeAttribute('src');
+				voiceAudioElement.load();
 			}
 		}
 	});
@@ -167,8 +213,13 @@
 		isPlaying = true;
 		if (videoElement) videoElement.play().catch(() => {});
 		if (voiceAudioElement && currentScene?.voiceAudioUrl) {
+			if (!isSameMediaSource(voiceAudioElement.src, currentScene.voiceAudioUrl)) {
+				voiceAudioElement.src = currentScene.voiceAudioUrl;
+			}
 			voiceAudioElement.currentTime = sceneCurrentTime;
-			voiceAudioElement.play().catch(() => {});
+			voiceAudioElement.play().catch((err) => {
+				console.warn('[StudioPlayer] voice play error:', err);
+			});
 		}
 		audioController.playBGM();
 
@@ -226,6 +277,15 @@
 		if (foundIndex !== activeSceneIndex) {
 			activeSceneIndex = foundIndex;
 			const nextScene = scenes[foundIndex];
+			if (voiceAudioElement && nextScene?.voiceAudioUrl) {
+				if (!isSameMediaSource(voiceAudioElement.src, nextScene.voiceAudioUrl)) {
+					voiceAudioElement.src = nextScene.voiceAudioUrl;
+				}
+				voiceAudioElement.currentTime = 0;
+				if (isPlaying) {
+					voiceAudioElement.play().catch(() => {});
+				}
+			}
 			if (nextScene?.chapter) {
 				// Musik masuk (swell) & stinger on chapter change
 				audioController.swellBGM(getChapterCardDuration(nextScene));
@@ -254,7 +314,13 @@
 			videoElement.currentTime = sceneCurrentTime % (videoElement.duration || 10);
 		}
 		if (voiceAudioElement && currentScene?.voiceAudioUrl) {
+			if (!isSameMediaSource(voiceAudioElement.src, currentScene.voiceAudioUrl)) {
+				voiceAudioElement.src = currentScene.voiceAudioUrl;
+			}
 			voiceAudioElement.currentTime = sceneCurrentTime;
+			if (isPlaying) {
+				voiceAudioElement.play().catch(() => {});
+			}
 		}
 		audioController.seekBGM(currentTime);
 
@@ -319,7 +385,13 @@
 			{/if}
 
 			<!-- Hidden Voiceover Audio Element -->
-			<audio bind:this={voiceAudioElement} onloadedmetadata={handleVoiceMetadata} style="display:none"></audio>
+			<audio 
+				bind:this={voiceAudioElement} 
+				preload="auto" 
+				onloadedmetadata={handleVoiceMetadata} 
+				onerror={(e) => console.warn('[StudioPlayer] Voice audio load error:', e)}
+				style="display:none"
+			></audio>
 
 			<!-- Cinematic Chapter Title Card Overlay (Active on chapter scene start for speech + pauseDuration) -->
 			{#if currentScene?.chapter && sceneCurrentTime < getChapterCardDuration(currentScene)}
@@ -433,7 +505,19 @@
 		<!-- Middle: BGM selection & audio ducking control -->
 		<div class="controls-center">
 			<div class="bgm-selector">
-				<Music size={15} color="var(--accent-cyan)" />
+				<button
+					type="button"
+					class="btn-bgm-audition"
+					class:playing={isBgmPreviewPlaying}
+					onclick={toggleBgmPreviewOnly}
+					title={isBgmPreviewPlaying ? "Stop preview backsound" : "Play & dengarkan backsound ini"}
+				>
+					{#if isBgmPreviewPlaying}
+						<Pause size={12} color="#38bdf8" />
+					{:else}
+						<Play size={12} color="var(--accent-cyan)" />
+					{/if}
+				</button>
 				<select bind:value={selectedBgmId}>
 					{#each BGM_TRACKS as track}
 						<option value={track.id}>{track.name} ({track.mood})</option>
@@ -442,8 +526,8 @@
 			</div>
 
 			<div class="vol-control">
-				<button class="vol-btn" onclick={() => isMuted = !isMuted}>
-					{#if isMuted}
+				<button class="vol-btn" onclick={() => isMuted = !isMuted} title={isMuted ? "Unmute" : "Mute"}>
+					{#if isMuted || bgmVolume === 0}
 						<VolumeX size={15} color="var(--danger)" />
 					{:else}
 						<Volume2 size={15} />
@@ -452,12 +536,13 @@
 				<input
 					type="range"
 					min="0"
-					max="0.5"
+					max="0.50"
 					step="0.01"
 					bind:value={bgmVolume}
 					class="slider-mini"
-					title="Volume Musik Latar"
+					title="Volume Musik Latar: {Math.round((isMuted ? 0 : bgmVolume) * 100)}%"
 				/>
+				<span class="vol-badge-mini">{Math.round((isMuted ? 0 : bgmVolume) * 100)}%</span>
 			</div>
 		</div>
 
@@ -719,6 +804,31 @@
 		border: 1px solid var(--border-subtle);
 	}
 
+	.btn-bgm-audition {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
+		border-radius: 50%;
+		background: rgba(56, 189, 248, 0.12);
+		border: 1px solid rgba(56, 189, 248, 0.3);
+		cursor: pointer;
+		transition: all 0.2s ease;
+		padding: 0;
+	}
+
+	.btn-bgm-audition:hover {
+		background: rgba(56, 189, 248, 0.25);
+		border-color: rgba(56, 189, 248, 0.6);
+		transform: scale(1.05);
+	}
+
+	.btn-bgm-audition.playing {
+		background: rgba(56, 189, 248, 0.3);
+		box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+	}
+
 	.bgm-selector select {
 		background: transparent;
 		border: none;
@@ -742,6 +852,14 @@
 		width: 70px;
 		accent-color: var(--accent-cyan);
 		height: 4px;
+	}
+
+	.vol-badge-mini {
+		font-size: 0.68rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--accent-cyan);
+		font-weight: 600;
+		min-width: 26px;
 	}
 
 	/* Chapter Title Card Overlay */

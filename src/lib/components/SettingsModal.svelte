@@ -17,7 +17,7 @@
 		pexelsApiKey = $bindable(''),
 		elevenLabsApiKey = $bindable(''),
 		deepseekApiKey = $bindable('sk-0802f45e1d4e41c8ae8d46396c97b746'),
-		selectedVoiceId = $bindable('id-ID-GadisNeural'),
+		selectedVoiceId = $bindable('id-ID-ArdiNeural'),
 		voiceMode = $bindable('edge_tts'),
 		selectedAudioEffect = $bindable('studio_podcast'),
 		onClose

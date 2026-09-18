@@ -4,6 +4,7 @@ import { getLocalCatalog, saveLocalCatalog, generateGeneralFileName, extractThum
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { getAudioEffectById } from '$lib/services/audioEffectService.js';
 import { DEFAULT_EDGE_VOICE_ID } from '$lib/services/voiceService.js';
+import { generateVoiceoverPipeline } from '$lib/services/edgeTtsPipeline.js';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -269,119 +270,41 @@ async function makeEdgeTTSAudio(text, voiceId, audioEffect, destPath, durationSe
 		const cleanIntro = (chapterIntro || '').trim();
 		const pauseSec = Number(chapterPause || 0);
 		const outroSec = Number(outroPause || 0);
-		const sceneOutro = Math.max(0.6, outroSec);
 
 		if (!cleanText && !cleanIntro) return false;
 
 		const effectPreset = getAudioEffectById(audioEffect || 'natural');
 		const voice = voiceId || DEFAULT_EDGE_VOICE_ID;
 		const effectivePitch = effectPreset?.edgePitch || '0Hz';
-		const effectiveRate = effectPreset?.edgeRate || '0%';
 
-		const filterArgs = effectPreset?.ffmpegFilter && effectPreset.ffmpegFilter.trim()
-			? ['-af', effectPreset.ffmpegFilter.trim()]
-			: [];
+		const fullText = cleanIntro ? (pauseSec > 0 ? `${cleanIntro} ... ${cleanText}` : `${cleanIntro} ${cleanText}`) : cleanText;
+		const pipelineRes = await generateVoiceoverPipeline(fullText, {
+			voiceId: voice,
+			pitch: effectivePitch,
+			humanize: true,
+			includeOutroSilence: outroSec > 0
+		});
 
-		if (cleanIntro && pauseSec > 0 && cleanText) {
-			const introBuf = await synthesizeRawEdgeSpeech(cleanIntro, voice, effectiveRate, effectivePitch);
-			const narrBuf = await synthesizeRawEdgeSpeech(cleanText, voice, effectiveRate, effectivePitch);
-
-			const tempIntro = destPath + '.intro.mp3';
-			const tempNarr = destPath + '.narr.mp3';
-			await fs.promises.writeFile(tempIntro, introBuf);
-			await fs.promises.writeFile(tempNarr, narrBuf);
-
-			let filterComplex = `[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a0];[1:a]atrim=0:${pauseSec},aformat=sample_rates=44100:channel_layouts=stereo[a1];[2:a]aformat=sample_rates=44100:channel_layouts=stereo[a2];[a0][a1][a2]concat=n=3:v=0:a=1[out0]`;
-			let mapInput = '[out0]';
-			const ffmpegInputs = [
-				'-i', tempIntro,
-				'-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
-				'-i', tempNarr
-			];
-
-			if (sceneOutro > 0) {
-				ffmpegInputs.push('-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo');
-				filterComplex += `;[3:a]atrim=0:${sceneOutro},aformat=sample_rates=44100:channel_layouts=stereo[a3];[out0][a3]concat=n=2:v=0:a=1[out1]`;
-				mapInput = '[out1]';
-			}
-
-			if (effectPreset?.ffmpegFilter && effectPreset.ffmpegFilter.trim()) {
-				filterComplex += `;${mapInput}${effectPreset.ffmpegFilter.trim()}[outf]`;
-				mapInput = '[outf]';
-			}
-
-			await runFFmpeg(
-				[
-					...ffmpegInputs,
-					'-filter_complex', filterComplex,
-					'-map', mapInput,
+		if (pipelineRes && pipelineRes.audioPath && fs.existsSync(pipelineRes.audioPath)) {
+			// Apply audioEffect filter if specified and not raw natural
+			if (effectPreset?.ffmpegFilter && effectPreset.id !== 'natural') {
+				await runFFmpeg([
+					'-i', pipelineRes.audioPath,
+					'-af', effectPreset.ffmpegFilter.trim(),
 					'-c:a', 'libmp3lame',
+					'-b:a', '192k',
 					'-ar', '44100',
 					'-ac', '2',
-					'-b:a', '192k',
-					'-y',
-					destPath
-				],
-				30000
-			);
-
-			await Promise.all([
-				fs.promises.unlink(tempIntro).catch(() => {}),
-				fs.promises.unlink(tempNarr).catch(() => {})
-			]);
-			return true;
-		} else {
-			const fullSpeechText = cleanIntro ? `${cleanIntro} ... ${cleanText}` : cleanText;
-			const buffer = await synthesizeRawEdgeSpeech(fullSpeechText, voice, effectiveRate, effectivePitch);
-			if (buffer.length === 0) return false;
-
-			const tempRaw = destPath + '.raw.mp3';
-			await fs.promises.writeFile(tempRaw, buffer);
-
-			if (sceneOutro > 0) {
-				let filterComplex = `[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a0];[1:a]atrim=0:${sceneOutro},aformat=sample_rates=44100:channel_layouts=stereo[a1];[a0][a1]concat=n=2:v=0:a=1[out0]`;
-				let mapInput = '[out0]';
-				if (effectPreset?.ffmpegFilter && effectPreset.ffmpegFilter.trim()) {
-					filterComplex += `;[out0]${effectPreset.ffmpegFilter.trim()}[outf]`;
-					mapInput = '[outf]';
-				}
-
-				await runFFmpeg(
-					[
-						'-i', tempRaw,
-						'-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
-						'-filter_complex', filterComplex,
-						'-map', mapInput,
-						'-c:a', 'libmp3lame',
-						'-ar', '44100',
-						'-ac', '2',
-						'-b:a', '192k',
-						'-y',
-						destPath
-					],
-					25000
-				);
+					'-y', destPath
+				], 30000);
 			} else {
-				await runFFmpeg(
-					[
-						'-i', tempRaw,
-						...filterArgs,
-						'-c:a', 'libmp3lame',
-						'-ar', '44100',
-						'-ac', '2',
-						'-b:a', '192k',
-						'-y',
-						destPath
-					],
-					25000
-				);
+				await fs.promises.copyFile(pipelineRes.audioPath, destPath);
 			}
-
-			await fs.promises.unlink(tempRaw).catch(() => {});
 			return true;
 		}
-	} catch (e) {
-		console.warn('makeEdgeTTSAudio render synthesis failed, falling back:', e.message);
+		return false;
+	} catch (err) {
+		console.warn('makeEdgeTTSAudio render synthesis failed, falling back:', err.message);
 		return false;
 	}
 }
@@ -437,7 +360,8 @@ export async function POST({ request }) {
 				fontSize = 34,
 				bgmUrl,
 				bgmVolume = 0.06,
-				renderQuality = '1080p'
+				renderQuality = '1080p',
+				voiceId = 'id-ID-ArdiNeural'
 			} = await request.json();
 
 			if (!scenes || scenes.length === 0) {
@@ -515,7 +439,7 @@ export async function POST({ request }) {
 
 							const edgeSuccess = await makeEdgeTTSAudio(
 								narrText,
-								scene.voiceId,
+								scene.voiceId || voiceId || 'id-ID-ArdiNeural',
 								scene.audioEffect,
 								audioDest,
 								sceneDuration,
@@ -686,17 +610,33 @@ export async function POST({ request }) {
 			let bgmAudioPath = null;
 			if (bgmUrl) {
 				sendEvent({ progress: 83, step: 'Memuat musik latar...' });
-				const localBgmTrack = path.resolve('./static/bgm/bgm-soundhelix-1.mp3');
-				if (fs.existsSync(localBgmTrack)) {
-					bgmAudioPath = localBgmTrack;
-				} else if (bgmUrl.startsWith('http')) {
-					bgmAudioPath = path.join(tempDir, 'bgm.mp3');
-					try {
-						await downloadFile(bgmUrl, bgmAudioPath, 30000, 2);
-					} catch (e) {
-						console.warn('Failed to download BGM:', e.message);
-						bgmAudioPath = null;
+				if (bgmUrl.startsWith('/')) {
+					const localPath = path.resolve('./static' + bgmUrl);
+					if (fs.existsSync(localPath)) {
+						bgmAudioPath = localPath;
 					}
+				} else if (bgmUrl.startsWith('http')) {
+					try {
+						const parsed = new URL(bgmUrl);
+						const localPath = path.resolve('./static' + parsed.pathname);
+						if (fs.existsSync(localPath)) {
+							bgmAudioPath = localPath;
+						}
+					} catch (_) {}
+					
+					if (!bgmAudioPath) {
+						bgmAudioPath = path.join(tempDir, 'bgm.mp3');
+						try {
+							await downloadFile(bgmUrl, bgmAudioPath, 30000, 2);
+						} catch (e) {
+							console.warn('Failed to download BGM:', e.message);
+							bgmAudioPath = null;
+						}
+					}
+				}
+				// Default fallback to local documentary if still null and bgm requested
+				if (!bgmAudioPath && fs.existsSync(path.resolve('./static/bgm/bgm-soundhelix-1.mp3'))) {
+					bgmAudioPath = path.resolve('./static/bgm/bgm-soundhelix-1.mp3');
 				}
 			}
 

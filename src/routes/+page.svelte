@@ -32,6 +32,7 @@
 		DEFAULT_AUDIO_EFFECT_ID,
 		getAudioEffectById
 	} from '$lib/services/audioEffectService.js';
+	import { BGM_TRACKS, audioController } from '$lib/services/audioEngine.js';
 
 	// Main App State
 	let script = $state(SCRIPT_PRESETS[0].text);
@@ -43,16 +44,16 @@
 	let subtitleStyleKey = $state('hormozi');
 	let karaokeEnabled = $state(true);
 	let subtitleFontSize = $state(34);
-	let selectedBgmId = $state('ambient-focus');
-	let bgmVolume = $state(0.06);
+	let selectedBgmId = $state('local-documentary');
+	let bgmVolume = $state(0.10);
 
 	// API Keys, Voices & Audio Effects
 	let deepseekApiKey = $state('sk-0802f45e1d4e41c8ae8d46396c97b746');
 	let pexelsApiKey = $state('');
 	let elevenLabsApiKey = $state('');
-	let selectedVoiceId = $state(DEFAULT_F5_VOICE_ID); // Default to f5-reporter (Natural Indonesian)
-	let voiceMode = $state('f5_tts'); // 'f5_tts' | 'edge_tts' | 'custom_upload' | 'elevenlabs'
-	let selectedAudioEffect = $state(DEFAULT_AUDIO_EFFECT_ID); // Default: Epic Movie Trailer
+	let selectedVoiceId = $state(DEFAULT_EDGE_VOICE_ID); // Default to id-ID-ArdiNeural (Edge TTS)
+	let voiceMode = $state('edge_tts'); // Default to Edge TTS
+	let selectedAudioEffect = $state(DEFAULT_AUDIO_EFFECT_ID); // Default: studio_podcast
 
 	// Audio Effect Audition Preview
 	let previewAudioEl = null;
@@ -78,10 +79,102 @@
 		playingEffectPreviewId = eff.id;
 	}
 
+	// Backsound Music (BGM) Preview & Volume Controls
+	let previewBgmAudioEl = null;
+	let isPlayingBgmPreview = $state(false);
+
+	function playBgmTrack(trackId) {
+		const track = BGM_TRACKS.find((t) => t.id === trackId);
+		if (!track || !track.url) {
+			if (previewBgmAudioEl) {
+				previewBgmAudioEl.pause();
+			}
+			isPlayingBgmPreview = false;
+			return;
+		}
+
+		if (!previewBgmAudioEl) {
+			previewBgmAudioEl = new Audio();
+			previewBgmAudioEl.loop = true;
+		}
+
+		// Ensure studio player audio is not playing at the same time
+		audioController.pauseBGM();
+
+		// Update src if changed or empty
+		if (!previewBgmAudioEl.src.includes(track.url)) {
+			previewBgmAudioEl.src = track.url;
+		}
+		previewBgmAudioEl.volume = Math.max(0.02, bgmVolume);
+
+		const p = previewBgmAudioEl.play();
+		if (p !== undefined && typeof p.then === 'function') {
+			p.then(() => {
+				isPlayingBgmPreview = true;
+			}).catch((err) => {
+				console.warn('Playback error or blocked by browser:', err);
+				isPlayingBgmPreview = false;
+			});
+		} else {
+			isPlayingBgmPreview = true;
+		}
+	}
+
+	function toggleBgmTrackPreview(trackId) {
+		const targetId = trackId || selectedBgmId;
+		if (!targetId || targetId === 'none') {
+			if (previewBgmAudioEl) {
+				previewBgmAudioEl.pause();
+			}
+			isPlayingBgmPreview = false;
+			return;
+		}
+
+		if (isPlayingBgmPreview && selectedBgmId === targetId) {
+			if (previewBgmAudioEl) {
+				previewBgmAudioEl.pause();
+			}
+			isPlayingBgmPreview = false;
+		} else {
+			selectedBgmId = targetId;
+			playBgmTrack(targetId);
+		}
+	}
+
+	function handleSelectBgmTrack(trackId) {
+		if (trackId === 'none') {
+			selectedBgmId = 'none';
+			if (previewBgmAudioEl) {
+				previewBgmAudioEl.pause();
+			}
+			isPlayingBgmPreview = false;
+			return;
+		}
+
+		if (selectedBgmId === trackId && isPlayingBgmPreview) {
+			toggleBgmTrackPreview(trackId);
+		} else {
+			selectedBgmId = trackId;
+			playBgmTrack(trackId);
+		}
+	}
+
+	function updateBgmVolume(newVol) {
+		bgmVolume = Math.max(0, Math.min(0.50, Number(newVol)));
+		if (previewBgmAudioEl) {
+			previewBgmAudioEl.volume = bgmVolume;
+		}
+		audioController.setBGMVolume(bgmVolume);
+	}
+
 	onDestroy(() => {
 		if (previewAudioEl) {
 			previewAudioEl.pause();
 			previewAudioEl = null;
+		}
+		if (previewBgmAudioEl) {
+			previewBgmAudioEl.pause();
+			previewBgmAudioEl = null;
 		}
 	});
 
@@ -133,11 +226,13 @@
 			if (savedDeepseek) deepseekApiKey = savedDeepseek;
 
 			pexelsApiKey = localStorage.getItem('yt_pexels_key') || '';
-			elevenLabsApiKey = localStorage.getItem('yt_eleven_key') || '';
-			selectedVoiceId = localStorage.getItem('yt_voice_id') || DEFAULT_F5_VOICE_ID;
+			selectedVoiceId = localStorage.getItem('yt_voice_id') || DEFAULT_EDGE_VOICE_ID;
 			const savedMode = localStorage.getItem('yt_voice_mode');
-			if (savedMode) voiceMode = savedMode;
-			else if (isF5Voice(selectedVoiceId)) voiceMode = 'f5_tts';
+			if (savedMode) {
+				voiceMode = savedMode;
+			} else {
+				voiceMode = 'edge_tts';
+			}
 
 			const savedEffect = localStorage.getItem('yt_audio_effect');
 			if (savedEffect) selectedAudioEffect = savedEffect;
@@ -288,7 +383,33 @@
 						}
 					} catch (e) {
 						console.warn('F5-TTS API error:', e);
-						addGenLog('WARN', `[Adegan ${sceneNum}] Gagal terhubung ke F5-TTS Lokal. Pastikan ./run_server.sh aktif.`, 'warn');
+						addGenLog('WARN', `[Adegan ${sceneNum}] Gagal terhubung ke F5-TTS Lokal. Beralih ke Edge TTS...`, 'warn');
+					}
+
+					// Automatic fallback to Edge TTS if F5-TTS failed or offline
+					if (!voiceData || !voiceData.success) {
+						addGenLog('FALLBACK', `[Adegan ${sceneNum}] Beralih ke Edge TTS (${DEFAULT_EDGE_VOICE_ID})...`, 'info');
+						try {
+							const edgeRes = await fetch('/api/edge-tts', {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({
+									text: sc.narration || spokenText,
+									voiceId: isEdgeVoice(selectedVoiceId) ? selectedVoiceId : DEFAULT_EDGE_VOICE_ID,
+									audioEffect: sc.audioEffect || selectedAudioEffect,
+									chapterIntro: sc.chapter ? getChapterSpokenIntro(sc) : '',
+									chapterPause: sc.chapter ? Number(sc.chapter.pauseDuration ?? 5) : 0,
+									outroPause: sc.chapter ? Number(sc.chapter.outroPause ?? 0) : 0
+								})
+							});
+							voiceData = await edgeRes.json();
+							if (voiceData && voiceData.success) {
+								genProgress.stats.ttsClips++;
+								addGenLog('EDGE-TTS', `✓ [Adegan ${sceneNum}] Audio Edge TTS siap (${voiceData.duration}s)`, 'success');
+							}
+						} catch (fbErr) {
+							console.warn('Fallback Edge TTS error:', fbErr);
+						}
 					}
 				} else if (voiceMode === 'edge_tts') {
 					const effectObj = getAudioEffectById(sc.audioEffect || selectedAudioEffect);
@@ -350,6 +471,7 @@
 				sc.footage = chosenFootage;
 				if (voiceData && voiceData.success) {
 					sc.voiceAudioUrl = voiceData.audioUrl;
+					sc.voiceId = selectedVoiceId || voiceData.voiceId || 'id-ID-ArdiNeural';
 					sc.wordTimings = voiceData.wordTimings || [];
 					sc.audioDuration = voiceData.duration || sc.estimatedDuration;
 					sc.isCustomAudio = false;
@@ -454,14 +576,42 @@
 					apiKey: elevenLabsApiKey
 				};
 
-			const res = await fetch(endpoint, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(payload)
-			});
-			const data = await res.json();
-			if (data.success) {
+			let data = null;
+			try {
+				const res = await fetch(endpoint, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(payload)
+				});
+				data = await res.json();
+			} catch (err) {
+				console.warn('TTS request error:', err);
+			}
+
+			// Automatic fallback to Edge TTS if endpoint failed
+			if ((!data || !data.success) && endpoint !== '/api/edge-tts') {
+				try {
+					const fallbackRes = await fetch('/api/edge-tts', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							text: targetScene.narration || getSpokenVoiceoverText(targetScene),
+							voiceId: isEdgeVoice(selectedVoiceId) ? selectedVoiceId : DEFAULT_EDGE_VOICE_ID,
+							audioEffect: effectToUse,
+							chapterIntro: targetScene.chapter ? getChapterSpokenIntro(targetScene) : '',
+							chapterPause: targetScene.chapter ? Number(targetScene.chapter.pauseDuration ?? 5) : 0,
+							outroPause: targetScene.chapter ? Number(targetScene.chapter.outroPause ?? 0) : 0
+						})
+					});
+					data = await fallbackRes.json();
+				} catch (fbErr) {
+					console.warn('Fallback Edge TTS error:', fbErr);
+				}
+			}
+
+			if (data && data.success) {
 				targetScene.voiceAudioUrl = data.audioUrl;
+				targetScene.voiceId = selectedVoiceId || 'id-ID-ArdiNeural';
 				targetScene.wordTimings = data.wordTimings || [];
 				targetScene.audioDuration = data.duration || targetScene.estimatedDuration;
 				targetScene.voiceProvider = data.provider || (isEdge ? 'edge_tts' : 'elevenlabs');
@@ -881,7 +1031,118 @@
 					</div>
 				</div>
 
-				<!-- Tombol Generate Tepat di Bawah Pilihan Suara & Filter Vokal -->
+				<!-- Quick Background Music (Backsound) Bar with Play & Volume Setting -->
+				<div class="quick-bgm-bar">
+					<div class="quick-bgm-header">
+						<div class="quick-bgm-title-wrap">
+							<span class="quick-bgm-label">🎵 Musik Latar / Backsound Video:</span>
+							<span class="quick-bgm-hint">Atur lagu & volume agar narasi voiceover tetap jernih dan berbobot (-25 s.d. -32 dB)</span>
+						</div>
+						<div class="quick-bgm-vol-display">
+							<span class="vol-num-text">Volume: <strong>{Math.round(bgmVolume * 100)}%</strong></span>
+							<span class="vol-rec-badge">{bgmVolume === 0 ? '🔇 Mute' : bgmVolume <= 0.08 ? '⭐ Ideal' : bgmVolume <= 0.15 ? 'Sedang' : 'Tinggi'}</span>
+						</div>
+					</div>
+
+					<div class="quick-bgm-controls-row">
+						<!-- Track Chips -->
+						<div class="quick-bgm-chips">
+							{#each BGM_TRACKS as track}
+								<button
+									type="button"
+									class="quick-bgm-chip"
+									class:active={selectedBgmId === track.id}
+									onclick={() => handleSelectBgmTrack(track.id)}
+									title="{track.name} – {track.mood}"
+								>
+									{#if track.id !== 'none'}
+										<span 
+											class="chip-bgm-play-icon"
+											class:playing={isPlayingBgmPreview && selectedBgmId === track.id}
+											onclick={(e) => { e.stopPropagation(); toggleBgmTrackPreview(track.id); }}
+											role="button"
+											tabindex="0"
+											title={isPlayingBgmPreview && selectedBgmId === track.id ? "Stop Musik" : "Play & Dengarkan Musik Ini"}
+										>
+											{isPlayingBgmPreview && selectedBgmId === track.id ? '⏹' : '▶'}
+										</span>
+									{:else}
+										<span class="chip-bgm-icon">🔇</span>
+									{/if}
+									<span class="chip-bgm-name">{track.name}</span>
+									{#if track.badge}
+										<span class="chip-bgm-badge">{track.badge}</span>
+									{:else if track.mood && track.id !== 'none'}
+										<span class="chip-bgm-mood">{track.mood}</span>
+									{/if}
+								</button>
+							{/each}
+						</div>
+
+						<!-- Volume Slider & Quick Presets -->
+						<div class="quick-bgm-vol-panel">
+							<div class="vol-slider-wrap">
+								<button 
+									type="button" 
+									class="btn-vol-mute" 
+									onclick={() => updateBgmVolume(bgmVolume > 0 ? 0 : 0.06)}
+									title={bgmVolume === 0 ? "Bunyikan Musik" : "Mute Musik"}
+								>
+									{bgmVolume === 0 ? '🔇' : '🔊'}
+								</button>
+								<input
+									type="range"
+									min="0"
+									max="0.30"
+									step="0.01"
+									value={bgmVolume}
+									oninput={(e) => updateBgmVolume(e.currentTarget.value)}
+									class="bgm-range-slider"
+									title="Geser untuk atur volume backsound"
+								/>
+								<span class="vol-pct-text">{Math.round(bgmVolume * 100)}%</span>
+							</div>
+
+							<div class="vol-preset-buttons">
+								<button 
+									type="button" 
+									class="vol-preset-btn" 
+									class:active={bgmVolume === 0} 
+									onclick={() => updateBgmVolume(0)}
+								>
+									Mute
+								</button>
+								<button 
+									type="button" 
+									class="vol-preset-btn" 
+									class:active={Math.round(bgmVolume * 100) === 5} 
+									onclick={() => updateBgmVolume(0.05)}
+									title="Rekomendasi narasi storytelling YouTube"
+								>
+									Halus 5%
+								</button>
+								<button 
+									type="button" 
+									class="vol-preset-btn" 
+									class:active={Math.round(bgmVolume * 100) === 10} 
+									onclick={() => updateBgmVolume(0.10)}
+								>
+									Sedang 10%
+								</button>
+								<button 
+									type="button" 
+									class="vol-preset-btn" 
+									class:active={Math.round(bgmVolume * 100) === 18} 
+									onclick={() => updateBgmVolume(0.18)}
+								>
+									Tegas 18%
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Tombol Generate Tepat di Bawah Pilihan Suara, Filter Vokal & Backsound -->
 				<div class="banner-generate-action">
 					<div class="generate-config-summary">
 						<span class="config-dot"></span>
@@ -894,6 +1155,8 @@
 							{/if}
 							<span class="config-sep">•</span>
 							<span>Filter Vokal: <strong class="config-effect">{AUDIO_EFFECT_PRESETS.find(e => e.id === selectedAudioEffect)?.emoji || '🎛️'} {AUDIO_EFFECT_PRESETS.find(e => e.id === selectedAudioEffect)?.name?.split(' (')[0] || 'Default'}</strong></span>
+							<span class="config-sep">•</span>
+							<span>Backsound: <strong class="config-bgm">🎵 {BGM_TRACKS.find(b => b.id === selectedBgmId)?.name || 'None'} ({Math.round(bgmVolume * 100)}%)</strong></span>
 						</div>
 					</div>
 
@@ -1034,6 +1297,7 @@
 		subtitleFontSize={subtitleFontSize}
 		selectedBgmId={selectedBgmId}
 		bgmVolume={bgmVolume}
+		selectedVoiceId={selectedVoiceId}
 		onClose={() => showExportModal = false}
 	/>
 </div>
@@ -1507,6 +1771,232 @@
 	.quick-effect-chip.active .chip-eff-tag {
 		background: var(--accent-cyan);
 		color: #041018;
+	}
+
+	/* Quick BGM / Backsound Bar */
+	.quick-bgm-bar {
+		width: 100%;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		padding-top: 14px;
+		margin-top: 10px;
+		border-top: 1px solid rgba(255, 255, 255, 0.05);
+	}
+
+	.quick-bgm-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		flex-wrap: wrap;
+	}
+
+	.quick-bgm-title-wrap {
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+		flex-wrap: wrap;
+	}
+
+	.quick-bgm-label {
+		font-size: 0.78rem;
+		font-weight: 700;
+		color: #e2e8f0;
+		letter-spacing: 0.02em;
+	}
+
+	.quick-bgm-hint {
+		font-size: 0.7rem;
+		color: var(--text-muted);
+	}
+
+	.quick-bgm-vol-display {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.vol-num-text {
+		font-size: 0.76rem;
+		color: var(--text-secondary);
+	}
+
+	.vol-num-text strong {
+		color: #38bdf8;
+	}
+
+	.vol-rec-badge {
+		font-size: 0.65rem;
+		font-weight: 700;
+		padding: 2px 7px;
+		border-radius: 4px;
+		background: rgba(56, 189, 248, 0.15);
+		color: #38bdf8;
+		border: 1px solid rgba(56, 189, 248, 0.3);
+	}
+
+	.quick-bgm-controls-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		flex-wrap: wrap;
+	}
+
+	.quick-bgm-chips {
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		flex-wrap: wrap;
+		flex: 1;
+		min-width: 280px;
+	}
+
+	.quick-bgm-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		padding: 6px 13px;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.07);
+		border-radius: 9999px;
+		font-size: 0.74rem;
+		color: var(--text-secondary);
+		cursor: pointer;
+		transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+	}
+
+	.quick-bgm-chip:hover {
+		background: rgba(255, 255, 255, 0.08);
+		border-color: rgba(255, 255, 255, 0.2);
+		color: var(--text-primary);
+		transform: translateY(-2px);
+	}
+
+	.quick-bgm-chip.active {
+		background: linear-gradient(135deg, rgba(168, 85, 247, 0.22) 0%, rgba(56, 189, 248, 0.2) 100%);
+		border-color: #a855f7;
+		color: #ffffff;
+		font-weight: 600;
+		box-shadow: 0 0 16px rgba(168, 85, 247, 0.25);
+	}
+
+	.chip-bgm-play-icon {
+		width: 18px;
+		height: 18px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.12);
+		color: #fff;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.55rem;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.chip-bgm-play-icon:hover {
+		background: #38bdf8;
+		color: #041018;
+		transform: scale(1.15);
+	}
+
+	.chip-bgm-play-icon.playing {
+		background: #f43f5e;
+		color: #fff;
+		box-shadow: 0 0 10px #f43f5e;
+		animation: pulseGlow 1s infinite;
+	}
+
+	.chip-bgm-name {
+		font-size: 0.74rem;
+	}
+
+	.chip-bgm-badge {
+		font-size: 0.6rem;
+		font-weight: 700;
+		padding: 1px 6px;
+		border-radius: 4px;
+		background: rgba(16, 185, 129, 0.2);
+		color: #34d399;
+		border: 1px solid rgba(16, 185, 129, 0.35);
+	}
+
+	.chip-bgm-mood {
+		font-size: 0.62rem;
+		color: var(--text-muted);
+	}
+
+	.quick-bgm-vol-panel {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		background: rgba(0, 0, 0, 0.25);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: var(--radius-md);
+		padding: 6px 12px;
+	}
+
+	.vol-slider-wrap {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.btn-vol-mute {
+		background: none;
+		border: none;
+		font-size: 0.85rem;
+		cursor: pointer;
+		padding: 2px;
+	}
+
+	.bgm-range-slider {
+		width: 85px;
+		height: 4px;
+		accent-color: #38bdf8;
+		cursor: pointer;
+	}
+
+	.vol-pct-text {
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: #38bdf8;
+		min-width: 28px;
+	}
+
+	.vol-preset-buttons {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.vol-preset-btn {
+		padding: 3px 8px;
+		border-radius: 4px;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		font-size: 0.66rem;
+		font-weight: 600;
+		color: var(--text-muted);
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.vol-preset-btn:hover {
+		background: rgba(255, 255, 255, 0.1);
+		color: var(--text-primary);
+	}
+
+	.vol-preset-btn.active {
+		background: rgba(56, 189, 248, 0.2);
+		border-color: #38bdf8;
+		color: #ffffff;
+	}
+
+	.config-bgm {
+		color: #a855f7;
 	}
 
 	/* Tombol Generate di bawah Pilihan Suara & Filter Vokal */

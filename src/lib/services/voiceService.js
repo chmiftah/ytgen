@@ -216,7 +216,7 @@ export const POPULAR_VOICES = [
 ];
 
 export const DEFAULT_F5_VOICE_ID = 'f5-reporter';
-export const DEFAULT_EDGE_VOICE_ID = 'id-ID-GadisNeural';
+export const DEFAULT_EDGE_VOICE_ID = 'id-ID-ArdiNeural';
 export const DEFAULT_ELEVEN_VOICE_ID = 'pNInz6obpgDQGcFmaJgB';
 
 export function isF5Voice(voiceId) {

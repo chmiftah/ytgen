@@ -5,34 +5,38 @@
 
 export const BGM_TRACKS = [
 	{
-		id: 'none',
-		name: 'Tanpa Background Music',
-		url: '',
-		mood: 'None'
+		id: 'local-documentary',
+		name: 'Dokumenter Sinematik',
+		mood: 'Serius & Mengalir',
+		url: '/bgm/bgm-soundhelix-1.mp3',
+		badge: 'Rekomendasi'
 	},
 	{
 		id: 'ambient-focus',
 		name: 'Deep Ambient Focus',
-		mood: 'Calm & Intellectual',
-		url: 'https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3'
+		mood: 'Tenang & Reflektif',
+		url: '/bgm/bgm-ambient.mp3',
+		badge: 'Fokus'
 	},
 	{
-		id: 'cinematic-pulse',
-		name: 'Cinematic Documentary Pulse',
-		mood: 'Dramatic & Serious',
-		url: 'https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3'
+		id: 'inspiring-story',
+		name: 'Uplifting Inspiring',
+		mood: 'Inspiratif & Motivasi',
+		url: '/bgm/bgm-inspiring.mp3',
+		badge: 'Inspirasi'
 	},
 	{
-		id: 'lofi-chill',
-		name: 'Late Night Lo-Fi',
-		mood: 'Relaxing & Casual',
-		url: 'https://assets.mixkit.co/music/preview/mixkit-chill-bro-494.mp3'
+		id: 'dramatic-tension',
+		name: 'Dramatic Tension Pulse',
+		mood: 'Tegang & Menantang',
+		url: '/bgm/bgm-tension.mp3',
+		badge: 'Tegang'
 	},
 	{
-		id: 'cyber-future',
-		name: 'Cyber Future Beats',
-		mood: 'Tech & Energetic',
-		url: 'https://assets.mixkit.co/music/preview/mixkit-game-level-music-689.mp3'
+		id: 'none',
+		name: 'Tanpa Musik Latar',
+		url: '',
+		mood: 'Hening'
 	}
 ];
 
@@ -40,34 +44,63 @@ class AudioController {
 	constructor() {
 		this.bgmAudio = null;
 		this.voiceAudio = null;
-		this.bgmVolume = 0.06;
+		this.bgmVolume = 0.10;
 		this.voiceVolume = 1.0;
 		this.isDucking = false;
+		this.currentUrl = null;
+		this.swellTimer = null;
 	}
 
 	initBGM(url) {
+		if (!url) {
+			if (this.bgmAudio) {
+				this.bgmAudio.pause();
+				this.bgmAudio = null;
+			}
+			this.currentUrl = null;
+			return;
+		}
+
+		// If audio element is already created for this exact URL, do not recreate or pause!
+		if (this.bgmAudio && this.currentUrl === url) {
+			const targetVol = this.isDucking ? Math.max(0.02, this.bgmVolume * 0.35) : this.bgmVolume;
+			this.bgmAudio.volume = Math.max(0, Math.min(1, targetVol));
+			return;
+		}
+
+		const wasPlaying = this.bgmAudio && !this.bgmAudio.paused;
 		if (this.bgmAudio) {
 			this.bgmAudio.pause();
 			this.bgmAudio = null;
 		}
 
-		if (!url) return;
-
+		this.currentUrl = url;
 		this.bgmAudio = new Audio(url);
 		this.bgmAudio.loop = true;
-		this.bgmAudio.volume = this.bgmVolume;
+		const initialVol = this.isDucking ? Math.max(0.02, this.bgmVolume * 0.35) : this.bgmVolume;
+		this.bgmAudio.volume = Math.max(0, Math.min(1, initialVol));
+
+		if (wasPlaying) {
+			this.playBGM();
+		}
 	}
 
 	setBGMVolume(vol) {
 		this.bgmVolume = Math.max(0, Math.min(1, vol));
 		if (this.bgmAudio) {
-			this.bgmAudio.volume = this.isDucking ? this.bgmVolume * 0.25 : this.bgmVolume;
+			const targetVol = this.isDucking ? Math.max(0.02, this.bgmVolume * 0.35) : this.bgmVolume;
+			this.bgmAudio.volume = Math.max(0, Math.min(1, targetVol));
 		}
 	}
 
 	playBGM() {
-		if (this.bgmAudio && this.bgmAudio.paused) {
-			this.bgmAudio.play().catch(() => {});
+		if (this.bgmAudio) {
+			const p = this.bgmAudio.play();
+			if (p && typeof p.catch === 'function') {
+				p.catch((err) => {
+					console.warn('[AudioEngine] BGM play error/blocked:', err);
+				});
+			}
 		}
 	}
 
@@ -78,8 +111,8 @@ class AudioController {
 	}
 
 	seekBGM(time) {
-		if (this.bgmAudio) {
-			this.bgmAudio.currentTime = time % (this.bgmAudio.duration || 60);
+		if (this.bgmAudio && this.bgmAudio.duration) {
+			this.bgmAudio.currentTime = time % this.bgmAudio.duration;
 		}
 	}
 
@@ -90,9 +123,9 @@ class AudioController {
 			this.swellTimer = null;
 		}
 		if (this.bgmAudio) {
-			// Deep ducking: drops background music volume to 25% while voice is speaking
-			const targetVol = shouldDuck ? this.bgmVolume * 0.25 : this.bgmVolume;
-			this.bgmAudio.volume = targetVol;
+			// Deep ducking: drops background music volume while voice is speaking, with an audible minimum floor
+			const targetVol = shouldDuck ? Math.max(0.02, this.bgmVolume * 0.35) : this.bgmVolume;
+			this.bgmAudio.volume = Math.max(0, Math.min(1, targetVol));
 		}
 	}
 
@@ -103,8 +136,8 @@ class AudioController {
 		}
 
 		if (this.bgmAudio) {
-			// Swell up volume to audible level for chapter transition (max 0.16)
-			const swelledVol = Math.min(0.18, Math.max(0.10, this.bgmVolume * 2.2));
+			// Swell up volume to audible level for chapter transition (max 0.20)
+			const swelledVol = Math.min(0.20, Math.max(0.06, this.bgmVolume * 2.2));
 			this.bgmAudio.volume = swelledVol;
 			this.isDucking = false;
 

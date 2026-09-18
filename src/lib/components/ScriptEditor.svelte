@@ -1,6 +1,7 @@
 <script>
 	import { SCRIPT_PRESETS } from '$lib/services/scriptAnalyzer.js';
-	import { Wand2, Sparkles, Clock, FileText, RefreshCw, Lightbulb } from 'lucide-svelte';
+	import { humanizeScript } from '$lib/services/scriptHumanizer.js';
+	import { Wand2, Sparkles, Clock, FileText, RefreshCw, Lightbulb, Mic } from 'lucide-svelte';
 
 	let {
 		script = $bindable(''),
@@ -11,6 +12,8 @@
 		showGenerateButton = false
 	} = $props();
 
+	let humanizeNotice = $state('');
+
 	let wordCount = $derived(script.trim() ? script.trim().split(/\s+/).length : 0);
 	let estimatedSeconds = $derived(Math.round(wordCount * 0.45));
 	let estimatedMinutes = $derived(Math.floor(estimatedSeconds / 60));
@@ -18,6 +21,13 @@
 
 	function applyPreset(preset) {
 		script = preset.text;
+	}
+
+	function handleHumanize() {
+		if (!script.trim()) return;
+		script = humanizeScript(script);
+		humanizeNotice = '✓ Naskah dioptimalkan untuk voiceover YouTube (pencerita alami)';
+		setTimeout(() => { humanizeNotice = ''; }, 3500);
 	}
 </script>
 
@@ -56,6 +66,15 @@
 					<span>✨ Tulis Naskah AI</span>
 				</button>
 			{/if}
+			<button 
+				type="button" 
+				class="btn-humanize-header-trigger"
+				onclick={handleHumanize}
+				title="Ubah naskah menjadi gaya pencerita YouTube natural (hapus klise kaku, rapikan ritme paragraf & dramatic pause)"
+			>
+				<Mic size={14} color="#a855f7" />
+				<span>🎙️ Humanize Naskah</span>
+			</button>
 			<div class="stat-item">
 				<FileText size={14} />
 				<span>{wordCount} Kata</span>
@@ -66,6 +85,12 @@
 			</div>
 		</div>
 	</div>
+
+	{#if humanizeNotice}
+		<div class="humanize-banner">
+			{humanizeNotice}
+		</div>
+	{/if}
 
 	<!-- Presets -->
 	<div class="preset-section">
@@ -262,6 +287,43 @@
 		transform: translateY(-1px);
 		box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
 		color: #ffffff;
+	}
+
+	.btn-humanize-header-trigger {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 14px;
+		background: linear-gradient(135deg, rgba(168, 85, 247, 0.25) 0%, rgba(236, 72, 153, 0.2) 100%);
+		border: 1px solid rgba(192, 132, 252, 0.45);
+		border-radius: var(--radius-md);
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: #f3e8ff;
+		cursor: pointer;
+		transition: all 0.25s ease;
+		box-shadow: 0 0 15px rgba(168, 85, 247, 0.2);
+	}
+
+	.btn-humanize-header-trigger:hover {
+		background: linear-gradient(135deg, rgba(168, 85, 247, 0.4) 0%, rgba(236, 72, 153, 0.35) 100%);
+		border-color: #c084fc;
+		transform: translateY(-1px);
+		box-shadow: 0 0 20px rgba(168, 85, 247, 0.4);
+		color: #ffffff;
+	}
+
+	.humanize-banner {
+		padding: 8px 14px;
+		background: rgba(168, 85, 247, 0.15);
+		border: 1px solid rgba(168, 85, 247, 0.4);
+		border-radius: var(--radius-md);
+		color: #e9d5ff;
+		font-size: 0.82rem;
+		font-weight: 500;
+		display: flex;
+		align-items: center;
+		animation: fadeIn 0.3s ease;
 	}
 
 	.preset-section {
