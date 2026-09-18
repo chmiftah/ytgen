@@ -95,7 +95,7 @@
 	});
 
 	function getChapterCardDuration(scene) {
-		if (!scene?.chapter) return 3.8;
+		if (!scene?.chapter || scene.chapter.isHook || scene.chapter.tag === 'HOOK') return 0;
 		const pause = Number(scene.chapter.pauseDuration ?? 5);
 		return 2.8 + pause;
 	}
@@ -224,8 +224,9 @@
 		audioController.playBGM();
 
 		// Chapter transition handling: swell BGM and play transition stinger
+		const isHook = Boolean(currentScene?.chapter?.isHook || currentScene?.chapter?.tag === 'HOOK');
 		const chDuration = getChapterCardDuration(currentScene);
-		if (currentScene?.chapter && sceneCurrentTime < chDuration) {
+		if (currentScene?.chapter && !isHook && sceneCurrentTime < chDuration) {
 			audioController.swellBGM(Math.max(0.5, chDuration - sceneCurrentTime));
 			if (sceneCurrentTime < 0.6) {
 				playChapterStinger();
@@ -286,7 +287,8 @@
 					voiceAudioElement.play().catch(() => {});
 				}
 			}
-			if (nextScene?.chapter) {
+			const nextIsHook = Boolean(nextScene?.chapter?.isHook || nextScene?.chapter?.tag === 'HOOK');
+			if (nextScene?.chapter && !nextIsHook) {
 				// Musik masuk (swell) & stinger on chapter change
 				audioController.swellBGM(getChapterCardDuration(nextScene));
 				playChapterStinger();
@@ -394,7 +396,7 @@
 			></audio>
 
 			<!-- Cinematic Chapter Title Card Overlay (Active on chapter scene start for speech + pauseDuration) -->
-			{#if currentScene?.chapter && sceneCurrentTime < getChapterCardDuration(currentScene)}
+			{#if currentScene?.chapter && !currentScene.chapter.isHook && currentScene.chapter.tag !== 'HOOK' && sceneCurrentTime < getChapterCardDuration(currentScene)}
 				<div 
 					class="chapter-overlay"
 					class:center-style={currentScene.chapter.style !== 'lower-third'}
@@ -421,7 +423,7 @@
 			{#if activeSubtitles.words.length > 0}
 				<div 
 					class="subtitles-overlay {currentSubtitleStyle.id}"
-					class:chapter-active={currentScene?.chapter && sceneCurrentTime < getChapterCardDuration(currentScene)}
+					class:chapter-active={currentScene?.chapter && !currentScene.chapter.isHook && currentScene.chapter.tag !== 'HOOK' && sceneCurrentTime < getChapterCardDuration(currentScene)}
 					style="
 						font-family: {currentSubtitleStyle.fontFamily};
 						font-size: {subtitleFontSize || currentSubtitleStyle.fontSize}px;
@@ -449,8 +451,10 @@
 
 			<!-- Scene Indicator Badge -->
 			<div class="scene-badge">
-				{#if currentScene?.chapter}
-					<span class="scene-badge-chapter">{currentScene.chapter.tag}:</span>
+				{#if currentScene?.chapter && !currentScene.chapter.isHook && currentScene.chapter.tag !== 'HOOK'}
+					<span class="scene-badge-chapter">
+						{currentScene.chapter.tag}:
+					</span>
 				{/if}
 				Scene {activeSceneIndex + 1} / {scenes.length || 1}
 			</div>
@@ -468,12 +472,14 @@
 		{#if scenes.length > 1}
 			<div class="markers-container">
 				{#each scenes as s, idx}
+					{@const isHook = Boolean(s.chapter?.isHook || s.chapter?.tag === 'HOOK')}
 					{@const markerPercent = (scenes.slice(0, idx).reduce((acc, cur) => acc + (cur.audioDuration || cur.estimatedDuration || 5), 0) / (totalDuration || 1)) * 100}
 					<div 
 						class="scene-marker" 
-						class:chapter-marker={!!s.chapter}
+						class:chapter-marker={!!s.chapter && !isHook}
+						class:hook-marker={isHook}
 						style="left: {markerPercent}%"
-						title={s.chapter ? `${s.chapter.tag}: ${s.chapter.title}` : `Scene ${idx + 1}`}
+						title={s.chapter ? (isHook ? `⚡ HOOK: ${s.chapter.title}` : `${s.chapter.tag}: ${s.chapter.title}`) : `Scene ${idx + 1}`}
 					></div>
 				{/each}
 			</div>
@@ -995,6 +1001,11 @@
 		margin-right: 4px;
 	}
 
+	.scene-badge-chapter.is-hook {
+		color: #f59e0b;
+		text-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+	}
+
 	.subtitles-overlay.chapter-active {
 		opacity: 0;
 		transform: translateY(16px);
@@ -1006,6 +1017,15 @@
 		height: 14px;
 		background: #10b981;
 		box-shadow: 0 0 8px #10b981;
+		border-radius: 2px;
+		z-index: 6;
+	}
+
+	.scene-marker.hook-marker {
+		width: 5px;
+		height: 14px;
+		background: #f59e0b;
+		box-shadow: 0 0 8px #f59e0b;
 		border-radius: 2px;
 		z-index: 6;
 	}

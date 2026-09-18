@@ -11,6 +11,7 @@
 	import ExportModal from '$lib/components/ExportModal.svelte';
 	import ScriptGeneratorModal from '$lib/components/ScriptGeneratorModal.svelte';
 	import TopicGeneratorModal from '$lib/components/TopicGeneratorModal.svelte';
+	import TitleGeneratorModal from '$lib/components/TitleGeneratorModal.svelte';
 	import GenerationProgressConsole from '$lib/components/GenerationProgressConsole.svelte';
 
 	import { analyzeScript, SCRIPT_PRESETS, getSpokenVoiceoverText, getChapterSpokenIntro } from '$lib/services/scriptAnalyzer.js';
@@ -185,6 +186,7 @@
 	let showFootageModal = $state(false);
 	let showScriptGeneratorModal = $state(false);
 	let showTopicGeneratorModal = $state(false);
+	let showTitleGeneratorModal = $state(false);
 	let pendingTopic = $state(null);
 	let footageSceneIndex = $state(0);
 	let elevenLabsError = $state(''); // Show ElevenLabs errors to user
@@ -192,6 +194,12 @@
 	function handleSelectTopicFromGenerator(topicItem) {
 		showTopicGeneratorModal = false;
 		pendingTopic = topicItem;
+		showScriptGeneratorModal = true;
+	}
+
+	function handleSelectTitleForScript(selectedTitle) {
+		showTitleGeneratorModal = false;
+		pendingTopic = { title: selectedTitle, hookFormula: 'curiosity_gap' };
 		showScriptGeneratorModal = true;
 	}
 
@@ -849,6 +857,7 @@
 		onOpenSettings={() => showSettingsModal = true}
 		onOpenSubtitleStyle={() => showSubtitleModal = true}
 		onOpenExport={handleOpenExport}
+		onOpenTitleGenerator={() => showTitleGeneratorModal = true}
 	/>
 
 	{#if elevenLabsError}
@@ -869,6 +878,7 @@
 				isGenerating={isGenerating}
 				onOpenScriptGenerator={() => showScriptGeneratorModal = true}
 				onOpenTopicGenerator={() => showTopicGeneratorModal = true}
+				onOpenTitleGenerator={() => showTitleGeneratorModal = true}
 			/>
 
 			<!-- Mode Voiceover Selector & Vocal Filter -->
@@ -1298,7 +1308,16 @@
 		selectedBgmId={selectedBgmId}
 		bgmVolume={bgmVolume}
 		selectedVoiceId={selectedVoiceId}
+		onOpenTitleGenerator={() => showTitleGeneratorModal = true}
 		onClose={() => showExportModal = false}
+	/>
+
+	<TitleGeneratorModal
+		isOpen={showTitleGeneratorModal}
+		deepseekApiKey={deepseekApiKey}
+		activeScript={script}
+		onSelectTitleForScript={handleSelectTitleForScript}
+		onClose={() => showTitleGeneratorModal = false}
 	/>
 </div>
 

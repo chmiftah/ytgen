@@ -34,6 +34,7 @@ Your task is to analyze the user's script and break it down into sequential scen
 In addition, divide the script into 2 to 4 impactful narrative chapters.
 
 Chapter Tag Rules (CRITICAL):
+- If the first section is a Hook or Cold Open (e.g. [HOOK: ...] or script starts with cold open before Bab 1), set "tag": "HOOK", "number": 0, "is_hook": true.
 - If the user's script uses "Bagian 1", set "tag": "BAGIAN 1" (or "BAGIAN 2", etc.).
 - If the user's script uses "Part 1", set "tag": "PART 1" (or "PART 2", etc.).
 - If the user's script provides only chapter titles without "Bab" or "Part", or requests only title, set "tag": "" (empty string).
@@ -44,12 +45,13 @@ For EACH scene, output:
 1. "narration": The spoken text preserved in the script's exact original language (Indonesian, English, etc.).
 2. "pexels_query": 3 to 6 high-impact cinematography keywords strictly IN ENGLISH optimized for Pexels video search (e.g. "futuristic artificial intelligence neural network 4k", "cinematic timelapse modern metropolis traffic", "stock market financial growth trading chart", "ocean waves golden hour sunrise drone").
 3. "mood": e.g., "tech", "dramatic", "inspirational", "curious", "urgent", "calm".
-4. "chapter": (Only for the FIRST scene of each chapter; null for subsequent scenes in that chapter):
+4. "chapter": (Only for the FIRST scene of each chapter/hook; null for subsequent scenes in that chapter):
    {
-     "number": 1,
-     "tag": "BAGIAN 1" or "PART 1" or "BAB 01" or "" (match user preference),
+     "number": 0 (for hook) or 1..N,
+     "tag": "HOOK" or "BAGIAN 1" or "PART 1" or "BAB 01" or "" (match user preference),
      "title": "Short Punchy Chapter Title in Indonesian",
-     "subtitle": "One sentence intriguing context"
+     "subtitle": "One sentence intriguing context",
+     "is_hook": true (if hook/cold open)
    }
 
 Return strictly valid JSON in this structure:
@@ -59,7 +61,7 @@ Return strictly valid JSON in this structure:
       "narration": "text here...",
       "pexels_query": "english keywords here...",
       "mood": "tech",
-      "chapter": { "number": 1, "tag": "BAGIAN 1", "title": "Awal Mula", "subtitle": "Pengantar cerita" }
+      "chapter": { "number": 0, "tag": "HOOK", "title": "Cold Open", "subtitle": "Pengantar cerita", "is_hook": true }
     },
     {
       "narration": "second scene text...",
@@ -96,13 +98,20 @@ Return strictly valid JSON in this structure:
 
 								let chapterObj = null;
 								if (sc.chapter) {
-									const chNum = sc.chapter.number || 1;
+									const isHook = Boolean(
+										sc.chapter.is_hook || 
+										/^hook\b|^cold\s*open\b|^teaser\b|^intro\b|^pembuka\b/i.test(String(sc.chapter.tag || '')) ||
+										/^hook\b|^cold\s*open\b|^teaser\b/i.test(String(sc.chapter.title || ''))
+									);
+									const chNum = isHook ? 0 : (sc.chapter.number || 1);
 									let tag = (sc.chapter.tag !== undefined && sc.chapter.tag !== null) 
 										? String(sc.chapter.tag).trim() 
-										: `BAB ${String(chNum).padStart(2, '0')}`;
+										: (isHook ? 'HOOK' : `BAB ${String(chNum).padStart(2, '0')}`);
 
 									// Align tag with user's explicit wording in script
-									if (userWantsOnlyTitle) {
+									if (isHook) {
+										tag = 'HOOK';
+									} else if (userWantsOnlyTitle) {
 										tag = '';
 									} else if (userWantsBagian && !userWantsBab) {
 										tag = tag.replace(/^BAB\s*0?(\d+)/i, 'BAGIAN $1');
@@ -115,9 +124,10 @@ Return strictly valid JSON in this structure:
 									chapterObj = {
 										number: chNum,
 										tag,
-										title: sc.chapter.title || 'Judul Bab',
+										title: sc.chapter.title || (isHook ? 'Cold Open' : 'Judul Bab'),
 										subtitle: sc.chapter.subtitle || '',
-										style: 'center'
+										style: isHook ? 'hook' : 'center',
+										isHook
 									};
 								}
 

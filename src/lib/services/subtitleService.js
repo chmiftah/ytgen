@@ -344,10 +344,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 	for (const scene of scenes) {
 		const sceneDuration = scene.audioDuration || scene.estimatedDuration || 5;
+		const isRealChapter = Boolean(scene.chapter && !scene.chapter.isHook && scene.chapter.tag !== 'HOOK');
 
-		// Burn-in Chapter Title Card if present (display for speech intro + pauseDuration)
+		// Burn-in Chapter Title Card only for real chapters (Bab 1, 2, dst) - Hook is completely clean
 		let chapterCardDuration = 0;
-		if (scene.chapter) {
+		if (isRealChapter) {
 			const pause = Number(scene.chapter.pauseDuration ?? 5);
 			chapterCardDuration = 2.6 + pause;
 			const chStart = cumulativeTime;
@@ -372,11 +373,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 		const rawTimings = scene.wordTimings && scene.wordTimings.length > 0 
 			? scene.wordTimings 
-			: generateSyntheticWordTimings(scene.words, sceneDuration, !!scene.chapter, scene.chapter?.pauseDuration ?? 5);
+			: generateSyntheticWordTimings(scene.words, sceneDuration, isRealChapter, scene.chapter?.pauseDuration ?? 5);
 
 		// If scene has a chapter card, filter out any word timings that occur during the
 		// chapter intro display (speech intro + pause) so they aren't rendered as duplicate bottom subtitles
-		const timings = scene.chapter 
+		const timings = isRealChapter 
 			? rawTimings.filter((t) => t.start >= (chapterCardDuration - 0.3))
 			: rawTimings;
 

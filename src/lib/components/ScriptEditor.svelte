@@ -1,7 +1,7 @@
 <script>
 	import { SCRIPT_PRESETS } from '$lib/services/scriptAnalyzer.js';
 	import { humanizeScript } from '$lib/services/scriptHumanizer.js';
-	import { Wand2, Sparkles, Clock, FileText, RefreshCw, Lightbulb, Mic } from 'lucide-svelte';
+	import { Wand2, Sparkles, Clock, FileText, RefreshCw, Lightbulb, Mic, Flame } from 'lucide-svelte';
 
 	let {
 		script = $bindable(''),
@@ -9,6 +9,7 @@
 		isGenerating = false,
 		onOpenScriptGenerator,
 		onOpenTopicGenerator,
+		onOpenTitleGenerator,
 		showGenerateButton = false
 	} = $props();
 
@@ -44,6 +45,17 @@
 		</div>
 
 		<div class="stats-bar">
+			{#if onOpenTitleGenerator}
+				<button 
+					type="button" 
+					class="btn-title-header-trigger"
+					onclick={onOpenTitleGenerator}
+					title="Riset 10 formula judul YouTube ber-CTR tinggi (High Click-Through Rate) teruji viral"
+				>
+					<Flame size={14} color="#f97316" />
+					<span>🔥 Judul Viral</span>
+				</button>
+			{/if}
 			{#if onOpenTopicGenerator}
 				<button 
 					type="button" 
@@ -262,6 +274,30 @@
 	.btn-inline-topic-hint:hover {
 		background: rgba(250, 204, 21, 0.2);
 		border-color: #facc15;
+		color: #ffffff;
+	}
+
+	.btn-title-header-trigger {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 14px;
+		background: linear-gradient(135deg, rgba(234, 88, 12, 0.25) 0%, rgba(249, 115, 22, 0.2) 100%);
+		border: 1px solid rgba(249, 115, 22, 0.45);
+		border-radius: var(--radius-md);
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: #ffedd5;
+		cursor: pointer;
+		transition: all 0.25s ease;
+		box-shadow: 0 0 15px rgba(249, 115, 22, 0.2);
+	}
+
+	.btn-title-header-trigger:hover {
+		background: linear-gradient(135deg, rgba(234, 88, 12, 0.4) 0%, rgba(249, 115, 22, 0.35) 100%);
+		border-color: #f97316;
+		transform: translateY(-1px);
+		box-shadow: 0 0 20px rgba(249, 115, 22, 0.4);
 		color: #ffffff;
 	}
 

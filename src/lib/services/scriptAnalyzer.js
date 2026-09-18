@@ -106,6 +106,7 @@ export function analyzeScript(rawScript) {
 	// 3. Markdown headings: e.g. # Judul Bab, ## Judul Bab
 	const rawLines = rawScript.split(/\r?\n/);
 	const chapterHeaderRegex = /^(?:\[(bab|chapter|bagian|part|segmen|episode|eps)\s*(\d+)(?:[:\s-]*([^\]|]*))?(?:\|([^\]]+))?\]|(bab|chapter|bagian|part|segmen|episode|eps)\s*(\d+)(?:[:\s-]*([^\n]*))?)/i;
+	const hookHeaderRegex = /^\[(hook|cold\s*open|teaser|pembuka|intro|prolog)(?:[:\s-]*([^\]|]*))?(?:\|([^\]]+))?\]/i;
 	const titleOnlyBracketRegex = /^\[([^\]|]+)(?:\|([^\]]+))?\]$/;
 	const markdownHeadingRegex = /^#{1,3}\s+(.+)$/;
 
@@ -125,19 +126,22 @@ export function analyzeScript(rawScript) {
 		const isFirstScene = scenes.length === 0;
 		let chapterForScene = pendingChapter;
 		
-		// If no explicit chapter, only assign a chapter if script mentions chapters or has multiple paragraphs
+		// If no explicit chapter, only assign a chapter if script mentions chapters AND doesn't already have Bab 1 later
 		if (!chapterForScene && isFirstScene) {
-			const hasExplicitChaptersInScript = chapterHeaderRegex.test(rawScript) || titleOnlyBracketRegex.test(rawScript);
-			if (hasExplicitChaptersInScript) {
-				const tag = defaultPrefix === 'BAGIAN' ? 'BAGIAN 1' : (defaultPrefix === 'PART' ? 'PART 1' : 'BAB 01');
-				chapterForScene = {
-					number: 1,
-					tag,
-					title: 'PENDAHULUAN',
-					subtitle: 'Pengantar dan latar belakang cerita',
-					style: 'center'
-				};
-				chapterCounter = 2;
+			const hasBab1Later = /\[(?:bab|chapter|bagian|part)\s*0?1\b/i.test(rawScript) || /^(?:bab|chapter|bagian|part)\s*0?1\b/im.test(rawScript);
+			if (!hasBab1Later) {
+				const hasExplicitChaptersInScript = chapterHeaderRegex.test(rawScript) || titleOnlyBracketRegex.test(rawScript);
+				if (hasExplicitChaptersInScript) {
+					const tag = defaultPrefix === 'BAGIAN' ? 'BAGIAN 1' : (defaultPrefix === 'PART' ? 'PART 1' : 'BAB 01');
+					chapterForScene = {
+						number: 1,
+						tag,
+						title: 'PENDAHULUAN',
+						subtitle: 'Pengantar dan latar belakang cerita',
+						style: 'center'
+					};
+					chapterCounter = 2;
+				}
 			}
 		}
 
@@ -148,6 +152,29 @@ export function analyzeScript(rawScript) {
 	for (const rawLine of rawLines) {
 		const line = rawLine.trim();
 		if (!line) continue;
+
+		// 0. Check for Hook / Cold Open header: e.g. [HOOK: Title | Subtitle], [COLD OPEN: Title]
+		const hookMatch = line.match(hookHeaderRegex);
+		if (hookMatch) {
+			if (currentChunk) {
+				pushScene(currentChunk);
+				currentChunk = '';
+				currentWordCount = 0;
+			}
+			const rawTitle = (hookMatch[2] || '').trim();
+			const title = rawTitle || 'Cold Open';
+			const subtitle = (hookMatch[3] || 'Pengantar video anti-skip').trim();
+
+			pendingChapter = {
+				isHook: true,
+				number: 0,
+				tag: 'HOOK',
+				title,
+				subtitle,
+				style: 'hook'
+			};
+			continue;
+		}
 
 		// 1. Check for prefixed chapter header (Bab 1, Bagian 1, Part 1, etc.)
 		const chMatch = line.match(chapterHeaderRegex);
@@ -283,6 +310,8 @@ export function analyzeScript(rawScript) {
  */
 export function getChapterSpokenIntro(scene) {
 	if (!scene || !scene.chapter) return '';
+	// Cold open hooks must NOT be announced as chapters by the narrator
+	if (scene.chapter.isHook || scene.chapter.tag === 'HOOK') return '';
 	const title = (scene.chapter.title || '').trim();
 	const rawTag = (scene.chapter.tag !== undefined && scene.chapter.tag !== null) 
 		? String(scene.chapter.tag).trim() 
@@ -341,20 +370,25 @@ export function getGlobalChapterConfig() {
 export function createSceneObject(index, text, chapter = null) {
 	const words = text.split(/\s+/).filter(Boolean);
 	const globalConfig = getGlobalChapterConfig();
-	const pauseDuration = chapter ? Number(chapter.pauseDuration ?? globalConfig.pauseDuration) : 0;
-	const outroPause = chapter ? Number(chapter.outroPause ?? globalConfig.outroPause) : 0;
-	// Chapter introduction duration: speech (~2.8s) + user-defined pause gap (e.g. 5s)
-	const chapterOffset = chapter ? (2.8 + pauseDuration) : 0;
+	const isHook = Boolean(chapter?.isHook || chapter?.tag === 'HOOK');
+	const pauseDuration = chapter && !isHook ? Number(chapter.pauseDuration ?? globalConfig.pauseDuration) : 0;
+	const outroPause = chapter && !isHook ? Number(chapter.outroPause ?? globalConfig.outroPause) : 0;
+	// Chapter introduction duration: speech (~2.8s) + user-defined pause gap (e.g. 5s) - hooks play immediately without delay
+	const chapterOffset = (chapter && !isHook) ? (2.8 + pauseDuration) : 0;
 	const estimatedDuration = Math.max(3.5, Number(((words.length * 0.45) + chapterOffset + outroPause).toFixed(1)));
 	const visualQuery = extractVisualQuery(text);
 
 	let formattedTag = chapter?.tag;
 	if (chapter && (formattedTag === undefined || formattedTag === null)) {
-		const num = chapter.number || 1;
-		if (globalConfig.tagPreset === 'bagian') formattedTag = `BAGIAN ${num}`;
-		else if (globalConfig.tagPreset === 'part') formattedTag = `PART ${num}`;
-		else if (globalConfig.tagPreset === 'none') formattedTag = '';
-		else formattedTag = `BAB ${String(num).padStart(2, '0')}`;
+		if (isHook) {
+			formattedTag = 'HOOK';
+		} else {
+			const num = chapter.number || 1;
+			if (globalConfig.tagPreset === 'bagian') formattedTag = `BAGIAN ${num}`;
+			else if (globalConfig.tagPreset === 'part') formattedTag = `PART ${num}`;
+			else if (globalConfig.tagPreset === 'none') formattedTag = '';
+			else formattedTag = `BAB ${String(num).padStart(2, '0')}`;
+		}
 	}
 
 	return {
@@ -369,11 +403,12 @@ export function createSceneObject(index, text, chapter = null) {
 		audioDuration: estimatedDuration,
 		wordTimings: [], // [ { word: "Kecerdasan", start: 0, end: 0.45 }, ... ]
 		chapter: chapter ? {
-			number: chapter.number || 1,
+			number: chapter.number ?? (isHook ? 0 : 1),
 			tag: formattedTag,
-			title: chapter.title || 'Awal Mula Cerita',
-			subtitle: chapter.subtitle || 'Pengenalan dan latar belakang cerita',
-			style: chapter.style || 'center',
+			title: chapter.title || (isHook ? 'Cold Open' : 'Awal Mula Cerita'),
+			subtitle: chapter.subtitle || (isHook ? 'Pengantar video anti-skip' : 'Pengenalan dan latar belakang cerita'),
+			style: chapter.style || (isHook ? 'hook' : 'center'),
+			isHook,
 			pauseDuration,
 			outroPause
 		} : null

@@ -432,9 +432,10 @@ export async function POST({ request }) {
 
 					if (!audioReady) {
 						if (currentSpokenText) {
-							const chIntro = scene.chapter ? getChapterSpokenIntro(scene) : '';
-							const chPause = scene.chapter ? Number(scene.chapter.pauseDuration ?? 5) : 0;
-							const outPause = scene.chapter ? Number(scene.chapter.outroPause ?? 0) : 0;
+							const isRealChapter = scene.chapter && !scene.chapter.isHook && scene.chapter.tag !== 'HOOK';
+							const chIntro = isRealChapter ? getChapterSpokenIntro(scene) : '';
+							const chPause = isRealChapter ? Number(scene.chapter.pauseDuration ?? 5) : 0;
+							const outPause = isRealChapter ? Number(scene.chapter.outroPause ?? 0) : 0;
 							const narrText = scene.narration || scene.words?.join(' ') || currentSpokenText;
 
 							const edgeSuccess = await makeEdgeTTSAudio(
@@ -663,7 +664,7 @@ export async function POST({ request }) {
 				const chapterSwells = [];
 				for (const sc of scenes) {
 					const dur = Number(sc.audioDuration || sc.estimatedDuration || 5);
-					if (sc.chapter) {
+					if (sc.chapter && !sc.chapter.isHook && sc.chapter.tag !== 'HOOK') {
 						const start = cumulativeSec.toFixed(2);
 						const pause = Number(sc.chapter.pauseDuration ?? 5);
 						const end = (cumulativeSec + Math.min(dur, 2.6 + pause)).toFixed(2);

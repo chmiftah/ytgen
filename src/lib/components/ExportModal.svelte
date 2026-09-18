@@ -1,5 +1,5 @@
 <script>
-	import { X, Download, FileText, Film, CheckCircle2, AlertCircle, RefreshCw, Sparkles, Copy, Check } from 'lucide-svelte';
+	import { X, Download, FileText, Film, CheckCircle2, AlertCircle, RefreshCw, Sparkles, Copy, Check, Flame } from 'lucide-svelte';
 	import { exportToSRT, exportToVTT, generateYouTubeTimestamps } from '$lib/services/subtitleService.js';
 	import { triggerDownload } from '$lib/services/clientExporter.js';
 	import { BGM_TRACKS } from '$lib/services/audioEngine.js';
@@ -13,6 +13,7 @@
 		selectedBgmId = 'local-documentary',
 		bgmVolume = 0.10,
 		selectedVoiceId = 'id-ID-ArdiNeural',
+		onOpenTitleGenerator,
 		onClose
 	} = $props();
 
@@ -279,6 +280,33 @@
 							<span>Download .VTT</span>
 						</button>
 					</div>
+				</div>
+
+				<!-- Viral Title Recommendation Box -->
+				<div class="divider">
+					<span>OPTIMASI YOUTUBE METADATA</span>
+				</div>
+
+				<div class="viral-title-teaser-card">
+					<div class="teaser-left">
+						<div class="teaser-icon">
+							<Flame size={20} color="#f97316" />
+						</div>
+						<div>
+							<h5>Butuh Judul Ber-CTR Tinggi &amp; Hook Thumbnail?</h5>
+							<p>Riset 10 formula judul YouTube teruji algoritma viral sebelum upload ke YouTube Studio.</p>
+						</div>
+					</div>
+					{#if onOpenTitleGenerator}
+						<button 
+							type="button" 
+							class="btn btn-secondary btn-sm btn-teaser-cta"
+							onclick={() => { onClose(); onOpenTitleGenerator(); }}
+						>
+							<Flame size={14} color="#f97316" />
+							<span>Riset Judul Viral</span>
+						</button>
+					{/if}
 				</div>
 
 				<!-- YouTube Chapters Timestamps Section -->
@@ -634,6 +662,65 @@
 		color: #e2e8f0;
 		white-space: pre-wrap;
 		user-select: all;
+	}
+
+	.viral-title-teaser-card {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 14px 16px;
+		background: rgba(249, 115, 22, 0.08);
+		border: 1px solid rgba(249, 115, 22, 0.25);
+		border-radius: var(--radius-md);
+		gap: 16px;
+	}
+
+	.teaser-left {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.teaser-icon {
+		width: 36px;
+		height: 36px;
+		border-radius: 10px;
+		background: rgba(249, 115, 22, 0.15);
+		border: 1px solid rgba(249, 115, 22, 0.3);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.teaser-left h5 {
+		font-size: 0.84rem;
+		font-weight: 700;
+		color: #fff;
+		margin: 0;
+	}
+
+	.teaser-left p {
+		font-size: 0.74rem;
+		color: var(--text-muted);
+		margin: 2px 0 0 0;
+	}
+
+	.btn-teaser-cta {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		background: rgba(249, 115, 22, 0.15);
+		border-color: rgba(249, 115, 22, 0.4);
+		color: #fdba74;
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.btn-teaser-cta:hover {
+		background: rgba(249, 115, 22, 0.25);
+		border-color: #f97316;
+		color: #fff;
 	}
 
 	.modal-footer {

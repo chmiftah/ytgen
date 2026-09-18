@@ -298,8 +298,8 @@
 								onclick={() => durationTarget = 'short'}
 								disabled={isGenerating}
 							>
-								<strong>⚡ Singkat (2–3 Menit)</strong>
-								<small>~350 kata • 2 Bab</small>
+								<strong>⚡ Ringkas (3–5 Menit)</strong>
+								<small>~600 kata • 3 Bab</small>
 							</button>
 
 							<button
@@ -309,8 +309,8 @@
 								onclick={() => durationTarget = 'medium'}
 								disabled={isGenerating}
 							>
-								<strong>🎬 Sedang (5–8 Menit)</strong>
-								<small>~800 kata • 3 Bab • Rekomendasi</small>
+								<strong>🎬 Sedang (5–10 Menit)</strong>
+								<small>~1.200 kata • 3–5 Bab • Populer</small>
 							</button>
 
 							<button
@@ -320,8 +320,19 @@
 								onclick={() => durationTarget = 'long'}
 								disabled={isGenerating}
 							>
-								<strong>📚 Mendalam (10–15 Menit)</strong>
-								<small>~1.600 kata • 4–5 Bab</small>
+								<strong>📚 Panjang (15–20 Menit)</strong>
+								<small>~2.400 kata • 5–7 Bab</small>
+							</button>
+
+							<button
+								type="button"
+								class="selector-pill"
+								class:active={durationTarget === 'extended'}
+								onclick={() => durationTarget = 'extended'}
+								disabled={isGenerating}
+							>
+								<strong>🌌 Dokumenter (25–35 Menit)</strong>
+								<small>~4.000 kata • 7–10 Bab</small>
 							</button>
 						</div>
 					</div>

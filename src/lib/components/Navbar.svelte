@@ -1,7 +1,7 @@
 <script>
-	import { Play, Settings, Type, Sparkles, Download, Video } from 'lucide-svelte';
+	import { Play, Settings, Type, Sparkles, Download, Video, Flame } from 'lucide-svelte';
 
-	let { onOpenSettings, onOpenSubtitleStyle, onOpenExport, isRendering = false } = $props();
+	let { onOpenSettings, onOpenSubtitleStyle, onOpenExport, onOpenTitleGenerator, isRendering = false } = $props();
 </script>
 
 <header class="navbar">
@@ -23,6 +23,13 @@
 	</div>
 
 	<div class="nav-right">
+		{#if onOpenTitleGenerator}
+			<button class="btn btn-secondary btn-sm nav-viral-btn" onclick={onOpenTitleGenerator} title="Riset 10 Judul YouTube Viral (CTR Tinggi)">
+				<Flame size={15} color="#f97316" />
+				<span>Judul Viral</span>
+			</button>
+		{/if}
+
 		<button class="btn btn-secondary btn-sm" onclick={onOpenSubtitleStyle}>
 			<Type size={16} />
 			<span>Gaya Subtitle</span>
@@ -45,6 +52,18 @@
 </header>
 
 <style>
+	.nav-viral-btn {
+		background: rgba(249, 115, 22, 0.12);
+		border-color: rgba(249, 115, 22, 0.35);
+		color: #fdba74;
+	}
+
+	.nav-viral-btn:hover {
+		background: rgba(249, 115, 22, 0.22);
+		border-color: #f97316;
+		color: #ffffff;
+	}
+
 	.navbar {
 		display: flex;
 		align-items: center;
