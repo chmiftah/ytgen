@@ -27,342 +27,159 @@
 	function handleHumanize() {
 		if (!script.trim()) return;
 		script = humanizeScript(script);
-		humanizeNotice = '✓ Naskah dioptimalkan untuk voiceover YouTube (pencerita alami)';
-		setTimeout(() => { humanizeNotice = ''; }, 3500);
+		humanizeNotice = 'Naskah dioptimalkan untuk voiceover.';
+		setTimeout(() => { humanizeNotice = ''; }, 3000);
 	}
 </script>
 
 <div class="script-editor glass-panel">
-	<div class="panel-header">
-		<div class="header-left">
-			<div class="icon-wrap">
-				<FileText size={18} color="var(--primary)" />
-			</div>
-			<div>
-				<h2 class="panel-title">1. Masukkan Naskah YouTube</h2>
-				<p class="panel-desc">Ketik, tempel, atau generate naskah otomatis dengan DeepSeek AI. Sistem akan membagi bab dan footage.</p>
-			</div>
+	<div class="panel-head">
+		<div class="head-main">
+			<h2>Script</h2>
+			<p>Tempel naskah, generate otomatis, lalu generate video.</p>
 		</div>
-
-		<div class="stats-bar">
-			{#if onOpenTitleGenerator}
-				<button 
-					type="button" 
-					class="btn-title-header-trigger"
-					onclick={onOpenTitleGenerator}
-					title="Riset 10 formula judul YouTube ber-CTR tinggi (High Click-Through Rate) teruji viral"
-				>
-					<Flame size={14} color="#f97316" />
-					<span>🔥 Judul Viral</span>
-				</button>
-			{/if}
-			{#if onOpenTopicGenerator}
-				<button 
-					type="button" 
-					class="btn-topic-header-trigger"
-					onclick={onOpenTopicGenerator}
-					title="Cari ide topik video YouTube viral dan formula hook 10 detik"
-				>
-					<Lightbulb size={14} color="#facc15" />
-					<span>💡 Ide Topik Viral</span>
-				</button>
-			{/if}
-			{#if onOpenScriptGenerator}
-				<button 
-					type="button" 
-					class="btn-ai-header-trigger"
-					onclick={onOpenScriptGenerator}
-					title="Buka AI Script Generator"
-				>
-					<Sparkles size={14} color="#38bdf8" />
-					<span>✨ Tulis Naskah AI</span>
-				</button>
-			{/if}
-			<button 
-				type="button" 
-				class="btn-humanize-header-trigger"
-				onclick={handleHumanize}
-				title="Ubah naskah menjadi gaya pencerita YouTube natural (hapus klise kaku, rapikan ritme paragraf & dramatic pause)"
-			>
-				<Mic size={14} color="#a855f7" />
-				<span>🎙️ Humanize Naskah</span>
-			</button>
-			<div class="stat-item">
-				<FileText size={14} />
-				<span>{wordCount} Kata</span>
-			</div>
-			<div class="stat-item">
-				<Clock size={14} />
-				<span>Estimasi: {estimatedMinutes}m {remainingSeconds}s</span>
-			</div>
+		<div class="head-stats">
+			<span class="stat"><FileText size={13} /> {wordCount} kata</span>
+			<span class="stat"><Clock size={13} /> {estimatedMinutes}m {remainingSeconds}s</span>
 		</div>
 	</div>
 
+	<div class="tool-row">
+		{#if onOpenTitleGenerator}
+			<button type="button" class="tool-btn" onclick={onOpenTitleGenerator} title="Riset judul viral">
+				<Flame size={13} /><span>Judul</span>
+			</button>
+		{/if}
+		{#if onOpenTopicGenerator}
+			<button type="button" class="tool-btn" onclick={onOpenTopicGenerator} title="Cari ide topik">
+				<Lightbulb size={13} /><span>Topik</span>
+			</button>
+		{/if}
+		{#if onOpenScriptGenerator}
+			<button type="button" class="tool-btn" onclick={onOpenScriptGenerator} title="Tulis naskah dengan AI">
+				<Sparkles size={13} /><span>Naskah AI</span>
+			</button>
+		{/if}
+		<button type="button" class="tool-btn" onclick={handleHumanize} title="Rapikan gaya penceritaan">
+			<Mic size={13} /><span>Humanize</span>
+		</button>
+	</div>
+
 	{#if humanizeNotice}
-		<div class="humanize-banner">
-			{humanizeNotice}
-		</div>
+		<div class="notice">{humanizeNotice}</div>
 	{/if}
 
-	<!-- Presets -->
-	<div class="preset-section">
-		<div class="preset-top-row">
-			<span class="preset-label">Contoh Naskah Siap Pakai:</span>
-			{#if onOpenTopicGenerator}
-				<button
-					type="button"
-					class="btn-inline-topic-hint"
-					onclick={onOpenTopicGenerator}
-					title="Buntu ide? Temukan topik viral teruji"
-				>
-					<Lightbulb size={12} color="#facc15" />
-					<span>Buntu ide? Cari topik viral di sini</span>
-				</button>
-			{/if}
-		</div>
+	<div class="preset-block">
+		<span class="preset-label">Contoh</span>
 		<div class="preset-chips">
 			{#each SCRIPT_PRESETS as preset}
-				<button 
-					type="button" 
-					class="preset-btn" 
-					onclick={() => applyPreset(preset)}
-					title="Klik untuk memuat naskah ini"
-				>
-					<Sparkles size={13} color="var(--accent-cyan)" />
-					<span>{preset.title}</span>
+				<button type="button" class="preset-btn" onclick={() => applyPreset(preset)} title={preset.title}>
+					<Sparkles size={12} />
+					<span>{preset.title.length > 42 ? preset.title.slice(0, 42) + '…' : preset.title}</span>
 				</button>
 			{/each}
 		</div>
 	</div>
 
-	<!-- Textarea -->
-	<div class="textarea-container">
-		<textarea
-			bind:value={script}
-			placeholder="Tulis naskah video YouTube Anda di sini... Contoh: 'Kecerdasan Buatan berkembang sangat cepat...'"
-			rows={6}
-		></textarea>
-	</div>
+	<textarea
+		bind:value={script}
+		placeholder="Tulis naskah di sini…"
+		rows={7}
+		class="script-input"
+	></textarea>
 
-	<!-- Action Footer -->
-	<div class="panel-footer">
-		<div class="hint">
-			💡 <em>Tip: Pacing ideal YouTube adalah 1 adegan tiap 5–8 detik. Atur suara & filter vokal di bawah lalu klik tombol <strong>Generate</strong>.</em>
-		</div>
-		{#if showGenerateButton}
-			<button 
-				class="btn btn-primary btn-lg generate-btn" 
-				onclick={onGenerate}
-				disabled={isGenerating || !script.trim()}
-			>
+	{#if showGenerateButton}
+		<div class="footer">
+			<button class="btn btn-primary btn-lg generate-btn" onclick={onGenerate} disabled={isGenerating || !script.trim()}>
 				{#if isGenerating}
-					<RefreshCw size={18} class="spin" />
-					<span>Menganalisis & Mengambil Footage...</span>
+					<RefreshCw size={16} class="spin" /><span>Generating…</span>
 				{:else}
-					<Wand2 size={18} />
-					<span>Analisis Naskah & Generate Video</span>
+					<Wand2 size={16} /><span>Generate Video</span>
 				{/if}
 			</button>
-		{/if}
-	</div>
+		</div>
+	{/if}
 </div>
 
 <style>
 	.script-editor {
-		padding: 24px;
+		padding: 18px;
 		display: flex;
 		flex-direction: column;
-		gap: 18px;
+		gap: 14px;
 	}
 
-	.panel-header {
+	.panel-head {
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		justify-content: space-between;
-		gap: 16px;
+		gap: 14px;
 		flex-wrap: wrap;
 	}
 
-	.header-left {
-		display: flex;
-		align-items: flex-start;
-		gap: 12px;
-	}
-
-	.icon-wrap {
-		width: 36px;
-		height: 36px;
-		border-radius: var(--radius-md);
-		background: rgba(99, 102, 241, 0.15);
-		border: 1px solid rgba(99, 102, 241, 0.3);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-	}
-
-	.panel-title {
-		font-size: 1.15rem;
+	.head-main h2 {
+		font-size: 1rem;
 		font-weight: 700;
 	}
 
-	.panel-desc {
-		font-size: 0.825rem;
-		color: var(--text-secondary);
-		margin-top: 2px;
-	}
-
-	.stats-bar {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-	}
-
-	.stat-item {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		padding: 6px 12px;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-md);
+	.head-main p {
 		font-size: 0.8rem;
-		color: var(--text-secondary);
-		font-weight: 500;
+		color: var(--text-2);
+		margin-top: 4px;
 	}
 
-	.btn-topic-header-trigger {
+	.head-stats {
 		display: flex;
-		align-items: center;
-		gap: 6px;
-		padding: 6px 14px;
-		background: linear-gradient(135deg, rgba(250, 204, 21, 0.2) 0%, rgba(234, 179, 8, 0.15) 100%);
-		border: 1px solid rgba(250, 204, 21, 0.45);
-		border-radius: var(--radius-md);
-		font-size: 0.8rem;
-		font-weight: 700;
-		color: #fef08a;
-		cursor: pointer;
-		transition: all 0.25s ease;
-		box-shadow: 0 0 15px rgba(250, 204, 21, 0.15);
+		gap: 8px;
+		flex-wrap: wrap;
 	}
 
-	.btn-topic-header-trigger:hover {
-		background: linear-gradient(135deg, rgba(250, 204, 21, 0.35) 0%, rgba(234, 179, 8, 0.25) 100%);
-		border-color: #facc15;
-		transform: translateY(-1px);
-		box-shadow: 0 0 20px rgba(250, 204, 21, 0.35);
-		color: #ffffff;
-	}
-
-	.btn-inline-topic-hint {
+	.stat {
 		display: inline-flex;
 		align-items: center;
-		gap: 5px;
-		padding: 2px 8px;
-		background: rgba(250, 204, 21, 0.1);
-		border: 1px dashed rgba(250, 204, 21, 0.35);
-		border-radius: 9999px;
-		color: #fde047;
-		font-size: 0.72rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.18s ease;
-		margin-left: 8px;
+		gap: 6px;
+		padding: 6px 10px;
+		font-size: 0.75rem;
+		color: var(--text-2);
+		background: var(--bg-card);
+		border: 1px solid var(--line);
+		border-radius: var(--r-full);
 	}
 
-	.btn-inline-topic-hint:hover {
-		background: rgba(250, 204, 21, 0.2);
-		border-color: #facc15;
-		color: #ffffff;
-	}
-
-	.btn-title-header-trigger {
+	.tool-row {
 		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+
+	.tool-btn {
+		display: inline-flex;
 		align-items: center;
 		gap: 6px;
-		padding: 6px 14px;
-		background: linear-gradient(135deg, rgba(234, 88, 12, 0.25) 0%, rgba(249, 115, 22, 0.2) 100%);
-		border: 1px solid rgba(249, 115, 22, 0.45);
-		border-radius: var(--radius-md);
-		font-size: 0.8rem;
+		padding: 7px 11px;
+		font-size: 0.78rem;
 		font-weight: 600;
-		color: #ffedd5;
-		cursor: pointer;
-		transition: all 0.25s ease;
-		box-shadow: 0 0 15px rgba(249, 115, 22, 0.2);
+		color: var(--text-2);
+		background: var(--bg-card);
+		border: 1px solid var(--line);
+		border-radius: var(--r-md);
+	}
+	.tool-btn:hover {
+		color: var(--text);
+		border-color: var(--line-strong);
+		background: var(--bg-card-hover);
 	}
 
-	.btn-title-header-trigger:hover {
-		background: linear-gradient(135deg, rgba(234, 88, 12, 0.4) 0%, rgba(249, 115, 22, 0.35) 100%);
-		border-color: #f97316;
-		transform: translateY(-1px);
-		box-shadow: 0 0 20px rgba(249, 115, 22, 0.4);
-		color: #ffffff;
+	.notice {
+		padding: 8px 12px;
+		font-size: 0.78rem;
+		color: var(--text-2);
+		background: var(--bg-card);
+		border: 1px solid var(--line);
+		border-radius: var(--r-md);
 	}
 
-	.btn-ai-header-trigger {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		padding: 6px 14px;
-		background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(6, 182, 212, 0.2) 100%);
-		border: 1px solid rgba(56, 189, 248, 0.45);
-		border-radius: var(--radius-md);
-		font-size: 0.8rem;
-		font-weight: 600;
-		color: #e0f2fe;
-		cursor: pointer;
-		transition: all 0.25s ease;
-		box-shadow: 0 0 15px rgba(6, 182, 212, 0.2);
-	}
-
-	.btn-ai-header-trigger:hover {
-		background: linear-gradient(135deg, rgba(99, 102, 241, 0.4) 0%, rgba(6, 182, 212, 0.35) 100%);
-		border-color: #38bdf8;
-		transform: translateY(-1px);
-		box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
-		color: #ffffff;
-	}
-
-	.btn-humanize-header-trigger {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		padding: 6px 14px;
-		background: linear-gradient(135deg, rgba(168, 85, 247, 0.25) 0%, rgba(236, 72, 153, 0.2) 100%);
-		border: 1px solid rgba(192, 132, 252, 0.45);
-		border-radius: var(--radius-md);
-		font-size: 0.8rem;
-		font-weight: 600;
-		color: #f3e8ff;
-		cursor: pointer;
-		transition: all 0.25s ease;
-		box-shadow: 0 0 15px rgba(168, 85, 247, 0.2);
-	}
-
-	.btn-humanize-header-trigger:hover {
-		background: linear-gradient(135deg, rgba(168, 85, 247, 0.4) 0%, rgba(236, 72, 153, 0.35) 100%);
-		border-color: #c084fc;
-		transform: translateY(-1px);
-		box-shadow: 0 0 20px rgba(168, 85, 247, 0.4);
-		color: #ffffff;
-	}
-
-	.humanize-banner {
-		padding: 8px 14px;
-		background: rgba(168, 85, 247, 0.15);
-		border: 1px solid rgba(168, 85, 247, 0.4);
-		border-radius: var(--radius-md);
-		color: #e9d5ff;
-		font-size: 0.82rem;
-		font-weight: 500;
-		display: flex;
-		align-items: center;
-		animation: fadeIn 0.3s ease;
-	}
-
-	.preset-section {
+	.preset-block {
 		display: flex;
 		align-items: center;
 		gap: 10px;
@@ -370,81 +187,54 @@
 	}
 
 	.preset-label {
-		font-size: 0.775rem;
-		color: var(--text-muted);
-		font-weight: 600;
+		font-size: 0.68rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		color: var(--text-3);
 	}
 
 	.preset-chips {
 		display: flex;
-		align-items: center;
 		gap: 8px;
 		flex-wrap: wrap;
 	}
 
 	.preset-btn {
-		display: flex;
+		display: inline-flex;
 		align-items: center;
 		gap: 6px;
-		padding: 6px 12px;
-		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-full);
-		font-size: 0.775rem;
-		color: var(--text-secondary);
-		transition: all 0.2s ease;
+		max-width: 320px;
+		padding: 6px 10px;
+		font-size: 0.76rem;
+		color: var(--text-2);
+		background: transparent;
+		border: 1px solid var(--line);
+		border-radius: var(--r-full);
 	}
-
 	.preset-btn:hover {
-		background: rgba(6, 182, 212, 0.1);
-		border-color: rgba(6, 182, 212, 0.4);
-		color: #e2e8f0;
-		transform: translateY(-1px);
+		color: var(--text);
+		border-color: var(--line-strong);
+		background: var(--bg-card);
+	}
+	.preset-btn span {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
-	.textarea-container textarea {
+	.script-input {
 		width: 100%;
-		min-height: 120px;
+		min-height: 170px;
 		resize: vertical;
-		font-size: 0.95rem;
-		line-height: 1.6;
-		padding: 16px;
-		background: #090e18;
-		border: 1px solid var(--border-subtle);
-		border-radius: var(--radius-lg);
-		color: var(--text-primary);
+		font-size: 0.92rem;
+		line-height: 1.65;
 	}
 
-	.textarea-container textarea:focus {
-		border-color: var(--primary);
-		box-shadow: 0 0 0 3px var(--primary-glow);
-	}
-
-	.panel-footer {
+	.footer {
 		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 16px;
-		flex-wrap: wrap;
+		justify-content: flex-end;
 	}
 
-	.hint {
-		font-size: 0.8rem;
-		color: var(--text-muted);
-	}
-
-	.generate-btn {
-		padding: 12px 24px;
-	}
-
-	:global(.spin) {
-		animation: spin 1s linear infinite;
-	}
-
-	@keyframes spin {
-		from { transform: rotate(0deg); }
-		to { transform: rotate(360deg); }
-	}
+	.generate-btn { min-width: 200px; }
 </style>

@@ -1,5 +1,5 @@
 <script>
-	import { Play, Settings, Type, Sparkles, Download, Video, Flame } from 'lucide-svelte';
+	import { Settings, Type, Download, Video, Flame } from 'lucide-svelte';
 
 	let { onOpenSettings, onOpenSubtitleStyle, onOpenExport, onOpenTitleGenerator, isRendering = false } = $props();
 </script>
@@ -8,210 +8,140 @@
 	<div class="nav-left">
 		<div class="brand">
 			<div class="brand-icon">
-				<Video size={20} color="#f43f5e" />
+				<Video size={16} />
 			</div>
 			<div class="brand-title">
 				<span class="brand-name">YouTube Long</span>
-				<span class="brand-tag">STUDIO</span>
+				<span class="brand-sub">Studio</span>
 			</div>
 		</div>
-
-		<div class="aspect-badge">
-			<span class="dot"></span>
-			<span>16:9 Widescreen (1080p)</span>
+		<div class="nav-meta">
+			<span class="meta-dot"></span>
+			<span>16:9 · 1080p</span>
 		</div>
 	</div>
 
 	<div class="nav-right">
 		{#if onOpenTitleGenerator}
-			<button class="btn btn-secondary btn-sm nav-viral-btn" onclick={onOpenTitleGenerator} title="Riset 10 Judul YouTube Viral (CTR Tinggi)">
-				<Flame size={15} color="#f97316" />
+			<button class="btn btn-sm nav-btn" onclick={onOpenTitleGenerator}>
+				<Flame size={14} />
 				<span>Judul Viral</span>
 			</button>
 		{/if}
-
-		<button class="btn btn-secondary btn-sm" onclick={onOpenSubtitleStyle}>
-			<Type size={16} />
-			<span>Gaya Subtitle</span>
+		<button class="btn btn-sm nav-btn" onclick={onOpenSubtitleStyle}>
+			<Type size={14} />
+			<span>Subtitle</span>
 		</button>
-
-		<button class="btn btn-secondary btn-sm" onclick={onOpenSettings}>
-			<Settings size={16} />
-			<span>API Settings</span>
+		<button class="btn btn-sm nav-btn" onclick={onOpenSettings}>
+			<Settings size={14} />
+			<span>Settings</span>
 		</button>
-
-		<button 
-			class="btn btn-primary btn-sm export-btn" 
-			onclick={onOpenExport}
-			disabled={isRendering}
-		>
-			<Download size={16} />
-			<span>{isRendering ? 'Rendering...' : 'Export Video'}</span>
+		<button class="btn btn-sm btn-primary" onclick={onOpenExport} disabled={isRendering}>
+			<Download size={14} />
+			<span>{isRendering ? 'Rendering...' : 'Export'}</span>
 		</button>
 	</div>
 </header>
 
 <style>
-	.nav-viral-btn {
-		background: rgba(249, 115, 22, 0.12);
-		border-color: rgba(249, 115, 22, 0.35);
-		color: #fdba74;
-	}
-
-	.nav-viral-btn:hover {
-		background: rgba(249, 115, 22, 0.22);
-		border-color: #f97316;
-		color: #ffffff;
-	}
-
 	.navbar {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: 12px 28px;
-		background: rgba(8, 12, 24, 0.92);
-		backdrop-filter: blur(24px) saturate(1.4);
-		-webkit-backdrop-filter: blur(24px) saturate(1.4);
-		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+		gap: 16px;
+		padding: 10px 20px;
+		background: var(--bg-surface);
+		border-bottom: 1px solid var(--line);
 		position: sticky;
 		top: 0;
 		z-index: 50;
-		box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 1px rgba(99, 102, 241, 0.2);
-	}
-
-	/* Bottom accent glow line */
-	.navbar::after {
-		content: '';
-		position: absolute;
-		bottom: -1px;
-		left: 10%;
-		right: 10%;
-		height: 1px;
-		background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.3), rgba(6, 182, 212, 0.25), rgba(244, 63, 94, 0.2), transparent);
-		pointer-events: none;
 	}
 
 	.nav-left {
 		display: flex;
 		align-items: center;
-		gap: 20px;
+		gap: 14px;
+		min-width: 0;
 	}
 
 	.brand {
 		display: flex;
 		align-items: center;
-		gap: 12px;
+		gap: 10px;
 	}
 
 	.brand-icon {
-		width: 40px;
-		height: 40px;
-		border-radius: var(--radius-md);
-		background: linear-gradient(135deg, rgba(244, 63, 94, 0.2) 0%, rgba(168, 85, 247, 0.15) 100%);
-		border: 1px solid rgba(244, 63, 94, 0.35);
+		width: 32px;
+		height: 32px;
+		border-radius: var(--r-md);
+		background: var(--bg-card);
+		border: 1px solid var(--line);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		box-shadow: 0 0 20px rgba(244, 63, 94, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-		animation: float 4s ease-in-out infinite;
+		color: var(--text-2);
 	}
 
 	.brand-title {
 		display: flex;
 		align-items: baseline;
-		gap: 8px;
+		gap: 6px;
 	}
 
 	.brand-name {
-		font-family: var(--font-heading);
-		font-size: 1.2rem;
-		font-weight: 800;
+		font-size: 0.95rem;
+		font-weight: 700;
 		letter-spacing: -0.02em;
-		background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 40%, #a5b4fc 100%);
-		-webkit-background-clip: text;
-		-webkit-text-fill-color: transparent;
+		color: var(--text);
 	}
 
-	.brand-tag {
-		font-size: 0.62rem;
-		font-weight: 800;
-		letter-spacing: 0.12em;
-		padding: 3px 8px;
-		border-radius: var(--radius-sm);
-		background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(6, 182, 212, 0.15) 100%);
-		color: #a5b4fc;
-		border: 1px solid rgba(99, 102, 241, 0.3);
-		text-shadow: 0 0 8px rgba(99, 102, 241, 0.3);
+	.brand-sub {
+		font-size: 0.65rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		color: var(--text-3);
+		text-transform: uppercase;
 	}
 
-	.aspect-badge {
-		display: flex;
+	.nav-meta {
+		display: inline-flex;
 		align-items: center;
-		gap: 7px;
-		padding: 5px 14px;
-		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		border-radius: var(--radius-full);
-		font-size: 0.72rem;
-		color: var(--text-secondary);
-		font-weight: 500;
-		transition: all 0.2s ease;
+		gap: 6px;
+		padding: 4px 10px;
+		border-radius: var(--r-full);
+		background: var(--bg-card);
+		border: 1px solid var(--line);
+		font-size: 0.7rem;
+		color: var(--text-3);
 	}
 
-	.aspect-badge:hover {
-		background: rgba(255, 255, 255, 0.06);
-		border-color: rgba(255, 255, 255, 0.12);
-	}
-
-	.dot {
+	.meta-dot {
 		width: 6px;
 		height: 6px;
 		border-radius: 50%;
-		background: var(--highlight-green);
-		box-shadow: 0 0 8px var(--highlight-green), 0 0 16px rgba(34, 197, 94, 0.2);
-		animation: pulseGlow 2s ease-in-out infinite;
+		background: var(--success);
 	}
 
 	.nav-right {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: 8px;
+		flex-wrap: wrap;
 	}
 
-	.export-btn {
-		background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
-		box-shadow: 0 4px 18px rgba(244, 63, 94, 0.35);
-		position: relative;
-		overflow: hidden;
+	.nav-btn {
+		background: var(--bg-card);
+		border: 1px solid var(--line);
+		color: var(--text-2);
+	}
+	.nav-btn:hover {
+		background: var(--bg-card-hover);
+		border-color: var(--line-strong);
+		color: var(--text);
 	}
 
-	.export-btn::after {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: -100%;
-		width: 60%;
-		height: 100%;
-		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
-		transition: left 0.6s ease;
-	}
-
-	.export-btn:hover:not(:disabled) {
-		background: linear-gradient(135deg, #fb7185 0%, #f43f5e 100%);
-		box-shadow: 0 6px 24px rgba(244, 63, 94, 0.5);
-		transform: translateY(-1px);
-	}
-
-	.export-btn:hover:not(:disabled)::after {
-		left: 100%;
-	}
-
-	@media (max-width: 768px) {
-		.navbar {
-			padding: 10px 16px;
-		}
-		.aspect-badge {
-			display: none;
-		}
+	@media (max-width: 860px) {
+		.nav-meta { display: none; }
+		.brand-sub { display: none; }
 	}
 </style>
