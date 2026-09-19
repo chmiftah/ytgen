@@ -163,16 +163,14 @@
 		}
 	}
 
-	// Watch scene change to update video source
 	$effect(() => {
 		if (currentScene && videoElement && !isLavfiScene) {
 			const targetUrl = currentScene.footage?.videoUrl;
-			if (targetUrl && !isSameMediaSource(videoElement.src, targetUrl)) {
+			if (targetUrl && videoElement.src !== targetUrl && !isSameMediaSource(videoElement.src, targetUrl)) {
 				videoElement.src = targetUrl;
+				videoElement.load();
 				videoElement.currentTime = 0;
-				if (isPlaying) {
-					videoElement.play().catch(() => {});
-				}
+				if (isPlaying) videoElement.play().catch(() => {});
 			}
 		}
 	});
@@ -369,14 +367,17 @@
 					<div class="lavfi-pulse"></div>
 				</div>
 			{:else if currentScene?.footage?.videoUrl}
-				<video
-					bind:this={videoElement}
-					src={currentScene.footage.videoUrl}
-					class="main-video"
-					loop
-					muted={isMuted}
-					playsinline
-				></video>
+				<!-- svelte-ignore a11y_media_has_caption -->
+					<video
+						bind:this={videoElement}
+						src={currentScene.footage.videoUrl}
+						class="main-video"
+						loop
+						muted={isMuted}
+						playsinline
+						crossorigin="anonymous"
+						onerror={(e) => console.error('Video load error:', e.target.error.code, e.target.error.message, currentScene.footage.videoUrl)}
+					></video>
 			{:else}
 				<div class="video-placeholder">
 					<div class="placeholder-content">

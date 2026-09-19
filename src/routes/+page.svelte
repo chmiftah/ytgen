@@ -541,10 +541,28 @@
 		showFootageModal = true;
 	}
 
-	function handleSelectFootage(video) {
-		const sceneIndex = footageSceneIndex;
-		if (scenes[sceneIndex]) {
-			scenes[sceneIndex].footage = video;
+	function handleSelectFootage(targetIndexOrVideo, maybeVideo) {
+		let targetIndex = footageSceneIndex;
+		let chosenVideo = null;
+
+		if (maybeVideo !== undefined) {
+			targetIndex = typeof targetIndexOrVideo === 'number' ? targetIndexOrVideo : footageSceneIndex;
+			chosenVideo = maybeVideo;
+		} else {
+			chosenVideo = targetIndexOrVideo;
+		}
+
+		if (scenes[targetIndex] && chosenVideo) {
+			scenes = scenes.map((s, i) => {
+				if (i === targetIndex) {
+					return {
+						...s,
+						footage: chosenVideo,
+						visualQuery: chosenVideo.queryHint || chosenVideo.title || s.visualQuery
+					};
+				}
+				return s;
+			});
 		}
 	}
 
