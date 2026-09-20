@@ -13,9 +13,17 @@
 		selectedBgmId = 'local-documentary',
 		bgmVolume = 0.10,
 		selectedVoiceId = 'id-ID-ArdiNeural',
+		videoTitle = '',
 		onOpenTitleGenerator,
 		onClose
 	} = $props();
+
+	function slugFilename(name) {
+		const base = String(name || '').trim() || 'youtube-long-video';
+		const cleaned = base.replace(/[\/\\:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+		const slug = cleaned.replace(/[^a-zA-Z0-9 _\-\(\)]+/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'youtube-long-video';
+		return slug.toLowerCase();
+	}
 
 	let isRendering = $state(false);
 	let renderProgress = $state(0);
@@ -64,7 +72,8 @@
 					bgmUrl,
 					bgmVolume,
 					renderQuality,
-					voiceId: selectedVoiceId
+					voiceId: selectedVoiceId,
+					videoTitle: slugFilename(videoTitle) + '--' + Date.now()
 				})
 			});
 

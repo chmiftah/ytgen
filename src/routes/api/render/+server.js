@@ -330,11 +330,19 @@ function makeGradientVideo(destPath, durationSec) {
 	);
 }
 
+function sanitizeTitleToFilename(raw) {
+	const base = String(raw || '').trim();
+	if (!base) return '';
+	const cleaned = base.replace(/[\/\\:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+	const slug = cleaned.replace(/[^a-zA-Z0-9 _\-\(\)]+/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+	return (slug || 'youtube-long-video').toLowerCase();
+}
+
 export async function POST({ request }) {
 	const renderId = `yt-long-${Date.now()}`;
 	const tempDir = path.resolve(`./static/renders/temp-${renderId}`);
-	const finalMp4Name = `youtube-long-${renderId}.mp4`;
-	const finalMp4Path = path.resolve(`./static/renders/${finalMp4Name}`);
+	let finalMp4Name = `youtube-long-${renderId}.mp4`;
+	let finalMp4Path = path.resolve(`./static/renders/${finalMp4Name}`);
 
 	const encoder = new TextEncoder();
 	let controllerRef = null;
@@ -361,8 +369,15 @@ export async function POST({ request }) {
 				bgmUrl,
 				bgmVolume = 0.06,
 				renderQuality = '1080p',
-				voiceId = 'id-ID-ArdiNeural'
+				voiceId = 'id-ID-ArdiNeural',
+				videoTitle = ''
 			} = await request.json();
+			const titleSlug = sanitizeTitleToFilename(videoTitle);
+			if (titleSlug) {
+				const suffix = String(videoTitle).match(/\d{10,}/)?.[0] || String(Date.now());
+				finalMp4Name = `${titleSlug}--${suffix}.mp4`;
+				finalMp4Path = path.resolve(`./static/renders/${finalMp4Name}`);
+			}
 
 			if (!scenes || scenes.length === 0) {
 				sendEvent({ error: 'No scenes provided' });

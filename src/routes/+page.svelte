@@ -40,6 +40,7 @@
 	let scenes = $state([]);
 	let activeSceneIndex = $state(0);
 	let isGenerating = $state(false);
+	let videoTitle = $state('');
 
 	// Customization State
 	let subtitleStyleKey = $state('hormozi');
@@ -199,6 +200,7 @@
 
 	function handleSelectTitleForScript(selectedTitle) {
 		showTitleGeneratorModal = false;
+		if (selectedTitle) videoTitle = selectedTitle;
 		pendingTopic = { title: selectedTitle, hookFormula: 'curiosity_gap' };
 		showScriptGeneratorModal = true;
 	}
@@ -228,7 +230,6 @@
 
 
 	onMount(() => {
-		// Load stored keys and preferences if present
 		if (typeof window !== 'undefined') {
 			const savedDeepseek = localStorage.getItem('yt_deepseek_key');
 			if (savedDeepseek) deepseekApiKey = savedDeepseek;
@@ -250,8 +251,10 @@
 
 			const savedFontSize = localStorage.getItem('yt_subtitle_fontsize');
 			if (savedFontSize) subtitleFontSize = Number(savedFontSize);
+
+			const savedTitle = localStorage.getItem('yt_video_title');
+			if (savedTitle) videoTitle = savedTitle;
 		}
-		// NOTE: No auto-generation — user triggers manually via the Analisis button.
 	});
 
 	$effect(() => {
@@ -261,8 +264,22 @@
 			localStorage.setItem('yt_subtitle_fontsize', String(subtitleFontSize));
 			localStorage.setItem('yt_voice_mode', voiceMode);
 			localStorage.setItem('yt_audio_effect', selectedAudioEffect);
+			localStorage.setItem('yt_video_title', videoTitle || '');
 		}
 	});
+
+	function deriveTitleFromScript(txt) {
+		if (!txt) return '';
+		const hook = txt.match(/\[HOOK:\s*([^\]]+)\]/i);
+		if (hook && hook[1].trim().length > 4) return hook[1].trim();
+		const bab = txt.match(/\[BAB\s*\d+:\s*([^\]]+)\]/i);
+		if (bab && bab[1].trim().length > 4) return bab[1].trim();
+		const firstLine = txt.trim().split('\n').find(l => l.trim().length > 10);
+		if (firstLine) return firstLine.replace(/^\[.*?\]\s*/, '').trim().slice(0, 80);
+		return '';
+	}
+
+	let effectiveVideoTitle = $derived(videoTitle.trim() || deriveTitleFromScript(script) || 'youtube-long-video');
 
 	async function generateWorkflow() {
 		if (!script.trim() || isGenerating) return;
@@ -1170,6 +1187,14 @@
 					</div>
 				</div>
 
+				<div class="video-title-row">
+					<span class="title-row-label">Judul Video — jadi nama file</span>
+					<input type="text" class="video-title-input" placeholder="Judul akan jadi nama file .mp4 — kosong = ambil dari naskah otomatis" bind:value={videoTitle} />
+					{#if effectiveVideoTitle && effectiveVideoTitle !== videoTitle}
+						<span class="title-auto-hint">Otomatis: {effectiveVideoTitle}</span>
+					{/if}
+				</div>
+
 				<!-- Tombol Generate Tepat di Bawah Pilihan Suara, Filter Vokal & Backsound -->
 				<div class="banner-generate-action">
 					<div class="generate-config-summary">
@@ -1273,6 +1298,11 @@
 		initialHookStyle={pendingTopic?.hookFormula || ''}
 		onSelectScript={(newScript) => {
 			script = newScript;
+			if (pendingTopic?.title && !videoTitle.trim()) videoTitle = pendingTopic.title;
+			else if (!videoTitle.trim()) {
+				const derived = deriveTitleFromScript(newScript);
+				if (derived) videoTitle = derived;
+			}
 		}}
 		onOpenTopicGenerator={() => {
 			showScriptGeneratorModal = false;
@@ -1318,6 +1348,7 @@
 		selectedBgmId={selectedBgmId}
 		bgmVolume={bgmVolume}
 		selectedVoiceId={selectedVoiceId}
+		videoTitle={effectiveVideoTitle}
 		onOpenTitleGenerator={() => showTitleGeneratorModal = true}
 		onClose={() => showExportModal = false}
 	/>
@@ -1326,7 +1357,10 @@
 		isOpen={showTitleGeneratorModal}
 		deepseekApiKey={deepseekApiKey}
 		activeScript={script}
-		onSelectTitleForScript={handleSelectTitleForScript}
+		onSelectTitleForScript={(t) => {
+			if (t) videoTitle = t;
+			handleSelectTitleForScript(t);
+		}}
 		onClose={() => showTitleGeneratorModal = false}
 	/>
 </div>
@@ -1760,6 +1794,30 @@
 
 	.banner-generate-btn:hover:not(:disabled) { background: var(--primary-hover); }
 	.banner-generate-btn:disabled { opacity: 0.45; }
+	.video-title-row {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 12px;
+		background: var(--bg-card);
+		border: 1px solid var(--line);
+		border-radius: var(--r-md);
+	}
+	.title-row-label {
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		text-transform: uppercase;
+		color: var(--text-2);
+	}
+	.video-title-input {
+		width: 100%;
+		font-size: 0.85rem;
+	}
+	.title-auto-hint {
+		font-size: 0.72rem;
+		color: var(--text-3);
+	}
 
 	@media (max-width: 1100px) {
 		.studio-workspace { grid-template-columns: 1fr; padding: 14px; }
