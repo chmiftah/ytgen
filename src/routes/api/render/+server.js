@@ -364,6 +364,8 @@ export async function POST({ request }) {
 			const {
 				scenes,
 				subtitleStyle = 'hormozi',
+				subtitlePosition = 'bottom-center',
+				quoteDecoration = 'none',
 				karaokeEnabled = true,
 				fontSize = 34,
 				bgmUrl,
@@ -533,7 +535,7 @@ export async function POST({ request }) {
 			let completedNorm = 0;
 			const processedClips = new Array(scenes.length);
 
-			const filter = `[0:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=increase,crop=${targetWidth}:${targetHeight},fps=${targetFps},format=yuv420p[v]`;
+			const baseVideoFilter = `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=increase,crop=${targetWidth}:${targetHeight},fps=${targetFps},format=yuv420p`;
 
 			// Use hardware encoder or ultrafast software for intermediate clips
 			const normCodecArgs = hasVT
@@ -556,6 +558,12 @@ export async function POST({ request }) {
 						await makeGradientVideo(videoDest, sceneDuration + 2);
 					}
 
+					const _firstRealIdx = scenes.findIndex((s) => s.chapter && !s.chapter.isHook && s.chapter.tag !== 'HOOK');
+					const isHookScene = Boolean(scene.chapter?.isHook || scene.chapter?.tag === 'HOOK');
+					const isHookLetterbox = _firstRealIdx === -1 ? isHookScene : index < _firstRealIdx;
+					const videoFilter = isHookLetterbox
+						? `[0:v]${baseVideoFilter},pad=iw:ih:0:(oh-ih)/2:color=black,drawbox=x=0:y=0:w=iw:h=ih*0.08:color=black:t=fill,drawbox=x=0:y=ih*0.92:w=iw:h=ih*0.08:color=black:t=fill[v]`
+						: `[0:v]${baseVideoFilter}[v]`;
 					await runFFmpeg(
 						[
 							'-stream_loop',
@@ -565,7 +573,7 @@ export async function POST({ request }) {
 							'-i',
 							audioDest,
 							'-filter_complex',
-							filter,
+							videoFilter,
 							'-map',
 							'[v]',
 							'-map',
@@ -616,7 +624,7 @@ export async function POST({ request }) {
 			// PHASE 4: Subtitle Generation
 			// =========================================================================
 			sendEvent({ progress: 80, step: 'Membuat subtitle ASS...' });
-			const assContent = exportToASS(scenes, subtitleStyle, { karaokeEnabled, fontSize });
+			const assContent = exportToASS(scenes, subtitleStyle, { karaokeEnabled, fontSize, subtitlePosition, quoteDecoration });
 			const assPath = path.join(tempDir, 'subtitles.ass');
 			await fs.promises.writeFile(assPath, assContent);
 

@@ -8,6 +8,8 @@
 		isOpen = false,
 		scenes = [],
 		subtitleStyleKey = 'hormozi',
+		subtitlePosition = 'bottom-center',
+		quoteDecoration = 'none',
 		karaokeEnabled = true,
 		subtitleFontSize = 34,
 		selectedBgmId = 'local-documentary',
@@ -67,6 +69,8 @@
 				body: JSON.stringify({
 					scenes,
 					subtitleStyle: subtitleStyleKey,
+					subtitlePosition,
+					quoteDecoration,
 					karaokeEnabled,
 					fontSize: subtitleFontSize,
 					bgmUrl,
