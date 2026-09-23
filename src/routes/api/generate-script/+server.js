@@ -21,31 +21,31 @@ export async function POST({ request }) {
 		const effectiveApiKey = apiKey && apiKey.trim().length > 10 ? apiKey.trim() : DEFAULT_DEEPSEEK_KEY;
 
 		// Duration configuration & token budgets (130-155 words per minute)
-		let durationText = '5–10 Menit';
-		let wordCountGuide = '1.000–1.400 kata (~5-10 menit)';
-		let chapterCountGuide = '3 hingga 5 bab yang mengalir dinamis';
-		let maxTokens = 3500;
+		let durationText = '10–15 Menit';
+		let wordCountGuide = '1.700–2.400 kata (~10-15 menit)';
+		let chapterCountGuide = '6 hingga 9 bab mendalam dengan eskalasi cerita';
+		let maxTokens = 7500;
 
 		if (durationTarget === 'short') {
 			durationText = '3–5 Menit';
 			wordCountGuide = '450–750 kata (~3-5 menit)';
 			chapterCountGuide = '2 hingga 3 bab padat dan fokus';
-			maxTokens = 2000;
+			maxTokens = 2500;
 		} else if (durationTarget === 'medium') {
-			durationText = '5–10 Menit';
-			wordCountGuide = '1.000–1.400 kata (~5-10 menit)';
-			chapterCountGuide = '3 hingga 5 bab terstruktur';
-			maxTokens = 3500;
-		} else if (durationTarget === 'long') {
-			durationText = '15–20 Menit';
-			wordCountGuide = '2.000–2.800 kata (~15-20 menit)';
-			chapterCountGuide = '5 hingga 7 bab mendalam dengan eskalasi cerita';
-			maxTokens = 6000;
+			durationText = '6–9 Menit';
+			wordCountGuide = '950–1.350 kata (~6-9 menit)';
+			chapterCountGuide = '4 hingga 5 bab terstruktur';
+			maxTokens = 4500;
+		} else if (durationTarget === 'long' || durationTarget === '10-15' || durationTarget === 'long_12') {
+			durationText = '10–15 Menit';
+			wordCountGuide = '1.700–2.400 kata (~10-15 menit)';
+			chapterCountGuide = '6 hingga 9 bab mendalam dengan eskalasi cerita';
+			maxTokens = 7500;
 		} else if (durationTarget === 'extended' || durationTarget === 'epic') {
-			durationText = '25–35 Menit';
-			wordCountGuide = '3.500–4.800 kata (~25-35 menit)';
-			chapterCountGuide = '7 hingga 10 bab komprehensif ala dokumenter panjang';
-			maxTokens = 8000;
+			durationText = '16–25 Menit';
+			wordCountGuide = '2.800–3.800 kata (~16-25 menit)';
+			chapterCountGuide = '8 hingga 12 bab komprehensif ala dokumenter panjang';
+			maxTokens = 8192;
 		}
 
 		// Tone of voice mapping
@@ -74,9 +74,9 @@ export async function POST({ request }) {
 			hookText = 'Pertanyaan Menusuk & Relatable: Pertanyaan mendasar yang menyentuh keseharian atau keresahan nyata penonton.';
 		}
 
-		const systemPrompt = `Anda adalah seorang YouTube Long-Form Storyteller, Documentary Scriptwriter, dan Narrative Editor kelas dunia.
+		const systemPrompt = `Lo adalah YouTube Long-Form Storyteller, Documentary Scriptwriter, dan Narrative Editor kelas dunia.
 
-Tugas Anda adalah mengubah sebuah topik menjadi naskah YouTube panjang berbahasa Indonesia yang terasa seperti dibuat oleh manusia yang benar-benar memahami ceritanya, bukan seperti artikel yang diubah menjadi suara.
+Tugas lo adalah ngubah sebuah topik jadi naskah YouTube panjang berbahasa Indonesia yang kerasa kayak dibuat sama manusia yang beneran ngerti ceritanya — bukan kayak artikel yang diubah jadi suara.
 
 Target utama bukan membuat setiap kalimat terdengar dramatis.
 Target utama adalah membuat penonton merasa:

@@ -8,43 +8,170 @@
 		RefreshCw, 
 		Smartphone, 
 		Layers, 
-		BookOpen, 
-		Wand2, 
 		ArrowRight, 
-		FileText,
-		CheckCircle2,
 		AlertCircle,
-		Image as ImageIcon
+		CheckCircle2,
+		Image as ImageIcon,
+		Compass,
+		Filter,
+		SlidersHorizontal,
+		Lightbulb
 	} from 'lucide-svelte';
 
 	let {
 		isOpen = false,
 		deepseekApiKey = '',
+		initialNiche = 'wealth_finance',
+		initialTopic = '',
 		activeScript = '',
+		onSelectTitle,
 		onSelectTitleForScript,
 		onClose
 	} = $props();
 
-	let inputMode = $state('topic'); // 'topic' | 'script'
+	let selectedCategoryKey = $state('wealth_finance');
+	let selectedAngle = $state('all');
 	let topicInput = $state('');
-	let selectedCategory = $state('all'); // 'all' | 'curiosity_gap' | 'short_punchy' | 'documentary' | 'contrast' | 'high_stakes'
+	let selectedFilterCategory = $state('all'); // for filtering output list
 	let isGenerating = $state(false);
 	let titles = $state([]);
 	let copiedTitleIndex = $state(null);
 	let errorMessage = $state('');
 
-	const QUICK_PROMPTS = [
-		'Konspirasi & Arsip Rahasia',
-		'Kejatuhan Raksasa Bisnis',
-		'Misteri Luar Angkasa & Fisika',
-		'Eksperimen Gelap AI Modern',
-		'Psikologi Manipulasi Media Sosial'
+	const CONTENT_CATEGORIES = [
+		{
+			id: 'wealth_finance',
+			icon: '💸',
+			title: 'Uang & Finansial',
+			subtitle: 'Psikologi Uang & Kelas Menengah',
+			tag: 'High CTR',
+			desc: 'Kenapa kelas menengah terjebak, psikologi orang kaya, rahasia sistem uang, jebakan cicilan gaya hidup',
+			trendingTopics: [
+				'Kesalahan Finansial yang Merusak Tabungan',
+				'Kenapa Gaji 25 Juta Masih Merasa Kurang',
+				'Orang Kaya Tidak Membeli Aset Ini',
+				'Jebakan Gaya Hidup Kelas Menengah'
+			]
+		},
+		{
+			id: 'dark_psychology',
+			icon: '🧠',
+			title: 'Psikologi Gelap & Otak',
+			subtitle: 'Manipulasi & Perilaku Manusia',
+			tag: 'Sangat Adiktif',
+			desc: 'Trik manipulasi halus, jebakan dopamin medsos, kenapa otak menunda pekerjaan, bias kognitif',
+			trendingTopics: [
+				'Kenapa Otak Kita Sengaja Bikin Kita Gagal',
+				'Trik Manipulasi Halus Orang Terdekat',
+				'Seni Berhenti Menjelaskan Diri Sendiri',
+				'Eksperimen 7 Hari Tanpa Scroll HP'
+			]
+		},
+		{
+			id: 'investigation',
+			icon: '🕵️‍♂️',
+			title: 'Skandal & Investigasi',
+			subtitle: 'Dokumen Rahasia & Kasus Nyata',
+			tag: 'Curiosity Ekstrem',
+			desc: 'Konspirasi korporat, misteri hilangnya uang triliunan, kejahatan kerah putih, rahasia terbongkar',
+			trendingTopics: [
+				'Dokumen Rahasia yang Sengaja Dihancurkan',
+				'Misteri Hilangnya 40 Triliun Semalam',
+				'Kasus Kejahatan Paling Sempurna',
+				'Kebohongan Terbesar Selama 30 Tahun'
+			]
+		},
+		{
+			id: 'science_paradox',
+			icon: '⏳',
+			title: 'Paradoks & Sains AI',
+			subtitle: 'Misteri Kosmos & Bahaya Masa Depan',
+			tag: 'Mind-Blowing',
+			desc: 'Simulasi alam semesta, paradoks waktu, ancaman kecerdasan buatan, eksperimen fisika gila',
+			trendingTopics: [
+				'Bukti Waktu Sebenarnya Tidak Bergerak',
+				'Sesuatu yang Salah dengan AI Baru Ini',
+				'Paradoks Menakutkan Mengapa Alien Diam',
+				'Dunia Ini Mungkin Hanya Simulasi Komputer'
+			]
+		},
+		{
+			id: 'stoic_philosophy',
+			icon: '🏛️',
+			title: 'Stoikisme & Mental',
+			subtitle: 'Marcus Aurelius & Mental Baja',
+			tag: 'Retensi Tinggi',
+			desc: 'Ketenangan saat hidup berantakan, seni tidak peduli omongan orang, disiplin baja, stoikisme',
+			trendingTopics: [
+				'Cara Tenang Saat Hidup Hancur Total',
+				'Kekuatan Berhenti Menyenangkan Semua Orang',
+				'Amor Fati: Cintai Takdirmu Apapun Itu',
+				'Kenapa Orang Pendiam Sering Paling Disegani'
+			]
+		},
+		{
+			id: 'business_downfall',
+			icon: '🏢',
+			title: 'Kejatuhan Bisnis',
+			subtitle: 'Kebangkrutan & Skandal Korporat',
+			tag: 'Storytelling Epik',
+			desc: 'Runtuhnya dinasti bisnis, perang brand, kesalahan fatal 10 menit CEO, monopoli licik',
+			trendingTopics: [
+				'Kesalahan 10 Menit yang Menghancurkan 80 Miliar',
+				'Trik Licik Supermarket Menguras Dompet',
+				'Kejatuhan Kodak: Pelopor yang Bunuh Diri',
+				'Malam di Mana Sang CEO Memutuskan Mundur'
+			]
+		},
+		{
+			id: 'digital_trap',
+			icon: '📱',
+			title: 'Bahaya Medsos & Digital',
+			subtitle: 'Mesin Adiksi & Algoritma Candu',
+			tag: 'Sangat Relevan',
+			desc: 'Algoritma candu TikTok, kasino di saku celana, manipulasi internet, attention span hancur',
+			trendingTopics: [
+				'Kasino di Saku Celanamu: Medsos vs Otak',
+				'Kenapa Kita Tidak Bisa Fokus 30 Detik Lagi',
+				'Kebenaran Gelap di Balik Tombol Like',
+				'Bagaimana Algoritma Tahu Rahasia Terdalammu'
+			]
+		},
+		{
+			id: 'social_dynamics',
+			icon: '🗣️',
+			title: 'Relasi & Karisma',
+			subtitle: 'Dinamika Sosial & Deteksi Toxic',
+			tag: 'Praktis & Viral',
+			desc: 'Seni disegani tanpa banyak bicara, deteksi orang manipulatif, bahasa tubuh rahasia',
+			trendingTopics: [
+				'7 Ciri Orang Manipulatif Berkedok Baik',
+				'Seni Berbicara Agar Didengar Semua Orang',
+				'Jangan Pernah Ceritakan 3 Hal Ini ke Siapapun',
+				'Bahasa Tubuh yang Bikin Orang Segan Seketika'
+			]
+		}
 	];
+
+	const STORY_ANGLES = [
+		{ id: 'all', label: '🎲 Campuran Terbaik (10 Gaya Berbeda)' },
+		{ id: 'curiosity', label: '🪝 Curiosity Gap (Misteri Terpendam)' },
+		{ id: 'contrast', label: '💥 Kontras Ekstrem / Paradoks Logika' },
+		{ id: 'short', label: '⚡ Super Pendek (< 40 Karakter)' },
+		{ id: 'high_stakes', label: '⚠️ Peringatan Keras / Titik Kritis' }
+	];
+
+	let activeCategory = $derived.by(() => {
+		return CONTENT_CATEGORIES.find(c => c.id === selectedCategoryKey) || CONTENT_CATEGORIES[0];
+	});
 
 	$effect(() => {
 		if (isOpen) {
-			if (activeScript && activeScript.trim().length > 50 && !topicInput) {
-				inputMode = 'script';
+			if (initialNiche && CONTENT_CATEGORIES.some(c => c.id === initialNiche)) {
+				selectedCategoryKey = initialNiche;
+			}
+			if (initialTopic && !topicInput) {
+				topicInput = initialTopic;
 			}
 			if (titles.length === 0) {
 				handleGenerateTitles();
@@ -53,21 +180,25 @@
 	});
 
 	let filteredTitles = $derived.by(() => {
-		if (selectedCategory === 'all') return titles;
-		return titles.filter(t => t.category === selectedCategory);
+		if (selectedFilterCategory === 'all') return titles;
+		return titles.filter(t => t.category === selectedFilterCategory);
 	});
 
-	async function handleGenerateTitles() {
+	async function handleGenerateTitles(overrideTopic = null) {
 		isGenerating = true;
 		errorMessage = '';
+		if (overrideTopic !== null) {
+			topicInput = overrideTopic;
+		}
 
 		try {
 			const res = await fetch('/api/generate-title', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					topic: inputMode === 'topic' ? topicInput.trim() : '',
-					script: inputMode === 'script' || !topicInput ? activeScript : '',
+					category: selectedCategoryKey,
+					angle: selectedAngle,
+					topic: topicInput.trim(),
 					apiKey: deepseekApiKey
 				})
 			});
@@ -76,14 +207,20 @@
 			if (data.success && Array.isArray(data.titles) && data.titles.length > 0) {
 				titles = data.titles;
 			} else {
-				throw new Error(data.error || 'Gagal menghasilkan judul viral');
+				throw new Error(data.error || 'Gagal meriset judul viral');
 			}
 		} catch (err) {
 			console.warn('Title generator error:', err);
-			errorMessage = err.message || 'Terjadi kesalahan saat membuat judul viral';
+			errorMessage = err.message || 'Terjadi kesalahan saat meriset judul viral AI';
 		} finally {
 			isGenerating = false;
 		}
+	}
+
+	function handleSelectCategory(catKey) {
+		selectedCategoryKey = catKey;
+		topicInput = ''; // reset topic input when switching category
+		handleGenerateTitles();
 	}
 
 	function copyToClipboard(text, index) {
@@ -95,11 +232,22 @@
 		});
 	}
 
+	function handleUseTitleOnly(titleText) {
+		if (onSelectTitle) {
+			onSelectTitle(titleText);
+		} else if (onSelectTitleForScript) {
+			onSelectTitleForScript(titleText, false);
+		}
+		onClose();
+	}
+
 	function handleUseForScript(titleText) {
 		if (onSelectTitleForScript) {
-			onSelectTitleForScript(titleText);
-			onClose();
+			onSelectTitleForScript(titleText, true);
+		} else if (onSelectTitle) {
+			onSelectTitle(titleText);
 		}
+		onClose();
 	}
 </script>
 
@@ -110,11 +258,11 @@
 			<div class="modal-header">
 				<div class="header-left">
 					<div class="icon-badge">
-						<Flame size={20} color="#f97316" />
+						<Flame size={22} color="#f97316" />
 					</div>
 					<div>
-						<h2 class="title">YouTube Viral Title Engineering</h2>
-						<p class="subtitle">10 Formula Judul Ber-CTR Tinggi (High Click-Through Rate) Teruji Algoritma YouTube</p>
+						<h2 class="title">Riset Judul Viral YouTube (DeepSeek AI)</h2>
+						<p class="subtitle">Langkah 1: Pilih Kategori Tema Konten → Langkah 2: Dapatkan 10 Judul Unik Ber-CTR Tinggi</p>
 					</div>
 				</div>
 				<button class="close-btn" onclick={onClose} aria-label="Tutup modal">
@@ -122,143 +270,161 @@
 				</button>
 			</div>
 
-			<!-- Source Mode Toggle & Input -->
-			<div class="input-section">
-				<div class="toggle-pills">
-					<button 
-						type="button" 
-						class="toggle-pill" 
-						class:active={inputMode === 'topic'}
-						onclick={() => inputMode = 'topic'}
-					>
-						<Sparkles size={13} />
-						<span>Berdasarkan Topik / Kata Kunci</span>
-					</button>
-					<button 
-						type="button" 
-						class="toggle-pill" 
-						class:active={inputMode === 'script'}
-						onclick={() => inputMode = 'script'}
-						disabled={!activeScript || activeScript.trim().length < 30}
-						title={!activeScript ? 'Tulis atau generate naskah terlebih dahulu di editor' : ''}
-					>
-						<FileText size={13} />
-						<span>Ekstrak Otomatis dari Naskah Aktif ({activeScript ? activeScript.trim().split(/\s+/).length : 0} kata)</span>
-					</button>
+			<!-- STEP 1: CATEGORY SELECTION CARDS -->
+			<div class="category-selection-section">
+				<div class="section-title-row">
+					<span class="step-badge">Langkah 1</span>
+					<span class="section-label">Pilih Kategori Tema Konten Video Anda:</span>
 				</div>
 
-				{#if inputMode === 'topic'}
-					<div class="topic-input-row">
-						<input 
-							type="text" 
-							bind:value={topicInput} 
-							placeholder="Contoh: Skandal FTX, Misteri Kapal Hantu, Bahaya Tersembunyi AI..."
-							class="topic-text-input"
-							onkeydown={(e) => { if (e.key === 'Enter') handleGenerateTitles(); }}
-						/>
+				<div class="category-grid">
+					{#each CONTENT_CATEGORIES as cat}
 						<button 
 							type="button" 
-							class="btn-generate-main" 
-							onclick={handleGenerateTitles} 
-							disabled={isGenerating}
+							class="cat-card" 
+							class:active={selectedCategoryKey === cat.id}
+							onclick={() => handleSelectCategory(cat.id)}
 						>
-							{#if isGenerating}
-								<RefreshCw size={15} class="spin" />
-								<span>Menganalisis...</span>
-							{:else}
-								<Flame size={15} color="#f97316" />
-								<span>Riset Judul Viral</span>
-							{/if}
+							<div class="cat-card-top">
+								<span class="cat-icon">{cat.icon}</span>
+								<span class="cat-tag">{cat.tag}</span>
+							</div>
+							<div class="cat-card-name">{cat.title}</div>
+							<div class="cat-card-sub">{cat.subtitle}</div>
 						</button>
+					{/each}
+				</div>
+			</div>
+
+			<!-- STEP 2: TOPIC & ANGLE CONTROLS -->
+			<div class="controls-section">
+				<div class="cat-context-banner">
+					<div class="cat-info">
+						<span class="cur-icon">{activeCategory.icon}</span>
+						<div>
+							<strong>{activeCategory.title}</strong>
+							<p>{activeCategory.desc}</p>
+						</div>
 					</div>
 
-					<div class="quick-tags">
-						<span class="quick-label">Inspirasi Cepat:</span>
-						{#each QUICK_PROMPTS as qp}
+					<div class="angle-select-wrap">
+						<span class="angle-label"><SlidersHorizontal size={12} /> Angle Cerita:</span>
+						<select 
+							bind:value={selectedAngle} 
+							onchange={() => handleGenerateTitles()}
+							class="angle-select"
+						>
+							{#each STORY_ANGLES as ang}
+								<option value={ang.id}>{ang.label}</option>
+							{/each}
+						</select>
+					</div>
+				</div>
+
+				<!-- Trending Quick Topic Pills -->
+				<div class="trending-topics-bar">
+					<span class="trend-label"><Lightbulb size={12} color="#fbbf24" /> Topik Trending {activeCategory.title}:</span>
+					<div class="trend-chips">
+						{#each activeCategory.trendingTopics as topicItem}
 							<button 
 								type="button" 
-								class="tag-btn" 
-								onclick={() => { topicInput = qp; handleGenerateTitles(); }}
+								class="trend-chip" 
+								class:active={topicInput === topicItem}
+								onclick={() => handleGenerateTitles(topicItem)}
 							>
-								{qp}
+								{topicItem}
 							</button>
 						{/each}
 					</div>
-				{:else}
-					<div class="script-info-box">
-						<div class="script-snippet">
-							<strong>Naskah yang Dianalisis:</strong>
-							<p>"{activeScript.slice(0, 180)}..."</p>
-						</div>
-						<button 
-							type="button" 
-							class="btn-generate-main" 
-							onclick={handleGenerateTitles} 
-							disabled={isGenerating}
-						>
-							{#if isGenerating}
-								<RefreshCw size={15} class="spin" />
-								<span>Meracik Judul...</span>
-							{:else}
-								<Flame size={15} color="#f97316" />
-								<span>Buat Judul dari Naskah Ini</span>
-							{/if}
-						</button>
+				</div>
+
+				<!-- Custom Keyword Input Row -->
+				<div class="topic-input-row">
+					<div class="input-wrapper">
+						<input 
+							type="text" 
+							bind:value={topicInput} 
+							placeholder="Atau ketik topik spesifik Anda sendiri (misal: 'Nokia vs Apple', 'Gaji UMR', atau kosongkan)..."
+							class="topic-text-input"
+							onkeydown={(e) => { if (e.key === 'Enter') handleGenerateTitles(); }}
+						/>
+						{#if topicInput}
+							<button type="button" class="clear-topic-btn" onclick={() => { topicInput = ''; handleGenerateTitles(); }}>
+								<X size={13} />
+							</button>
+						{/if}
 					</div>
-				{/if}
+					<button 
+						type="button" 
+						class="btn-generate-main" 
+						onclick={() => handleGenerateTitles()} 
+						disabled={isGenerating}
+					>
+						{#if isGenerating}
+							<RefreshCw size={15} class="spin" />
+							<span>Meracik 10 Judul...</span>
+						{:else}
+							<Flame size={15} color="#f97316" />
+							<span>🔥 Riset 10 Judul {activeCategory.title}</span>
+						{/if}
+					</button>
+				</div>
 			</div>
 
-			<!-- Category Filter Tabs -->
-			<div class="categories-bar">
-				<button 
-					type="button" 
-					class="cat-tab" 
-					class:active={selectedCategory === 'all'}
-					onclick={() => selectedCategory = 'all'}
-				>
-					Semua ({titles.length})
-				</button>
-				<button 
-					type="button" 
-					class="cat-tab" 
-					class:active={selectedCategory === 'curiosity_gap'}
-					onclick={() => selectedCategory = 'curiosity_gap'}
-				>
-					🎯 Curiosity Gap
-				</button>
-				<button 
-					type="button" 
-					class="cat-tab" 
-					class:active={selectedCategory === 'short_punchy'}
-					onclick={() => selectedCategory = 'short_punchy'}
-				>
-					⚡ Short & Punchy (&lt;50 Karakter)
-				</button>
-				<button 
-					type="button" 
-					class="cat-tab" 
-					class:active={selectedCategory === 'documentary'}
-					onclick={() => selectedCategory = 'documentary'}
-				>
-					🏛️ Dokumenter Otoritatif
-				</button>
-				<button 
-					type="button" 
-					class="cat-tab" 
-					class:active={selectedCategory === 'contrast'}
-					onclick={() => selectedCategory = 'contrast'}
-				>
-					🧠 Kontras & Paradoks
-				</button>
-				<button 
-					type="button" 
-					class="cat-tab" 
-					class:active={selectedCategory === 'high_stakes'}
-					onclick={() => selectedCategory = 'high_stakes'}
-				>
-					🔥 High Stakes
-				</button>
-			</div>
+			<!-- Category Filter Tabs for Results -->
+			{#if titles.length > 0}
+				<div class="filter-bar">
+					<span class="filter-label"><Filter size={11} /> Filter Gaya:</span>
+					<button 
+						type="button" 
+						class="cat-tab" 
+						class:active={selectedFilterCategory === 'all'}
+						onclick={() => selectedFilterCategory = 'all'}
+					>
+						Semua ({titles.length})
+					</button>
+					<button 
+						type="button" 
+						class="cat-tab" 
+						class:active={selectedFilterCategory === 'curiosity_gap'}
+						onclick={() => selectedFilterCategory = 'curiosity_gap'}
+					>
+						🎯 Curiosity Gap
+					</button>
+					<button 
+						type="button" 
+						class="cat-tab" 
+						class:active={selectedFilterCategory === 'short_punchy'}
+						onclick={() => selectedFilterCategory = 'short_punchy'}
+					>
+						⚡ Short & Punchy (&lt;45 Karakter)
+					</button>
+					<button 
+						type="button" 
+						class="cat-tab" 
+						class:active={selectedFilterCategory === 'contrast'}
+						onclick={() => selectedFilterCategory = 'contrast'}
+					>
+						🧠 Kontras & Paradoks
+					</button>
+					<button 
+						type="button" 
+						class="cat-tab" 
+						class:active={selectedFilterCategory === 'documentary'}
+						onclick={() => selectedFilterCategory = 'documentary'}
+					>
+						🏛️ Studi Kasus / Dokumenter
+					</button>
+					<button 
+						type="button" 
+						class="cat-tab" 
+						class:active={selectedFilterCategory === 'high_stakes'}
+						onclick={() => selectedFilterCategory = 'high_stakes'}
+					>
+						⚠️ High Stakes & Peringatan
+					</button>
+				</div>
+			{/if}
 
 			<!-- Error Notification -->
 			{#if errorMessage}
@@ -273,13 +439,13 @@
 				{#if isGenerating && titles.length === 0}
 					<div class="loading-state">
 						<div class="loading-spinner"></div>
-						<p class="loading-text">Sedang meriset 10 formula judul viral dengan algoritma CTR YouTube...</p>
-						<span class="loading-sub">Memvalidasi panjang karakter mobile, curiosity gap, dan sinergi visual thumbnail</span>
+						<p class="loading-text">DeepSeek AI sedang meracik 10 formula judul unik untuk {activeCategory.title}...</p>
+						<span class="loading-sub">Menghitung probabilitas CTR, panjang karakter mobile, dan sinergi visual thumbnail</span>
 					</div>
 				{:else if filteredTitles.length === 0}
 					<div class="empty-state">
 						<Layers size={36} color="var(--text-muted)" />
-						<p>Tidak ada judul untuk kategori ini.</p>
+						<p>Tidak ada judul untuk filter gaya ini.</p>
 					</div>
 				{:else}
 					<div class="titles-grid">
@@ -343,18 +509,28 @@
 											<span class="text-green">Tersalin!</span>
 										{:else}
 											<Copy size={14} />
-											<span>Salin Judul</span>
+											<span>Salin</span>
 										{/if}
+									</button>
+
+									<button 
+										type="button" 
+										class="action-btn use-title-btn"
+										onclick={() => handleUseTitleOnly(item.title)}
+										title="Pilih judul ini sebagai judul video di Studio"
+									>
+										<CheckCircle2 size={14} color="#10b981" />
+										<span>Gunakan Judul Ini</span>
 									</button>
 
 									<button 
 										type="button" 
 										class="action-btn use-script-btn"
 										onclick={() => handleUseForScript(item.title)}
-										title="Buka AI Script Generator dengan topik judul ini"
+										title="Pilih judul ini dan langsung buka AI Script Generator untuk membuat naskahnya"
 									>
 										<Sparkles size={14} color="#38bdf8" />
-										<span>Buat Naskah dari Judul Ini</span>
+										<span>📝 Buat Naskah dari Judul Ini</span>
 										<ArrowRight size={13} />
 									</button>
 								</div>
@@ -367,7 +543,7 @@
 			<!-- Modal Footer -->
 			<div class="modal-footer">
 				<div class="footer-tip">
-					💡 <strong>Tips Pro:</strong> Judul di bawah 60 karakter memiliki retensi klik 28% lebih tinggi di aplikasi YouTube Mobile.
+					💡 <strong>Tips Pro:</strong> Pilih judul dengan klik tertinggi, lalu klik <em>"Buat Naskah dari Judul Ini"</em> agar AI langsung menyusun naskah stickman yang menahan penonton sampai detik akhir!
 				</div>
 				<button type="button" class="btn-secondary" onclick={onClose}>
 					Tutup
@@ -381,23 +557,23 @@
 	.modal-backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.75);
-		backdrop-filter: blur(8px);
+		background: rgba(0, 0, 0, 0.8);
+		backdrop-filter: blur(10px);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		z-index: 1000;
-		padding: 20px;
+		padding: 16px;
 	}
 
 	.modal-card {
 		width: 100%;
-		max-width: 860px;
-		max-height: 90vh;
-		background: #0f172a;
-		border: 1px solid rgba(255, 255, 255, 0.12);
+		max-width: 960px;
+		max-height: 92vh;
+		background: #0b1120;
+		border: 1px solid rgba(255, 255, 255, 0.14);
 		border-radius: var(--radius-lg, 16px);
-		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 30px rgba(249, 115, 22, 0.1);
+		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 35px rgba(249, 115, 22, 0.12);
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
@@ -405,21 +581,15 @@
 	}
 
 	@keyframes modalPop {
-		from {
-			opacity: 0;
-			transform: scale(0.96) translateY(10px);
-		}
-		to {
-			opacity: 1;
-			transform: scale(1) translateY(0);
-		}
+		from { opacity: 0; transform: scale(0.96) translateY(10px); }
+		to { opacity: 1; transform: scale(1) translateY(0); }
 	}
 
 	.modal-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding: 18px 24px;
+		padding: 16px 24px;
 		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 		background: rgba(255, 255, 255, 0.02);
 	}
@@ -435,7 +605,7 @@
 		height: 42px;
 		border-radius: 12px;
 		background: rgba(249, 115, 22, 0.15);
-		border: 1px solid rgba(249, 115, 22, 0.3);
+		border: 1px solid rgba(249, 115, 22, 0.35);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -444,7 +614,7 @@
 
 	.title {
 		font-size: 1.15rem;
-		font-weight: 700;
+		font-weight: 800;
 		color: #fff;
 		margin: 0;
 		letter-spacing: -0.01em;
@@ -471,50 +641,231 @@
 		color: #fff;
 	}
 
-	/* Input Section */
-	.input-section {
-		padding: 16px 24px;
+	/* STEP 1: CATEGORY CARDS GRID */
+	.category-selection-section {
+		padding: 14px 24px;
 		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-		background: rgba(15, 23, 42, 0.6);
+		background: rgba(15, 23, 42, 0.5);
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.section-title-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.step-badge {
+		font-size: 0.68rem;
+		font-weight: 800;
+		background: #f97316;
+		color: #fff;
+		padding: 2px 8px;
+		border-radius: 4px;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.section-label {
+		font-size: 0.78rem;
+		font-weight: 700;
+		color: #e2e8f0;
+	}
+
+	.category-grid {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 8px;
+	}
+
+	@media (max-width: 768px) {
+		.category-grid {
+			grid-template-columns: repeat(2, 1fr);
+		}
+	}
+
+	.cat-card {
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 10px;
+		padding: 10px;
+		text-align: left;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+	}
+
+	.cat-card:hover {
+		background: rgba(255, 255, 255, 0.07);
+		border-color: rgba(249, 115, 22, 0.3);
+		transform: translateY(-1px);
+	}
+
+	.cat-card.active {
+		background: rgba(249, 115, 22, 0.12);
+		border-color: #f97316;
+		box-shadow: 0 0 15px rgba(249, 115, 22, 0.2);
+	}
+
+	.cat-card-top {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 2px;
+	}
+
+	.cat-icon {
+		font-size: 1.2rem;
+	}
+
+	.cat-tag {
+		font-size: 0.62rem;
+		font-weight: 700;
+		background: rgba(255, 255, 255, 0.06);
+		color: #94a3b8;
+		padding: 1px 6px;
+		border-radius: 4px;
+	}
+
+	.cat-card.active .cat-tag {
+		background: rgba(249, 115, 22, 0.2);
+		color: #fdba74;
+	}
+
+	.cat-card-name {
+		font-size: 0.8rem;
+		font-weight: 700;
+		color: #fff;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.cat-card-sub {
+		font-size: 0.68rem;
+		color: #94a3b8;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	/* STEP 2: CONTROLS & TOPIC SECTION */
+	.controls-section {
+		padding: 14px 24px;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+		background: rgba(10, 15, 29, 0.7);
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
 	}
 
-	.toggle-pills {
+	.cat-context-banner {
 		display: flex;
-		gap: 8px;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 8px;
+		padding: 8px 12px;
 	}
 
-	.toggle-pill {
+	.cat-info {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.cur-icon {
+		font-size: 1.4rem;
+	}
+
+	.cat-info strong {
+		font-size: 0.84rem;
+		color: #fdba74;
+		display: block;
+	}
+
+	.cat-info p {
+		font-size: 0.72rem;
+		color: var(--text-muted, #94a3b8);
+		margin: 1px 0 0 0;
+	}
+
+	.angle-select-wrap {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-shrink: 0;
+	}
+
+	.angle-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: var(--text-muted, #94a3b8);
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.angle-select {
+		background: rgba(0, 0, 0, 0.4);
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		border-radius: 6px;
+		color: #fff;
+		font-size: 0.75rem;
+		padding: 5px 8px;
+		outline: none;
+		cursor: pointer;
+	}
+
+	.trending-topics-bar {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.trend-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: #e2e8f0;
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		padding: 6px 14px;
+	}
+
+	.trend-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.trend-chip {
 		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		border-radius: 20px;
-		color: var(--text-secondary, #cbd5e1);
-		font-size: 0.76rem;
-		font-weight: 500;
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 6px;
+		color: #cbd5e1;
+		font-size: 0.72rem;
+		padding: 4px 10px;
 		cursor: pointer;
-		transition: all 0.2s;
+		transition: all 0.18s;
 	}
 
-	.toggle-pill:hover:not(:disabled) {
-		background: rgba(255, 255, 255, 0.08);
-		color: #fff;
-	}
-
-	.toggle-pill.active {
-		background: rgba(249, 115, 22, 0.18);
+	.trend-chip:hover {
+		background: rgba(249, 115, 22, 0.15);
 		border-color: rgba(249, 115, 22, 0.4);
 		color: #fdba74;
 	}
 
-	.toggle-pill:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
+	.trend-chip.active {
+		background: rgba(249, 115, 22, 0.25);
+		border-color: #f97316;
+		color: #fff;
+		font-weight: 600;
 	}
 
 	.topic-input-row {
@@ -522,43 +873,69 @@
 		gap: 10px;
 	}
 
-	.topic-text-input {
+	.input-wrapper {
+		position: relative;
 		flex: 1;
-		background: rgba(0, 0, 0, 0.3);
-		border: 1px solid rgba(255, 255, 255, 0.12);
+		display: flex;
+		align-items: center;
+	}
+
+	.topic-text-input {
+		width: 100%;
+		background: rgba(0, 0, 0, 0.4);
+		border: 1px solid rgba(255, 255, 255, 0.14);
 		border-radius: 10px;
-		padding: 10px 14px;
+		padding: 10px 36px 10px 14px;
 		color: #fff;
-		font-size: 0.88rem;
+		font-size: 0.86rem;
 		transition: border-color 0.2s;
 	}
 
 	.topic-text-input:focus {
 		outline: none;
 		border-color: #f97316;
-		box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2);
+		box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.25);
+	}
+
+	.clear-topic-btn {
+		position: absolute;
+		right: 10px;
+		background: rgba(255, 255, 255, 0.1);
+		border: none;
+		color: var(--text-muted, #94a3b8);
+		cursor: pointer;
+		padding: 4px;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.clear-topic-btn:hover {
+		background: rgba(255, 255, 255, 0.2);
+		color: #fff;
 	}
 
 	.btn-generate-main {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 0 18px;
+		padding: 0 20px;
 		background: linear-gradient(135deg, #ea580c, #f97316);
 		border: none;
 		border-radius: 10px;
 		color: #fff;
 		font-size: 0.84rem;
-		font-weight: 600;
+		font-weight: 700;
 		cursor: pointer;
 		transition: all 0.2s;
 		white-space: nowrap;
-		box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+		box-shadow: 0 4px 14px rgba(249, 115, 22, 0.35);
 	}
 
 	.btn-generate-main:hover:not(:disabled) {
 		transform: translateY(-1px);
-		box-shadow: 0 6px 16px rgba(249, 115, 22, 0.4);
+		box-shadow: 0 6px 18px rgba(249, 115, 22, 0.45);
 	}
 
 	.btn-generate-main:disabled {
@@ -566,76 +943,35 @@
 		cursor: not-allowed;
 	}
 
-	.quick-tags {
+	/* Filter Bar */
+	.filter-bar {
 		display: flex;
 		align-items: center;
-		flex-wrap: wrap;
 		gap: 6px;
-	}
-
-	.quick-label {
-		font-size: 0.72rem;
-		color: var(--text-muted, #94a3b8);
-	}
-
-	.tag-btn {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		border-radius: 6px;
-		color: var(--text-muted, #94a3b8);
-		font-size: 0.72rem;
-		padding: 3px 8px;
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-
-	.tag-btn:hover {
-		background: rgba(255, 255, 255, 0.08);
-		color: #fff;
-		border-color: rgba(255, 255, 255, 0.15);
-	}
-
-	.script-info-box {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 16px;
+		padding: 8px 24px;
 		background: rgba(0, 0, 0, 0.25);
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		border-radius: 10px;
-		padding: 10px 14px;
-	}
-
-	.script-snippet strong {
-		font-size: 0.76rem;
-		color: #38bdf8;
-		display: block;
-	}
-
-	.script-snippet p {
-		font-size: 0.78rem;
-		color: var(--text-secondary, #cbd5e1);
-		margin: 2px 0 0 0;
-		font-style: italic;
-	}
-
-	/* Categories Bar */
-	.categories-bar {
-		display: flex;
-		gap: 6px;
-		padding: 10px 24px;
-		background: rgba(0, 0, 0, 0.2);
 		border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 		overflow-x: auto;
 	}
 
+	.filter-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: var(--text-muted, #94a3b8);
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		margin-right: 4px;
+		white-space: nowrap;
+	}
+
 	.cat-tab {
-		padding: 5px 12px;
+		padding: 4px 10px;
 		background: transparent;
 		border: 1px solid transparent;
-		border-radius: 8px;
+		border-radius: 6px;
 		color: var(--text-muted, #94a3b8);
-		font-size: 0.76rem;
+		font-size: 0.72rem;
 		cursor: pointer;
 		white-space: nowrap;
 		transition: all 0.2s;
@@ -657,30 +993,30 @@
 	.titles-scroll-container {
 		flex: 1;
 		overflow-y: auto;
-		padding: 18px 24px;
-		min-height: 280px;
+		padding: 16px 24px;
+		min-height: 260px;
 	}
 
 	.titles-grid {
 		display: flex;
 		flex-direction: column;
-		gap: 14px;
+		gap: 12px;
 	}
 
 	.title-card {
 		background: rgba(255, 255, 255, 0.03);
 		border: 1px solid rgba(255, 255, 255, 0.08);
 		border-radius: 12px;
-		padding: 16px;
+		padding: 14px 16px;
 		display: flex;
 		flex-direction: column;
-		gap: 10px;
+		gap: 8px;
 		transition: all 0.2s ease;
 	}
 
 	.title-card:hover {
 		background: rgba(255, 255, 255, 0.05);
-		border-color: rgba(249, 115, 22, 0.3);
+		border-color: rgba(249, 115, 22, 0.35);
 		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 	}
 
@@ -697,8 +1033,8 @@
 	}
 
 	.category-badge {
-		font-size: 0.7rem;
-		font-weight: 600;
+		font-size: 0.68rem;
+		font-weight: 700;
 		color: #fdba74;
 		background: rgba(249, 115, 22, 0.12);
 		border: 1px solid rgba(249, 115, 22, 0.25);
@@ -710,7 +1046,7 @@
 		display: flex;
 		align-items: center;
 		gap: 4px;
-		font-size: 0.68rem;
+		font-size: 0.66rem;
 		color: #10b981;
 		background: rgba(16, 185, 129, 0.1);
 		border: 1px solid rgba(16, 185, 129, 0.2);
@@ -729,7 +1065,7 @@
 		align-items: center;
 		gap: 4px;
 		font-size: 0.74rem;
-		font-weight: 700;
+		font-weight: 800;
 		color: #f97316;
 		background: rgba(249, 115, 22, 0.1);
 		border: 1px solid rgba(249, 115, 22, 0.3);
@@ -739,14 +1075,14 @@
 
 	.card-main-title {
 		font-size: 1.05rem;
-		font-weight: 700;
+		font-weight: 800;
 		color: #fff;
 		line-height: 1.35;
 		letter-spacing: -0.01em;
 	}
 
 	.formula-desc {
-		font-size: 0.78rem;
+		font-size: 0.76rem;
 		color: var(--text-muted, #94a3b8);
 		margin: 0;
 		line-height: 1.4;
@@ -757,17 +1093,17 @@
 		background: rgba(0, 0, 0, 0.35);
 		border: 1px solid rgba(56, 189, 248, 0.15);
 		border-radius: 8px;
-		padding: 10px 12px;
+		padding: 8px 12px;
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 5px;
 	}
 
 	.thumb-header {
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		font-size: 0.72rem;
+		font-size: 0.7rem;
 		font-weight: 600;
 		color: #38bdf8;
 	}
@@ -776,7 +1112,7 @@
 		display: grid;
 		grid-template-columns: 1fr auto;
 		gap: 12px;
-		font-size: 0.76rem;
+		font-size: 0.74rem;
 	}
 
 	.thumb-visual {
@@ -802,7 +1138,7 @@
 		color: #fff;
 		padding: 2px 8px;
 		border-radius: 4px;
-		font-size: 0.72rem;
+		font-size: 0.7rem;
 		letter-spacing: 0.04em;
 		font-weight: 800;
 	}
@@ -811,6 +1147,8 @@
 	.card-actions {
 		display: flex;
 		justify-content: flex-end;
+		align-items: center;
+		flex-wrap: wrap;
 		gap: 8px;
 		margin-top: 4px;
 	}
@@ -838,6 +1176,18 @@
 		color: #fff;
 	}
 
+	.use-title-btn {
+		background: rgba(16, 185, 129, 0.12);
+		border: 1px solid rgba(16, 185, 129, 0.3);
+		color: #34d399;
+	}
+
+	.use-title-btn:hover {
+		background: rgba(16, 185, 129, 0.22);
+		border-color: #10b981;
+		color: #fff;
+	}
+
 	.text-green {
 		color: #10b981;
 	}
@@ -860,51 +1210,53 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		padding: 40px 20px;
+		padding: 40px 24px;
 		text-align: center;
-		gap: 12px;
+		gap: 10px;
 	}
 
 	.loading-spinner {
-		width: 32px;
-		height: 32px;
+		width: 36px;
+		height: 36px;
 		border: 3px solid rgba(249, 115, 22, 0.2);
 		border-top-color: #f97316;
 		border-radius: 50%;
 		animation: spin 0.8s linear infinite;
 	}
 
-	.loading-text {
-		font-size: 0.9rem;
-		color: #fff;
-		font-weight: 600;
-		margin: 0;
-	}
-
-	.loading-sub {
-		font-size: 0.76rem;
-		color: var(--text-muted, #94a3b8);
-	}
-
-	.spin {
-		animation: spin 1s linear infinite;
-	}
-
 	@keyframes spin {
 		to { transform: rotate(360deg); }
 	}
 
+	.loading-text {
+		font-size: 0.9rem;
+		font-weight: 700;
+		color: #fff;
+		margin: 0;
+	}
+
+	.loading-sub {
+		font-size: 0.74rem;
+		color: var(--text-muted, #94a3b8);
+	}
+
+	.empty-state p {
+		font-size: 0.84rem;
+		color: var(--text-muted, #94a3b8);
+		margin: 0;
+	}
+
 	.error-banner {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		margin: 10px 24px 0 24px;
+		margin: 12px 24px 0;
 		padding: 10px 14px;
-		background: rgba(239, 68, 68, 0.12);
+		background: rgba(239, 68, 68, 0.15);
 		border: 1px solid rgba(239, 68, 68, 0.3);
 		border-radius: 8px;
 		color: #fca5a5;
-		font-size: 0.8rem;
+		font-size: 0.78rem;
+		display: flex;
+		align-items: center;
+		gap: 8px;
 	}
 
 	/* Modal Footer */
@@ -912,33 +1264,34 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding: 14px 24px;
-		border-top: 1px solid rgba(255, 255, 255, 0.08);
+		padding: 12px 24px;
 		background: rgba(255, 255, 255, 0.02);
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
 	}
 
 	.footer-tip {
 		font-size: 0.74rem;
 		color: var(--text-muted, #94a3b8);
-	}
-
-	.footer-tip strong {
-		color: #facc15;
+		max-width: 680px;
 	}
 
 	.btn-secondary {
-		padding: 7px 18px;
-		background: rgba(255, 255, 255, 0.06);
+		background: rgba(255, 255, 255, 0.08);
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		border-radius: 8px;
 		color: var(--text-secondary, #cbd5e1);
 		font-size: 0.8rem;
+		padding: 6px 16px;
 		cursor: pointer;
 		transition: all 0.2s;
 	}
 
 	.btn-secondary:hover {
-		background: rgba(255, 255, 255, 0.1);
+		background: rgba(255, 255, 255, 0.15);
 		color: #fff;
+	}
+
+	:global(.spin) {
+		animation: spin 1s linear infinite;
 	}
 </style>

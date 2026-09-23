@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Shadows+Into+Light&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f172a; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+  .canvas-wrapper {
+    width: 760px;
+    aspect-ratio: 16/9;
+    position: relative;
+    background: #ffffff;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  .stickman-bg-layer {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    background-image: url('/stickman/13_A-highly-expressive-2D-illustration-of-a-quirky-st_Stickman_running_and_looking_at_20260920173319.jpeg');
+  }
+  .text-overlay {
+    position: absolute;
+    width: fit-content;
+    max-width: 35%;
+    display: inline-flex;
+    touch-action: none;
+    user-select: none;
+    right: 4%;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .doodle-preview { pointer-events: none; user-select: none; }
+  .doodle-bubble-bg {
+    position: absolute;
+    inset: -14px -18px -36px -18px;
+    width: calc(100% + 36px);
+    height: calc(100% + 50px);
+    object-fit: fill;
+    z-index: 0;
+    filter: drop-shadow(0 4px 14px rgba(0,0,0,0.12));
+  }
+  .doodle-bubble-bg.side-right {
+    inset: -14px -16px -38px -26px;
+    width: calc(100% + 42px);
+    height: calc(100% + 52px);
+  }
+  .two-lines {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.04;
+    gap: 2px;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: 'Shadows Into Light', cursive;
+  }
+  .doodle-mode-speech-bubble.side-right .two-lines {
+    padding: 14px 16px 26px 26px;
+    min-width: 140px;
+  }
+  .two-lines .line {
+    display: block;
+    font-weight: 700;
+    -webkit-text-stroke: 0.6px currentColor;
+    letter-spacing: 0.01em;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    font-size: 52px;
+  }
+</style>
+</head>
+<body>
+  <div class="canvas-wrapper">
+    <div class="stickman-bg-layer"></div>
+    <div class="text-overlay doodle-mode-speech-bubble side-right">
+      <img class="doodle-preview doodle-bubble-bg side-right" src="/stickman/doodles/speech-bubble-right.png" alt="balon kata">
+      <div class="two-lines" style="align-items: center; text-align: center;">
+        <span class="line" style="color: #dc2626;">Kendali</span>
+        <span class="line" style="color: #111827;">Tombol</span>
+        <span class="line" style="color: #111827;">Mati</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

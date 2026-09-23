@@ -438,8 +438,8 @@ export async function POST({ request }) {
 		if (apiKey && apiKey.trim().length > 5) {
 			try {
 				const promptCategory = category === 'all' ? 'Topik viral YouTube bernilai tinggi' : category;
-				const systemPrompt = `Anda adalah Produser Konten YouTube kelas dunia dan Storyteller ulung untuk kanal video YouTube bercerita santai (seperti gaya Ferry Irwandi, Hujan Tanda Tanya, Kok Bisa, atau Raditya Dika bercerita).
-Tugas Anda: Memberikan 3 ide video YouTube berdurasi panjang (16:9) dengan gaya bercerita santai, seru, memiliki Click-Through Rate (CTR) tinggi, dan retensi penonton maksimal.
+				const systemPrompt = `Lo adalah Produser Konten YouTube kelas dunia dan Storyteller jago untuk kanal video YouTube bercerita santai (kayak gaya Ferry Irwandi, Hujan Tanda Tanya, Kok Bisa, atau Raditya Dika bercerita).
+Tugas lo: Kasih 3 ide video YouTube berdurasi panjang (16:9) dengan gaya bercerita santai, seru, CTR tinggi, dan retensi penonton maksimal.
 
 PANDUAN GAYA BAHASA & PENULISAN:
 - Gaya Bahasa: Santai, seru, dan asyik seperti orang yang sedang bercerita langsung ke teman (hindari bahasa formal/kaku seperti skripsi atau makalah).

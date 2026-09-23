@@ -94,7 +94,47 @@ export function extractVisualQuery(narrationText) {
 }
 
 /**
- * Break down raw script into scenes (12 to 24 words per scene)
+ * Split long sentence into high-retention segments (maxWords ~15-16 words, ~5-7 seconds)
+ */
+export function splitSentenceIntoPacedSegments(sentence, maxWords = 18) {
+	if (!sentence || typeof sentence !== 'string') return [];
+	const words = sentence.split(/\s+/).filter(Boolean);
+	// Keep complete sentence intact if it's within natural spoken length (~5-8s)
+	if (words.length <= Math.max(maxWords, 20)) return [sentence.trim()];
+
+	// Split by clause boundaries: commas, semicolons, colons, dashes, or major conjunctions
+	const rawParts = sentence.split(/(?<=[,;:\-—])\s+|\s+(?=(?:dan|tapi|namun|karena|sehingga|makanya|terus|waktu|pas|saat|padahal|melainkan|buat|demi|supaya|agar|bahkan)\b)/i);
+	const parts = rawParts.map((p) => p.trim()).filter(Boolean);
+
+	if (parts.length > 1) {
+		const chunks = [];
+		let cur = '';
+		for (const p of parts) {
+			const curWords = cur ? cur.split(/\s+/).filter(Boolean).length : 0;
+			const pWords = p.split(/\s+/).filter(Boolean).length;
+			if (!cur) {
+				cur = p;
+			} else if (curWords + pWords <= maxWords) {
+				cur += ' ' + p;
+			} else {
+				chunks.push(cur.trim());
+				cur = p;
+			}
+		}
+		if (cur) chunks.push(cur.trim());
+		return chunks;
+	}
+
+	// Fallback: chunk by word boundary
+	const chunks = [];
+	for (let i = 0; i < words.length; i += maxWords) {
+		chunks.push(words.slice(i, i + maxWords).join(' '));
+	}
+	return chunks;
+}
+
+/**
+ * Break down raw script into scenes (10 to 16 words per scene, 4-7s each)
  * and detect or assign chapter title cards.
  */
 export function analyzeScript(rawScript) {
@@ -249,23 +289,28 @@ export function analyzeScript(rawScript) {
 			continue;
 		}
 
+
 		// Split line into sentences
 		const sentences = line.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [line];
 		for (const rawSentence of sentences) {
 			const sentence = rawSentence.trim();
 			if (!sentence) continue;
 
-			const words = sentence.split(/\s+/).filter(Boolean);
+			// Ensure high-retention visual pacing: max 15-16 words (~5-7.5 seconds) per scene
+			const pacedSegments = splitSentenceIntoPacedSegments(sentence, 16);
+			for (const segment of pacedSegments) {
+				const words = segment.split(/\s+/).filter(Boolean);
 
-			if (currentWordCount === 0 || (currentWordCount + words.length <= 26 && currentWordCount < 14)) {
-				currentChunk = currentChunk ? `${currentChunk} ${sentence}` : sentence;
-				currentWordCount += words.length;
-			} else {
-				if (currentChunk) {
-					pushScene(currentChunk);
+				if (currentWordCount === 0 || (currentWordCount + words.length <= 16 && currentWordCount < 10)) {
+					currentChunk = currentChunk ? `${currentChunk} ${segment}` : segment;
+					currentWordCount += words.length;
+				} else {
+					if (currentChunk) {
+						pushScene(currentChunk);
+					}
+					currentChunk = segment;
+					currentWordCount = words.length;
 				}
-				currentChunk = sentence;
-				currentWordCount = words.length;
 			}
 		}
 	}

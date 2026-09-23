@@ -30,10 +30,11 @@
 				<div class="hero-actions">
 					<a href="/studio" class="btn btn-primary btn-lg">
 						<Wand2 size={20} />
-						<span>Mulai Buat Video (Studio)</span>
+						<span>Cinematic Video Studio</span>
 					</a>
-					<a href="#features" class="btn btn-secondary btn-lg">
-						<span>Pelajari Fitur</span>
+					<a href="/stickman-studio" class="btn btn-accent btn-lg">
+						<Film size={20} />
+						<span>Stickman Explainer Studio</span>
 					</a>
 				</div>
 			</div>

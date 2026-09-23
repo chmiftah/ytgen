@@ -29,11 +29,11 @@ export const VOICE_RATES = {
 };
 
 export const PAUSE_RANGES = {
-	normal: { min: 250, max: 400 },     // ~325ms default
-	question: { min: 350, max: 500 },   // ~425ms default
-	emphasis: { min: 450, max: 650 },   // ~550ms default
-	dramatic: { min: 700, max: 1200 },  // ~950ms default
-	fast: { min: 180, max: 280 }        // ~230ms default
+	normal: { min: 100, max: 180 },     // ~140ms natural breath (was 250-400ms)
+	question: { min: 140, max: 220 },   // ~180ms (was 350-500ms)
+	emphasis: { min: 160, max: 260 },   // ~210ms (was 450-650ms)
+	dramatic: { min: 250, max: 400 },   // ~325ms (was 700-1200ms)
+	fast: { min: 50, max: 100 }         // ~75ms (was 180-280ms)
 };
 
 // ============================================================================
@@ -231,7 +231,37 @@ export function normalize_for_tts(text) {
  * - Selective "..." only for dramatic turns (no spamming)
  * - Strictly NO markdown, NO headings, NO bullets, NO emojis, NO bracketed TTS instructions
  */
+/**
+ * Humanize script by removing rigid cliches, adapting pacing,
+ * injecting subtle dramatic pauses, and preserving chapter markers.
+ */
 export function humanizeScript(rawScript, options = {}) {
+	if (!rawScript || typeof rawScript !== 'string') return '';
+
+	// Support stickman script chapter preservation if chapters exist ([Bab ...], [Hook ...], etc.)
+	const chapterHeaderRegex = /\[(Bab|Hook|Adegan|Scene)[^\]]+\]/i;
+	if (chapterHeaderRegex.test(rawScript)) {
+		const parts = rawScript.split(/(?=\[(?:Bab|Hook|Adegan|Scene)[^\]]+\])/i);
+		return parts
+			.map((part) => {
+				const match = part.match(/^(\[(?:Bab|Hook|Adegan|Scene)[^\]]+\])\s*([\s\S]*)$/i);
+				if (match) {
+					const header = match[1].trim();
+					const body = match[2].trim();
+					const humanizedBody = humanizeTextChunk(body, options);
+					return header + (humanizedBody ? '\n' + humanizedBody : '');
+				}
+				return humanizeTextChunk(part, options);
+			})
+			.filter(Boolean)
+			.join('\n\n')
+			.trim();
+	}
+
+	return humanizeTextChunk(rawScript, options);
+}
+
+export function humanizeTextChunk(rawScript, options = {}) {
 	if (!rawScript || typeof rawScript !== 'string') return '';
 
 	// 1. Strip any markdown headers, bullets, emojis, and TTS brackets
@@ -242,10 +272,13 @@ export function humanizeScript(rawScript, options = {}) {
 	clean = clean.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
 
 	// 2. Replace stiff formal cliches with natural conversational phrases
+	const isFormal = options.persona === 'formal';
+	const pronoun = isFormal ? 'Anda' : (options.pronoun || 'lo');
+
 	const clicheReplacements = [
 		{
-			re: /(?:pada\s+kesempatan\s+kali\s+ini|di\s+video\s+kali\s+ini)\s*(?:kita\s+akan\s+membahas|kami\s+akan\s+membahas|akan\s+dibahas)\s*(?:mengenai|tentang)?/gi,
-			rep: 'Kali ini, kita akan melihat'
+			re: /(?:pada\s+kesempatan\s+kali\s+ini|di\s+video\s+kali\s+ini)\s*(?:kita\s+akan\s+membahas|kami\s+akan\s+membahas|akan\s+dibahas)\s*(?:mengenai|tentang)?\s*/gi,
+			rep: 'Kali ini, kita akan melihat '
 		},
 		{
 			re: /pada\s+kesempatan\s+kali\s+ini/gi,
@@ -294,12 +327,32 @@ export function humanizeScript(rawScript, options = {}) {
 		{
 			re: /jangan\s+lupa\s+(?:untuk\s+)?(?:like|subscribe|komen|comment|share)[^.!?\n]*[.!?]?/gi,
 			rep: ''
-		}
+		},
+		// Conversational YouTube / Gen Z natural phrasing
+		{ re: /(?:apakah\s+anda\s+tahu|tahukah\s+anda)\b/gi, rep: 'lo pernah sadar nggak' },
+		{ re: /bayangkan\s+jika\s+anda\b/gi, rep: `coba bayangin kalau ${pronoun}` },
+		{ re: /(?:ketika|saat)\s+anda\b/gi, rep: `pas ${pronoun}` },
+		{ re: /jika\s+anda\b/gi, rep: `kalau ${pronoun}` },
+		{ re: /bagi\s+anda\s+yang\b/gi, rep: `buat ${pronoun} yang` },
+		...(isFormal
+			? []
+			: [
+					{ re: /\bAnda\b/g, rep: pronoun },
+					{ re: /\banda\b/g, rep: pronoun }
+			  ]),
+		{ re: /\boleh\s+karena\s+itu,?\b/gi, rep: 'Makanya,' },
+		{ re: /\boleh\s+sebab\s+itu,?\b/gi, rep: 'Makanya,' },
+		{ re: /\bnamun\s+demikian,?\b/gi, rep: 'Tapi,' },
+		{ re: /\bsebagaimana\s+kita\s+ketahui\b/gi, rep: 'Seperti yang kita tahu,' },
+		{ re: /\btidak\s+dapat\s+dipungkiri\s*(?:bahwa)?\b/gi, rep: 'Jelas banget,' },
+		{ re: /\bsangatlah\s+penting\b/gi, rep: 'penting banget' },
+		{ re: /dalam\s+kehidupan\s+sehari-hari\b/gi, rep: 'sehari-hari' }
 	];
 
 	for (const { re, rep } of clicheReplacements) {
 		clean = clean.replace(re, rep);
 	}
+	clean = clean.replace(/,\s*,/g, ',');
 
 	// 3. Sentence segmentation & paragraph pacing (1-3 sentences per paragraph)
 	const rawSentences = clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [clean];
@@ -316,11 +369,11 @@ export function humanizeScript(rawScript, options = {}) {
 		sent = sent.charAt(0).toUpperCase() + sent.slice(1);
 
 		const dramaticTriggers = [
-			{ re: /^(Tapi\s+ternyata)\s+/i, rep: 'Tapi ternyata... ' },
-			{ re: /^(Dan\s+yang\s+paling\s+aneh)\s+/i, rep: 'Dan yang paling aneh... ' },
-			{ re: /^(Sampai\s+akhirnya)\s+/i, rep: 'Sampai akhirnya... ' },
-			{ re: /^(Tapi\s+sebenarnya)\s+/i, rep: 'Tapi sebenarnya... ' },
-			{ re: /^(Tanpa\s+disadari)\s+/i, rep: 'Tanpa disadari... ' }
+			{ re: /^(Tapi\s+ternyata)\s+/i, rep: 'Tapi ternyata, ' },
+			{ re: /^(Dan\s+yang\s+paling\s+aneh)\s+/i, rep: 'Dan yang paling aneh, ' },
+			{ re: /^(Sampai\s+akhirnya)\s+/i, rep: 'Sampai akhirnya, ' },
+			{ re: /^(Tapi\s+sebenarnya)\s+/i, rep: 'Tapi sebenarnya, ' },
+			{ re: /^(Tanpa\s+disadari)\s+/i, rep: 'Tanpa disadari, ' }
 		];
 
 		for (const { re, rep } of dramaticTriggers) {

@@ -32,3 +32,6 @@ vite.config.ts.timestamp-*
 !/static/footage/catalog.json
 !/static/footage/.gitkeep
 
+# Stickman assets
+/static/stickman/
+

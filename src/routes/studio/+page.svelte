@@ -1372,7 +1372,11 @@
 	<TitleGeneratorModal
 		isOpen={showTitleGeneratorModal}
 		deepseekApiKey={deepseekApiKey}
-		activeScript={script}
+		initialTopic={videoTitle}
+		onSelectTitle={(t) => {
+			if (t) videoTitle = t;
+			showTitleGeneratorModal = false;
+		}}
 		onSelectTitleForScript={(t) => {
 			if (t) videoTitle = t;
 			handleSelectTitleForScript(t);

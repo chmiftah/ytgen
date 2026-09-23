@@ -22,15 +22,57 @@ export async function GET() {
 	});
 }
 
-// Enhance punctuation & breathing pauses for more human-like rhythm
+// Enhance punctuation & breathing pauses for more natural, flowing conversational rhythm
 function enhanceTextCadence(rawText) {
 	if (!rawText) return '';
 	let t = rawText.trim();
-	t = t.replace(/\s*--\s*/g, ' ... ');
-	t = t.replace(/\s*—\s*/g, ' ... ');
-	t = t.replace(/([?!])\s+/g, '$1 ... ');
-	t = t.replace(/\.{4,}/g, '...');
+	// Replace dashes with natural commas instead of pause-inducing dots
+	t = t.replace(/\s*--\s*/g, ', ');
+	t = t.replace(/\s*—\s*/g, ', ');
+	// Normalize repetitive dots to a single period
+	t = t.replace(/\.{3,}/g, '.');
 	return t;
+}
+
+// Trim dead trailing silence from audio buffer based on last word boundary
+function trimTrailingSilence(buf, maxDuration) {
+	return new Promise(async (resolve) => {
+		if (!maxDuration || maxDuration <= 0) return resolve(buf);
+		const tempId = `trim-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+		const dir = path.resolve('./static/renders/audio-cache');
+		await fs.promises.mkdir(dir, { recursive: true });
+		const pathIn = path.join(dir, `${tempId}-in.mp3`);
+		const pathOut = path.join(dir, `${tempId}-out.mp3`);
+		try {
+			await fs.promises.writeFile(pathIn, buf);
+			const proc = spawn(ffmpegPath || 'ffmpeg', [
+				'-i', pathIn,
+				'-t', String(maxDuration),
+				'-c:a', 'libmp3lame',
+				'-b:a', '192k',
+				'-y', pathOut
+			]);
+			proc.on('close', async (code) => {
+				if (code === 0 && fs.existsSync(pathOut)) {
+					const outBuf = await fs.promises.readFile(pathOut);
+					await Promise.all([
+						fs.promises.unlink(pathIn).catch(() => {}),
+						fs.promises.unlink(pathOut).catch(() => {})
+					]);
+					resolve(outBuf);
+				} else {
+					await fs.promises.unlink(pathIn).catch(() => {});
+					resolve(buf);
+				}
+			});
+			proc.on('error', async () => {
+				await fs.promises.unlink(pathIn).catch(() => {});
+				resolve(buf);
+			});
+		} catch (_) {
+			resolve(buf);
+		}
+	});
 }
 
 // Synthesize a single piece of text and extract word boundary timestamps
@@ -393,6 +435,16 @@ export async function POST({ request }) {
 			finalDuration = pipelineResult.duration;
 			chunksInfo = pipelineResult.chunks;
 			cacheStats = pipelineResult.cacheStats;
+		}
+
+		// Trim excess dead tail silence if no outro pause was explicitly requested
+		if (outroSec === 0 && finalWordTimings.length > 0) {
+			const lastWordEnd = finalWordTimings[finalWordTimings.length - 1].end;
+			if (lastWordEnd > 0 && finalDuration > lastWordEnd + 0.12) {
+				const trimmedDur = Number((lastWordEnd + 0.08).toFixed(2));
+				finalBuffer = await trimTrailingSilence(finalBuffer, trimmedDur);
+				finalDuration = trimmedDur;
+			}
 		}
 
 		// Apply Studio Mastering DSP filter if requested and not raw

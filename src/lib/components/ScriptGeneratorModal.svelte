@@ -299,7 +299,7 @@
 								disabled={isGenerating}
 							>
 								<strong>⚡ Ringkas (3–5 Menit)</strong>
-								<small>~600 kata • 3 Bab</small>
+								<small>~500–700 kata • 2–3 Bab</small>
 							</button>
 
 							<button
@@ -309,8 +309,8 @@
 								onclick={() => durationTarget = 'medium'}
 								disabled={isGenerating}
 							>
-								<strong>🎬 Sedang (5–10 Menit)</strong>
-								<small>~1.200 kata • 3–5 Bab • Populer</small>
+								<strong>🎬 Standar (6–9 Menit)</strong>
+								<small>~1.000–1.350 kata • 4–5 Bab</small>
 							</button>
 
 							<button
@@ -320,8 +320,8 @@
 								onclick={() => durationTarget = 'long'}
 								disabled={isGenerating}
 							>
-								<strong>📚 Panjang (15–20 Menit)</strong>
-								<small>~2.400 kata • 5–7 Bab</small>
+								<strong>🔥 Long Form (10–15 Menit)</strong>
+								<small>~1.700–2.400 kata • 6–9 Bab • Populer</small>
 							</button>
 
 							<button
@@ -331,8 +331,8 @@
 								onclick={() => durationTarget = 'extended'}
 								disabled={isGenerating}
 							>
-								<strong>🌌 Dokumenter (25–35 Menit)</strong>
-								<small>~4.000 kata • 7–10 Bab</small>
+								<strong>🌌 Dokumenter (16–25 Menit)</strong>
+								<small>~2.800–3.800 kata • 8–12 Bab</small>
 							</button>
 						</div>
 					</div>
