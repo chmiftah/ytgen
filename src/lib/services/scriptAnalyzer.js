@@ -94,13 +94,13 @@ export function extractVisualQuery(narrationText) {
 }
 
 /**
- * Split long sentence into high-retention segments (maxWords ~15-16 words, ~5-7 seconds)
+ * Split long sentence into high-retention segments (maxWords ~12-13 words, ~5-6 seconds max)
  */
-export function splitSentenceIntoPacedSegments(sentence, maxWords = 18) {
+export function splitSentenceIntoPacedSegments(sentence, maxWords = 32) {
 	if (!sentence || typeof sentence !== 'string') return [];
 	const words = sentence.split(/\s+/).filter(Boolean);
-	// Keep complete sentence intact if it's within natural spoken length (~5-8s)
-	if (words.length <= Math.max(maxWords, 20)) return [sentence.trim()];
+	// Keep complete sentence intact for natural flowing speech
+	if (words.length <= maxWords) return [sentence.trim()];
 
 	// Split by clause boundaries: commas, semicolons, colons, dashes, or major conjunctions
 	const rawParts = sentence.split(/(?<=[,;:\-—])\s+|\s+(?=(?:dan|tapi|namun|karena|sehingga|makanya|terus|waktu|pas|saat|padahal|melainkan|buat|demi|supaya|agar|bahkan)\b)/i);
@@ -296,21 +296,17 @@ export function analyzeScript(rawScript) {
 			const sentence = rawSentence.trim();
 			if (!sentence) continue;
 
-			// Ensure high-retention visual pacing: max 15-16 words (~5-7.5 seconds) per scene
-			const pacedSegments = splitSentenceIntoPacedSegments(sentence, 16);
-			for (const segment of pacedSegments) {
-				const words = segment.split(/\s+/).filter(Boolean);
-
-				if (currentWordCount === 0 || (currentWordCount + words.length <= 16 && currentWordCount < 10)) {
-					currentChunk = currentChunk ? `${currentChunk} ${segment}` : segment;
-					currentWordCount += words.length;
-				} else {
-					if (currentChunk) {
-						pushScene(currentChunk);
-					}
-					currentChunk = segment;
-					currentWordCount = words.length;
+			const words = sentence.split(/\s+/).filter(Boolean);
+			// Natural pacing: group very short sentence fragments (< 7 words) or push complete sentence
+			if (currentChunk && (currentWordCount + words.length <= 22 && currentWordCount < 7)) {
+				currentChunk = `${currentChunk} ${sentence}`;
+				currentWordCount += words.length;
+			} else {
+				if (currentChunk) {
+					pushScene(currentChunk);
 				}
+				currentChunk = sentence;
+				currentWordCount = words.length;
 			}
 		}
 	}
@@ -320,32 +316,7 @@ export function analyzeScript(rawScript) {
 		pushScene(currentChunk);
 	}
 
-	// If script had no explicit chapters and is long (e.g. 4+ scenes), auto-place Chapter 2 & 3
-	if (scenes.length >= 4 && scenes.filter(s => s.chapter).length === 1) {
-		const midIdx = Math.floor(scenes.length / 2);
-		scenes[midIdx].chapter = {
-			number: 2,
-			tag: 'BAB 02',
-			title: 'PEMBAHASAN UTAMA',
-			subtitle: 'Mengupas akar masalah dan fakta kunci',
-			style: 'center'
-		};
-		scenes[midIdx].estimatedDuration = Number((scenes[midIdx].estimatedDuration + 3.8).toFixed(1));
-		scenes[midIdx].audioDuration = scenes[midIdx].estimatedDuration;
 
-		if (scenes.length >= 6) {
-			const endIdx = scenes.length - 1;
-			scenes[endIdx].chapter = {
-				number: 3,
-				tag: 'BAB 03',
-				title: 'KESIMPULAN & REFLEKSI',
-				subtitle: 'Pelajaran berharga untuk masa depan',
-				style: 'center'
-			};
-			scenes[endIdx].estimatedDuration = Number((scenes[endIdx].estimatedDuration + 3.8).toFixed(1));
-			scenes[endIdx].audioDuration = scenes[endIdx].estimatedDuration;
-		}
-	}
 
 	return scenes;
 }

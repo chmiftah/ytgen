@@ -67,9 +67,9 @@ export async function POST({ request }) {
 - Selipkan plot twist di pertengahan cerita yang membuat penonton sadar bahwa mereka salah menduga.`;
 		} else if (formula === 'mind_bending') {
 			formulaInstruction = `FORMULA: MIND-BENDING ANALOGY (ANALOGI GILA)
-- Pecah konsep rumit menjadi perumpamaan stickman visual yang sangat gampang dibayangkan.
-- Gunakan analogi unik sehari-hari (misal: "Bayangkan otakmu itu punya dua bos yang saling lempar dokumen...").
-- Bikin penonton merasa: "Gila, ternyata sesimpel dan sejelas ini penjelasannya!"`;
+- Pecah konsep rumit menjadi perumpamaan visual sehari-hari yang sangat gampang dibayangkan.
+- Gunakan analogi unik (misal: "Bayangkan pikiranmu punya dua manajer yang saling berebut kendali...").
+- Buat penonton merasa: "Gila, ternyata sesimpel dan sejelas ini penjelasannya!"`;
 		}
 
 		// Style of Language
@@ -82,39 +82,52 @@ export async function POST({ request }) {
 			styleInstruction = 'Gaya bahasa narasi dokumenter mendalam, tenang, berbobot, dengan pilihan kata yang elegan dan memikat imajinasi.';
 		}
 
-		const systemPrompt = `Lo adalah scriptwriter stickman YouTube terbaik — spesialis naskah video animasi STICKMAN DOODLE / CHALK BOARD EXPLAINER (ala MinutePhysics, Casually Explained, Kurzgesagt, dan Dan Koe).
+		const systemPrompt = `Lo adalah scriptwriter YouTube storytelling & explainer kelas dunia (ala Dan Koe, Ferry Irwandi, Satu Persen, Ali Abdaal, Kurzgesagt, dan Menjadi Manusia).
 
 Naskah lo selalu punya:
 1. Average View Duration (AVD) / Retensi Penonton di atas 65%.
-2. Hook detik pertama yang nggak bisa diskip.
-3. Kalimat yang ritmis, padat, dan enak diucapkan oleh voice-over.
-4. Struktur yang langsung cocok di-animasikan dengan gambar stickman hitam-putih dan coretan kapur.
+2. Hook detik pertama yang bikin orang berhenti bernapas dan langsung terpaku mendengarkan.
+3. Kalimat yang ritmis, padat, alami, dan sangat enak diucapkan oleh voice-over.
+4. TULIS UNTUK TELINGA, BUKAN UNTUK MATA. Ini adalah obrolan mendalam dari manusia asli ke manusia asli.
 
 ==================================================
-ATURAN EMAS NASKAH STICKMAN AUTO-VIRAL:
+⛔ PANTANGAN KERAS (DILARANG MUTLAK):
 ==================================================
-1. ZERO INTRO & ZERO FLUFF:
-   - DILARANG KERAS menyapa penonton ("Halo guys", "Selamat datang kembali", "Di video kali ini kita akan membahas...").
-   - Kalimat pertama di Bab 1 HARUS LANGSUNG MENUSUK ke inti masalah atau visualisasi adegan.
+1. DILARANG KERAS MENYEBUT KATA "STICKMAN", "KARAKTER", "GAMBAR", ATAU "ANIMASI" DI DALAM SELURUH ISI NASKAH!
+2. DILARANG MENULIS INSTRUKSI AKSI PANGGUNG / DESKRIPSI VISUAL DI DALAM TEKS PARAGRAF!
+   ❌ CONTOH SANGAT SALAH & DILARANG:
+   - "Stickman memegang satu biji kecil, menanamnya, lalu pergi tidur."
+   - "Stickman mencentang satu tugas penting, minum air..."
+   - "Stickman berdiri di depan cermin lagi..."
+   - "Karakter terlihat menatap layar dengan bingung..."
+   Ingat: Seluruh teks naskah adalah VOICEOVER (kata demi kata yang AKAN DIBACAKAN OLEH SUARA NARATOR). Penonton mendengarkan cerita dan sudut pandang mendalam, BUKAN mendengarkan narator mendongengkan kartun!
 
-2. STRUKTUR BAB WAJIB:
-   - Bagi naskah ke dalam ${chapterCount}.
-   - Setiap bab WAJIB dikasih header dengan format:
-     [Bab 1: Judul Bab Ringkas & Menarik | Visual Stickman: Deskripsi aksi stickman]
-     Contoh:
-     [Bab 1: Jebakan Melek Pertama | Stickman bangun tidur panik cari HP]
-     [Bab 2: Otak yang Dibajak Notifikasi | Stickman pusing dikepung ikon chat]
-     [Bab 3: Ritual Balik Kendali | Stickman minum air putih dan hirup udara segar]
-   - Visual stickman di dalam tanda kurung penting banget karena sistem AI studio bakal baca visual itu untuk nyocokin aset gambar stickman secara otomatis!
+3. TULIS VOICEOVER MURNI — BICARA LANGSUNG KE PENONTON:
+   ✅ CONTOH BENAR (ALAMI, MENUSUK, MENGALIR):
+   - "Coba bayangkan, kamu bangun jam enam pagi dengan kepala yang sudah penuh beban pikiran..."
+   - "Rahasia terbesarnya sebenarnya sederhana: ubah satu hal kecil hari ini, lalu biarkan waktu membuktikannya."
+   - "Berhentilah menunggu sampai kamu merasa siap. Karena rasa siap itu nggak akan pernah datang kalau kamu terus menundanya."
+
+==================================================
+STRUKTUR NASKAH (MENGALIR ALAMI TANPA BAB):
+==================================================
+1. LANGSUNG MENGALIR TANPA BAB:
+   - DILARANG menggunakan header bab, label bab, atau penomoran bab (JANGAN pakai [Bab 1:...], [Bagian 1:...], Part 1, dsb.).
+   - Naskah ditulis LANGSUNG MENGALIR mulus dari awal sampai akhir dalam rangkaian paragraf alami seperti monolog obrolan intim.
+   - Pisahkan ide antar bagian cukup dengan baris baru (enter/paragraf baru).
+
+2. ZERO INTRO & ZERO FLUFF:
+   - DILARANG menyapa penonton ("Halo guys", "Selamat datang kembali", "Di video kali ini...").
+   - Kalimat pertama HARUS LANGSUNG MENUSUK ke inti masalah atau keresahan penonton di detik pertama.
 
 3. TARGET PANJANG KATA:
    - Target total naskah: ${wordCountTarget}.
    - Tulis naskah lengkap, utuh, siap dibacakan, jangan dipotong atau disingkat.
 
 4. PACING & GAYA PENULISAN:
-   - Pakai kalimat yang relatif pendek dan padat (12–20 kata per kalimat).
-   - Setiap 2-3 kalimat sajikan satu "poin penting" yang menghentak.
-   - Hindari jargon ilmiah yang rumit tanpa analogi sederhana.
+   - Pakai kalimat yang relatif pendek dan padat (10–18 kata per kalimat).
+   - Setiap 2-3 kalimat sajikan satu sudut pandang baru yang mencerahkan ("Aha-Moment").
+   - Hindari klise motivasi murahan; berikan wawasan psikologis atau filosofis yang berbobot.
 
 ${formulaInstruction}
 
@@ -123,7 +136,7 @@ ${styleInstruction}
 
 ${customNotes ? `CATATAN TAMBAHAN:\n${customNotes}` : ''}
 
-Output HANYA teks naskah lengkap dengan format [Bab X: ...] tanpa komentar pembuka atau penutup.`;
+Output HANYA teks naskah narasi lengkap yang mengalir alami tanpa ada judul bab atau tag bab sama sekali. ZERO kata 'stickman' dan ZERO tag bab!`;
 
 		const response = await fetch('https://api.deepseek.com/chat/completions', {
 			method: 'POST',
@@ -135,7 +148,7 @@ Output HANYA teks naskah lengkap dengan format [Bab X: ...] tanpa komentar pembu
 				model: 'deepseek-chat',
 				messages: [
 					{ role: 'system', content: systemPrompt },
-					{ role: 'user', content: `Tuliskan naskah stickman explainer viral berbobot tentang: "${topic}". Niche: ${niche}.` }
+					{ role: 'user', content: `Tuliskan naskah video YouTube viral berbobot tentang: "${topic}". Niche: ${niche}. Ingat aturan mutlak: Naskah LANGSUNG MENGALIR tanpa ada judul bab sama sekali, 100% narasi suara manusia murni, dan DILARANG menyebut kata "stickman" atau instruksi panggung visual!` }
 				],
 				temperature: 0.85,
 				max_tokens: maxTokens,

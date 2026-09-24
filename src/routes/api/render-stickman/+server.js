@@ -119,7 +119,7 @@ PlayResY: ${H}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fam},${Math.round(baseFontSize * (H / canvasRefH) * 1.25)},&H00${colorBottomBgr}&,&H000000FF,&H00${colorBottomBgr}&,&H00000000&,0,0,0,0,100,100,0,0,1,1.5,0,5,10,10,10,1
+Style: Default,${fam},${Math.round(baseFontSize * (H / canvasRefH))},&H00${colorBottomBgr}&,&H000000FF,&H00${colorBottomBgr}&,&H00000000&,0,0,0,0,100,100,0,0,1,1.5,0,5,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -128,7 +128,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 	let t = 0;
 	for (let i = 0; i < scenes.length; i++) {
 		const sc = scenes[i];
-		const dur = Number(sc.audioDuration || sc.estimatedDuration || 5);
+		const dur = Number((Number(sc.audioDuration || sc.estimatedDuration || 5) + 0.20).toFixed(2));
 		const durMs = Math.round((dur - 0.24) * 1000);
 		const kpRaw = (sc.keyPoint || sc.narration || '').replace(/\{/g, '(').replace(/\}/g, ')').slice(0, 140);
 		const lines = getLines(kpRaw);
@@ -147,28 +147,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 		const alignMode = (sc.textAlign || opts.defaultAlign || '').toLowerCase();
 		const side = (sc.textSide || sc.layoutSide || (i % 2 === 0 ? 'left' : 'right')).toLowerCase();
 
-		// AUTO-FIT FONT SIZE: scale to fill the available text column
-		// Column width: 34% of innerW for side layout, 66% for middle
-		const colFrac = alignMode === 'middle' ? 0.66 : 0.34;
-		const colW = innerW * colFrac;
-
-		// Shadows Into Light actual char width measured from renders:
-		// ~0.202 em per char (mixed case) / ~0.222 em (ALL CAPS)
-		const isAllCaps = kpRaw === kpRaw.toUpperCase() && /[A-Z]/.test(kpRaw);
-		const charW = isAllCaps ? 0.222 : 0.202;
-		const FILL = 0.88; // target: longest line fills 88% of column width
-
-		// From width constraint: longest line fills FILL of colW
-		const fsFromW = Math.floor((colW * FILL) / (maxLineLen * charW));
-
-		// From height constraint: all lines + spacing fit in 56% of innerH
-		const LINE_SP_RATIO = 0.68; // matches our lineSpacing = assFontSize * 0.68
-		const fsFromH = Math.floor((innerH * 0.56) / (lineCount * LINE_SP_RATIO + 0.3));
-
-		// Cap at 1.6x user base size (scaled to video resolution) to respect intent
-		const scFontSize = Number(sc.fontSize) || baseFontSize;
-		const maxFs = Math.round(scFontSize * (H / canvasRefH) * 1.6);
-		const assFontSize = Math.max(28, Math.min(maxFs, fsFromW, fsFromH));
+		// Exact 1:1 proportional font size directly matching canvas preview
+		const scFontSize = Number(sc.fontSize) || baseFontSize || 60;
+		const displayFontSize = getDisplayFontSize(kpRaw, scFontSize);
+		// Scale from preview canvas height (canvasRefH) to video resolution height H (PlayResY)
+		const assFontSize = Math.round(displayFontSize * (H / canvasRefH));
 		const offX = Number(sc.textOffsetX || 0);
 		const offY = Number(sc.textOffsetY || 0);
 		const rot = Number(sc.textRotate ?? 0);
@@ -182,62 +165,31 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 		let posX = Math.round(padX + innerW * 0.5);
 		let posY = Math.round(padY + innerH * (0.50 + offY / 100));
 
-		const doodle = sc.doodleType || opts.defaultDoodle || 'none';
-		if (doodle === 'speech-bubble' || doodle === 'thought-bubble') {
-			const textEstW = maxLineLen * (assFontSize * 0.34);
-			const dW = Math.round(Math.max(400 * (innerW / 1920), textEstW + 140 * (innerW / 1920)));
-			if (side === 'right') {
-				const dX = Math.round(padX + innerW * (0.96 + offX / 100) - dW);
-				if (alignMode === 'center') {
-					align = 5;
-					posX = Math.round(dX + dW * 0.52);
-				} else if (alignMode === 'left') {
-					align = 4;
-					posX = Math.round(dX + dW * 0.16);
-				} else {
-					align = 6;
-					posX = Math.round(dX + dW * 0.90);
-				}
-			} else if (side === 'left') {
-				const dX = Math.round(padX + innerW * (0.04 + offX / 100));
-				if (alignMode === 'center') {
-					align = 5;
-					posX = Math.round(dX + dW * 0.48);
-				} else if (alignMode === 'right') {
-					align = 6;
-					posX = Math.round(dX + dW * 0.84);
-				} else {
-					align = 4;
-					posX = Math.round(dX + dW * 0.10);
-				}
+		if (alignMode === 'middle') {
+			align = 5; // Middle Center
+			posX = Math.round(padX + innerW * (0.50 + offX / 100));
+		} else if (side === 'left') {
+			if (alignMode === 'center') {
+				align = 5; // Middle Center of left column
+				posX = Math.round(padX + innerW * (0.24 + offX / 100));
+			} else if (alignMode === 'right') {
+				align = 6; // Middle Right of left column
+				posX = Math.round(padX + innerW * (0.42 + offX / 100));
+			} else {
+				align = 4; // Middle Left (default)
+				posX = Math.round(padX + innerW * (0.06 + offX / 100));
 			}
 		} else {
-			if (alignMode === 'middle') {
-				align = 5; // Middle Center
-				posX = Math.round(padX + innerW * (0.50 + offX / 100));
-			} else if (side === 'left') {
-				if (alignMode === 'center') {
-					align = 5; // Middle Center of left column
-					posX = Math.round(padX + innerW * (0.24 + offX / 100));
-				} else if (alignMode === 'right') {
-					align = 6; // Middle Right of left column
-					posX = Math.round(padX + innerW * (0.42 + offX / 100));
-				} else {
-					align = 4; // Middle Left (default)
-					posX = Math.round(padX + innerW * (0.06 + offX / 100));
-				}
+			// side === 'right'
+			if (alignMode === 'center') {
+				align = 5; // Middle Center of right column
+				posX = Math.round(padX + innerW * (0.76 + offX / 100));
+			} else if (alignMode === 'left') {
+				align = 4; // Middle Left of right column
+				posX = Math.round(padX + innerW * (0.58 + offX / 100));
 			} else {
-				// side === 'right'
-				if (alignMode === 'center') {
-					align = 5; // Middle Center of right column
-					posX = Math.round(padX + innerW * (0.76 + offX / 100));
-				} else if (alignMode === 'left') {
-					align = 4; // Middle Left of right column
-					posX = Math.round(padX + innerW * (0.58 + offX / 100));
-				} else {
-					align = 6; // Middle Right (default)
-					posX = Math.round(padX + innerW * (0.94 + offX / 100));
-				}
+				align = 6; // Middle Right (default)
+				posX = Math.round(padX + innerW * (0.94 + offX / 100));
 			}
 		}
 
@@ -303,8 +255,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 		// Line spacing: each line is a separate Dialogue event with \pos(x,Y), where Y is the
 		// vertical center of the glyph. Because Shadows Into Light has large font metrics
 		// (ascender 1203/1024 em), using 1.04x em as spacing results in doubled visual gap.
-		// 0.68x gives visually tight spacing matching the canvas CSS line-height: 1.04 + gap: 2px.
-		const lineSpacing = Math.round(assFontSize * 0.68);
+		// 0.78x matches the canvas CSS line-height: 1.15 + gap: 3px
+		const lineSpacing = Math.round(assFontSize * 0.78);
 		const totalBlockH = (lineCount - 1) * lineSpacing;
 
 		for (let idx = 0; idx < lineCount; idx++) {
@@ -619,48 +571,36 @@ export async function POST({ request }) {
 			await asyncPool(4, scenes.map((s,i)=>({s,i})), async({s,i})=>{
 				const vDest=path.join(tmp,`video-${i}.mp4`);
 				const aDest=path.join(tmp,`audio-${i}.mp3`);
-				const dur=Number(s.audioDuration||s.estimatedDuration||5);
+				const SCENE_BREATH_PAUSE = 0.20;
+				const dur = Number((Number(s.audioDuration || s.estimatedDuration || 5) + SCENE_BREATH_PAUSE).toFixed(2));
 				let aOk=false;
 				if(s.voiceAudioUrl?.startsWith('data:audio')){
 					try{ const b64=s.voiceAudioUrl.replace(/^data:audio\/[^;]+;base64,/,''); await fs.promises.writeFile(aDest, Buffer.from(b64,'base64')); aOk=true; }catch{}
+				} else if (s.voiceAudioUrl?.startsWith('/renders/') || s.voiceAudioUrl?.startsWith('/')) {
+					const localPath = path.resolve('./static' + s.voiceAudioUrl);
+					if (fs.existsSync(localPath)) {
+						try { await fs.promises.copyFile(localPath, aDest); aOk = true; } catch {}
+					}
+				} else if (s.voiceAudioUrl && fs.existsSync(s.voiceAudioUrl)) {
+					try { await fs.promises.copyFile(s.voiceAudioUrl, aDest); aOk = true; } catch {}
+				}
+				if (aOk && SCENE_BREATH_PAUSE > 0) {
+					try {
+						const padded = path.join(tmp, `audio-pad-${i}.mp3`);
+						await runFFmpeg([
+							'-i', aDest,
+							'-af', `apad=pad_dur=${SCENE_BREATH_PAUSE}`,
+							'-c:a', 'libmp3lame', '-b:a', '192k',
+							'-y', padded
+						], 15000);
+						if (fs.existsSync(padded)) {
+							await fs.promises.rename(padded, aDest);
+						}
+					} catch {}
 				}
 				if(!aOk) await makeSilent(aDest, dur);
 
-				// Mix automatic scene SFX if configured
-				const scSfx = s.sfxType || stickmanSfx;
-				if (scSfx && scSfx !== 'none') {
-					let sfxPath = null;
-					if (s.customSfxData) {
-						try {
-							const customFile = path.join(tmp, `custom-sfx-${i}.mp3`);
-							const b64 = s.customSfxData.replace(/^data:audio\/[^;]+;base64,/, '');
-							await fs.promises.writeFile(customFile, Buffer.from(b64, 'base64'));
-							sfxPath = customFile;
-						} catch {}
-					} else {
-						const stdPath = path.resolve(`./static/sfx/${scSfx}.mp3`);
-						if (fs.existsSync(stdPath)) sfxPath = stdPath;
-					}
 
-					if (sfxPath && fs.existsSync(sfxPath)) {
-						const mixedAudio = path.join(tmp, `audio-mixed-${i}.mp3`);
-						try {
-							await runFFmpeg([
-								'-i', aDest,
-								'-i', sfxPath,
-								'-filter_complex', `[1:a]adelay=60|60,volume=0.9,aformat=sample_rates=44100:channel_layouts=stereo[sfx];[0:a]aformat=sample_rates=44100:channel_layouts=stereo[vox];[vox][sfx]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]`,
-								'-map', '[a]',
-								'-c:a', 'libmp3lame', '-b:a', '192k',
-								'-y', mixedAudio
-							], 30000);
-							if (fs.existsSync(mixedAudio)) {
-								await fs.promises.rename(mixedAudio, aDest);
-							}
-						} catch (sfxErr) {
-							console.warn(`SFX mixing warning scene ${i}:`, sfxErr.message);
-						}
-					}
-				}
 
 				const rawImg = s.image || s.imageUrl || '';
 				let imgPath='';
@@ -671,11 +611,7 @@ export async function POST({ request }) {
 				const side = (s.textSide || s.layoutSide || (i % 2 === 0 ? 'left' : 'right')).toLowerCase();
 				await renderImageClip(imgPath, vDest, dur, W, H, effectiveImageAnim, i, side, effectiveIdleMotion, videoPadding);
 
-				// Overlay chalk doodle graphic (speech bubble, arrow, highlight, idea bulb)
-				const effectiveDoodle = s.doodleType || stickmanDoodle || 'none';
-				if (effectiveDoodle && effectiveDoodle !== 'none') {
-					await applyDoodleOverlay(vDest, dur, W, H, effectiveDoodle, side, s, tmp, videoPadding);
-				}
+
 
 				prepped++; send({progress: Math.round(10+prepped/scenes.length*35), step:`Gambar adegan ${prepped}/${scenes.length}`});
 			});

@@ -30,7 +30,7 @@ export async function POST({ request }) {
 							{
 								role: 'system',
 								content: `You are an elite YouTube video director and editor specializing in high-retention 16:9 YouTube Long videos.
-Your task is to analyze the user's script and break it down into sequential scenes (STRICT PACING: 10-16 words per scene, strictly 4-7 seconds each, NEVER exceeding 8 seconds for maximum viewer retention). If a sentence or thought is longer than 15 words, split it into sequential scenes with distinct visual angles.
+Your task is to analyze the user's script and break it down into natural, organic sequential scenes. Each scene should represent a complete sentence or unified thought (natural flow, typically 15-30 words per scene). Let the narration breathe naturally without cutting single sentences into artificial short fragments.
 In addition, divide the script into 2 to 4 impactful narrative chapters.
 
 Chapter Tag Rules (CRITICAL):
@@ -94,23 +94,8 @@ Return strictly valid JSON in this structure:
 							const userWantsBab = /\bbab\s*\d+/i.test(cleanScript);
 							const userWantsOnlyTitle = /\b(hanya judul|tanpa bab|tanpa tag)\b/i.test(cleanScript);
 
-							// Enforce maximum 16 words per scene so visual image changes every 5-7 seconds
-							const pacedRawScenes = [];
-							for (const sc of parsed.scenes) {
-								const scWords = (sc.narration || '').split(/\s+/).filter(Boolean);
-								if (scWords.length > 17) {
-									const segments = splitSentenceIntoPacedSegments(sc.narration, 15);
-									segments.forEach((seg, sIdx) => {
-										pacedRawScenes.push({
-											...sc,
-											narration: seg,
-											chapter: sIdx === 0 ? sc.chapter : null
-										});
-									});
-								} else {
-									pacedRawScenes.push(sc);
-								}
-							}
+							// Natural scene pacing: keep AI-generated scenes intact and natural
+							const pacedRawScenes = parsed.scenes || [];
 
 							const mappedScenes = pacedRawScenes.map((sc, idx) => {
 								const words = (sc.narration || '').split(/\s+/).filter(Boolean);

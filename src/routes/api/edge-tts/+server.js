@@ -289,13 +289,9 @@ function appendSilence(buf, outroSec) {
 	});
 }
 
-// Apply Studio Mastering DSP filter (Broadcast EQ, Dynamic Compression, Warm Tube & Presence)
+// Apply Studio Mastering DSP filter & strip dead leading/trailing silence for seamless transitions
 function applyAudioPostProcessing(inputBuffer, filterString) {
 	return new Promise(async (resolve) => {
-		if (!filterString || !filterString.trim()) {
-			resolve(inputBuffer);
-			return;
-		}
 		const tempId = `dsp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 		const dir = path.resolve('./static/renders/audio-cache');
 		await fs.promises.mkdir(dir, { recursive: true });
@@ -305,9 +301,15 @@ function applyAudioPostProcessing(inputBuffer, filterString) {
 
 		await fs.promises.writeFile(pathIn, inputBuffer);
 
+		// Remove leading silence (< 0.02s threshold) and trailing dead silence
+		const silenceFilter = 'silenceremove=start_periods=1:start_duration=0.02:start_threshold=-38dB,areverse,silenceremove=start_periods=1:start_duration=0.03:start_threshold=-38dB,areverse';
+		const effectiveFilter = filterString && filterString.trim()
+			? `${filterString},${silenceFilter}`
+			: silenceFilter;
+
 		const args = [
 			'-i', pathIn,
-			'-af', filterString,
+			'-af', effectiveFilter,
 			'-c:a', 'libmp3lame',
 			'-b:a', '192k',
 			'-ar', '44100',
@@ -447,12 +449,11 @@ export async function POST({ request }) {
 			}
 		}
 
-		// Apply Studio Mastering DSP filter if requested and not raw
-		if (effectPreset?.ffmpegFilter && effectPreset.id !== 'natural') {
-			finalBuffer = await applyAudioPostProcessing(finalBuffer, effectPreset.ffmpegFilter);
-			const masteredDur = await getAudioDurationFromBuffer(finalBuffer);
-			if (masteredDur) finalDuration = masteredDur;
-		}
+		// Always apply vocal DSP & tight silence trimming so speech starts & ends immediately with zero dead air
+		const activeFfmpegFilter = (effectPreset?.id !== 'natural' ? effectPreset?.ffmpegFilter : '') || '';
+		finalBuffer = await applyAudioPostProcessing(finalBuffer, activeFfmpegFilter);
+		const masteredDur = await getAudioDurationFromBuffer(finalBuffer);
+		if (masteredDur) finalDuration = masteredDur;
 
 		const audioBase64 = finalBuffer.toString('base64');
 

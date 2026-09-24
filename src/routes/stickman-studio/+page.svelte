@@ -84,7 +84,9 @@
 	let stickmanTextScale = $state(1);
 	let isGenerating = $state(false);
 	let availableAssets = $state([]);
-	let voiceAudioEl = $state(null);
+	let audioElA = $state(null);
+	let audioElB = $state(null);
+	let activePlayerId = $state('A');
 	let isPlaying = $state(false);
 	let isRendering = $state(false);
 	let renderProgress = $state(0);
@@ -202,36 +204,37 @@
 		stickmanTextColorBottom = c;
 	}
 	function setSceneFontSize(size) {
-		if (!currentScene) return;
-		scenes[activeSceneIndex] = { ...currentScene, fontSize: size };
+		const val = Math.max(20, Math.min(130, Number(size) || 60));
+		if (!currentScene) {
+			stickmanFontSize = val;
+			return;
+		}
+		scenes[activeSceneIndex] = { ...currentScene, fontSize: val };
 		scenes = [...scenes];
-		stickmanFontSize = size;
-	}
-	function applyFontSizeToAll() {
-		const curSize = currentScene?.fontSize || stickmanFontSize || 60;
-		scenes = scenes.map((s) => ({ ...s, fontSize: curSize }));
-		stickmanFontSize = curSize;
+		stickmanFontSize = val;
 	}
 
-	let stickmanDoodle = $state('speech-bubble');
-	const DOODLE_OPTIONS = [
-		{ id: 'speech-bubble', label: '💬 Balon Kata' },
-		{ id: 'thought-bubble', label: '💭 Pikiran' },
-		{ id: 'arrow-curved', label: '🏹 Panah' },
-		{ id: 'circle-highlight', label: '⭕ Sorotan' },
-		{ id: 'idea-bulb', label: '💡 Ide' },
-		{ id: 'question-mark', label: '❓ Tanya' },
-		{ id: 'none', label: '🚫 Tanpa' }
+	function changeFontSize(delta) {
+		const curSize = Number(currentScene?.fontSize || stickmanFontSize || 60);
+		setSceneFontSize(curSize + delta);
+	}
+
+	function applyFontSizeToAll() {
+		const curSize = Number(currentScene?.fontSize || stickmanFontSize || 60);
+		scenes = scenes.map((s) => ({ ...s, fontSize: curSize }));
+		stickmanFontSize = curSize;
+		addGenLog('STICKMAN', `Ukuran font ${curSize}px diterapkan ke semua adegan`, 'success');
+	}
+
+	const FONT_SIZE_PRESETS = [
+		{ label: 'S (42px)', val: 42 },
+		{ label: 'M (56px)', val: 56 },
+		{ label: 'L (70px)', val: 70 },
+		{ label: 'XL (86px)', val: 86 },
+		{ label: 'XXL (102px)', val: 102 }
 	];
-	function applyDoodleToAll() {
-		scenes = scenes.map((s) => ({ ...s, doodleType: stickmanDoodle }));
-	}
-	function setSceneDoodle(doodle) {
-		if (!currentScene) return;
-		scenes[activeSceneIndex] = { ...currentScene, doodleType: doodle };
-		scenes = [...scenes];
-		stickmanDoodle = doodle;
-	}
+
+	let stickmanDoodle = $state('none');
 
 	// Voices & Audio Effect (Filter Suara / Karakter Vokal)
 	const QUICK_VOICES = [
@@ -317,24 +320,8 @@
 		}
 	}
 
-	// Cinematic & Custom Sound Effects (SFX)
-	let stickmanSfx = $state('cinematic-boom');
-	let customSfxList = $state([]);
-	let customFileInputEl = null;
-
-	const SFX_OPTIONS = [
-		{ id: 'cinematic-boom', label: '💥 Cinematic Boom' },
-		{ id: 'cinematic-swoosh', label: '🌪️ Cinematic Swoosh' },
-		{ id: 'riser-tension', label: '📈 Riser Swell' },
-		{ id: 'glitch-accent', label: '⚡ Glitch Digital' },
-		{ id: 'camera-shutter', label: '📸 Camera Snap' },
-		{ id: 'vinyl-scratch', label: '🛑 Vinyl Scratch' },
-		{ id: 'pop', label: '💥 Pop Bounce' },
-		{ id: 'chalk', label: '🖍️ Chalk Scratch' },
-		{ id: 'ding', label: '🔔 Ding Chime' },
-		{ id: 'whoosh', label: '💨 Whoosh' },
-		{ id: 'none', label: '🔇 Tanpa SFX' }
-	];
+	// Audio SFX disabled by user preference
+	let stickmanSfx = $state('none');
 
 	// Auto Video Padding (Safe area margins: top, bottom, left, right)
 	let stickmanVideoPadding = $state(4);
@@ -344,56 +331,6 @@
 		{ id: 4, label: '⭐ 4% (Auto / Safe Area)', desc: 'Rekomendasi aman YouTube safe zone (atas, bawah, kiri, kanan)' },
 		{ id: 6, label: '6% (Whiteboard)', desc: 'Jarak lega seperti kanvas papan tulis' }
 	];
-
-	function playSfxSample(sfxId) {
-		if (!sfxId || sfxId === 'none') return;
-		try {
-			const custom = customSfxList.find(c => c.id === sfxId);
-			const url = custom ? custom.url : `/sfx/${sfxId}.mp3`;
-			const a = new Audio(url);
-			a.volume = 0.85;
-			a.play().catch(() => {});
-		} catch {}
-	}
-
-	function handleCustomSfxUpload(e) {
-		const file = e.target.files?.[0];
-		if (!file) return;
-		const reader = new FileReader();
-		reader.onload = (event) => {
-			const data = event.target.result;
-			const id = `custom-${Date.now()}`;
-			const label = `🎵 ${file.name.slice(0, 15)}`;
-			const item = { id, label, data, url: data };
-			customSfxList = [...customSfxList, item];
-			if (currentScene) {
-				currentScene.sfxType = id;
-				currentScene.customSfxData = data;
-				scenes[activeSceneIndex] = { ...currentScene };
-				scenes = [...scenes];
-			}
-			stickmanSfx = id;
-			playSfxSample(id);
-		};
-		reader.readAsDataURL(file);
-	}
-
-	function applySfxToAll() {
-		scenes = scenes.map((s) => ({ ...s, sfxType: stickmanSfx }));
-	}
-
-	function setSceneSfx(sfx) {
-		if (!currentScene) return;
-		const custom = customSfxList.find(c => c.id === sfx);
-		scenes[activeSceneIndex] = {
-			...currentScene,
-			sfxType: sfx,
-			customSfxData: custom ? custom.data : undefined
-		};
-		scenes = [...scenes];
-		stickmanSfx = sfx;
-		playSfxSample(sfx);
-	}
 
 	async function regenerateVoiceoverForScene(sceneIndex) {
 		if (!scenes[sceneIndex]) return;
@@ -409,10 +346,10 @@
 				})
 			});
 			const data = await res.json();
-			if (data.success && data.audioUrl) {
+			if (data.success && (data.staticAudioUrl || data.audioUrl)) {
 				scenes[sceneIndex] = {
 					...sc,
-					voiceAudioUrl: data.audioUrl,
+					voiceAudioUrl: data.staticAudioUrl || data.audioUrl,
 					audioDuration: data.duration,
 					wordTimings: data.wordTimings || []
 				};
@@ -488,37 +425,12 @@
 
 	function getDisplayFontSize(text, scene = currentScene) {
 		const base = Number(scene?.fontSize) || stickmanFontSize || 60;
-		const lines = String(text || '').split('\n').map(s => s.trim()).filter(Boolean);
-		const maxLineLen = lines.length ? Math.max(...lines.map(l => l.length)) : String(text || '').length;
-		const lineCount = Math.max(1, lines.length);
-
-		// Auto-fit: compute how big the font can be to fill the available column
-		const align = scene?.textAlign || stickmanTextAlign || 'left';
-		const padFrac = stickmanVideoPadding / 100;
-		const canvasW = canvasHeight * (16 / 9);
-		const innerW = canvasW * (1 - 2 * padFrac);
-		const innerH = canvasHeight * (1 - 2 * padFrac);
-
-		// Column width fraction: middle uses ~66% of inner width, side uses ~34%
-		const colFrac = align === 'middle' ? 0.66 : 0.34;
-		const colW = innerW * colFrac;
-
-		// Shadows Into Light actual char width measured from renders:
-		// ~0.202 em per char (mixed case) / ~0.222 em (ALL CAPS)
-		const allCaps = maxLineLen > 0 && text === text.toUpperCase() && /[A-Z]/.test(text);
-		const charW = allCaps ? 0.222 : 0.202;
-		const FILL = 0.88;
-
-		// Font size from width constraint: longest line fills FILL% of colW
-		const fsFromW = Math.floor((colW * FILL) / (maxLineLen * charW));
-
-		// Font size from height: all lines fit in 56% of inner height
-		const LINE_SP = 1.1;
-		const fsFromH = Math.floor((innerH * 0.56) / (lineCount * LINE_SP + 0.2));
-
-		// Cap at 1.6x the user base size to respect user intent
-		const maxFs = Math.round(base * 1.6);
-		return Math.max(16, Math.min(maxFs, fsFromW, fsFromH));
+		// Scale 1080p base font size to preview canvas height (~430px)
+		const canvasRefH = 1080;
+		const scaleFactor = (canvasHeight || 430) / canvasRefH;
+		// Directly reflects the user's chosen font size in real time
+		const previewPx = Math.round(base * scaleFactor * 1.12);
+		return Math.max(12, Math.min(85, previewPx));
 	}
 
 	function getEditorLines(text) {
@@ -532,6 +444,9 @@
 		return t ? formatDefaultTwoLines(t).split('\n') : [''];
 	}
 
+	// High-accuracy ink-centroid empty side detector:
+	// Analyzes dark/colored character strokes to find the stickman's center of mass,
+	// then places text on the opposite side to eliminate image-text collision.
 	function detectEmptySide(url) {
 		return new Promise((resolve) => {
 			if (!url) return resolve('right');
@@ -539,18 +454,61 @@
 			img.crossOrigin = 'anonymous';
 			img.onload = () => {
 				try {
-					const W = 200; const H = 200;
+					const W = 160; const H = 90; // 16:9 sampling grid
 					const c = document.createElement('canvas'); c.width = W; c.height = H;
 					const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, W, H);
 					const data = ctx.getImageData(0, 0, W, H).data;
-					let leftWhite = 0; let rightWhite = 0;
-					for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-						const i = (y * W + x) * 4;
-						const r = data[i], g = data[i+1], b = data[i+2];
-						if (r > 240 && g > 240 && b > 240) { if (x < W/2) leftWhite++; else rightWhite++; }
+
+					let leftInk = 0;
+					let rightInk = 0;
+					let totalInkWeight = 0;
+					let weightedXSum = 0;
+
+					for (let y = 0; y < H; y++) {
+						for (let x = 0; x < W; x++) {
+							const i = (y * W + x) * 4;
+							const a = data[i + 3];
+							if (a < 30) continue;
+
+							const r = data[i];
+							const g = data[i + 1];
+							const b = data[i + 2];
+							// Perceptual brightness
+							const brightness = (r * 0.299 + g * 0.587 + b * 0.114);
+
+							// Darker than canvas paper threshold (~232)
+							if (brightness < 232) {
+								const weight = (255 - brightness) * (a / 255);
+								totalInkWeight += weight;
+								weightedXSum += x * weight;
+
+								if (x < W * 0.45) {
+									leftInk += weight;
+								} else if (x > W * 0.55) {
+									rightInk += weight;
+								}
+							}
+						}
 					}
-					resolve(leftWhite > rightWhite ? 'left' : 'right');
-				} catch { resolve('right'); }
+
+					if (totalInkWeight > 80) {
+						const centroidRatio = (weightedXSum / totalInkWeight) / W;
+						// If the character's weight is predominantly on the left (< 48%), put text on the RIGHT
+						if (centroidRatio < 0.48) {
+							return resolve('right');
+						}
+						// If the character's weight is predominantly on the right (> 52%), put text on the LEFT
+						if (centroidRatio > 0.52) {
+							return resolve('left');
+						}
+						// If near center, compare ink in the outer margins: place text where there is less ink
+						return resolve(leftInk <= rightInk ? 'left' : 'right');
+					}
+
+					resolve('right');
+				} catch {
+					resolve('right');
+				}
 			};
 			img.onerror = () => resolve('right');
 			img.src = url;
@@ -564,7 +522,35 @@
 		if (!currentScene) return;
 		const next = (currentScene.textSide || currentScene.layoutSide) === 'left' ? 'right' : 'left';
 		const nextAlign = next === 'right' ? 'right' : 'left';
-		scenes = scenes.map((s, i) => i === activeSceneIndex ? { ...s, textSide: next, layoutSide: next, textAlign: nextAlign } : s);
+		scenes = scenes.map((s, i) => i === activeSceneIndex ? { ...s, textSide: next, layoutSide: next, textAlign: nextAlign, textOffsetX: 0, textOffsetY: 0 } : s);
+	}
+
+	async function autoAlignCurrentScene() {
+		if (!currentScene?.image) return;
+		const side = await detectEmptySide(currentScene.image);
+		const align = side === 'right' ? 'right' : 'left';
+		scenes = scenes.map((s, i) => i === activeSceneIndex ? { ...s, textSide: side, layoutSide: side, textAlign: align, textOffsetX: 0, textOffsetY: 0 } : s);
+	}
+
+	async function autoAlignAllScenes() {
+		if (!scenes || scenes.length === 0) return;
+		const updated = [];
+		for (const s of scenes) {
+			let side = s.textSide || 'right';
+			if (s.image) {
+				try { side = await detectEmptySide(s.image); } catch {}
+			}
+			const align = side === 'right' ? 'right' : 'left';
+			updated.push({
+				...s,
+				textSide: side,
+				layoutSide: side,
+				textAlign: align,
+				textOffsetX: 0,
+				textOffsetY: 0
+			});
+		}
+		scenes = updated;
 	}
 
 	function applyAnimToAll() {
@@ -686,12 +672,22 @@
 		showImagePicker = true;
 	}
 
-	function applyAssetToScene(asset) {
+	async function applyAssetToScene(asset) {
 		if (!currentScene) return;
+		let detectedSide = currentScene.textSide || 'right';
+		try {
+			detectedSide = await detectEmptySide(asset.url);
+		} catch {}
+		const autoAlign = detectedSide === 'right' ? 'right' : 'left';
 		scenes[activeSceneIndex] = {
 			...currentScene,
 			image: asset.url,
-			imageTitle: asset.title || asset.slug
+			imageTitle: asset.title || asset.slug,
+			textSide: detectedSide,
+			layoutSide: detectedSide,
+			textAlign: autoAlign,
+			textOffsetX: 0,
+			textOffsetY: 0
 		};
 		scenes = [...scenes];
 		showImagePicker = false;
@@ -701,12 +697,22 @@
 		const file = e.target?.files?.[0];
 		if (!file || !currentScene) return;
 		const reader = new FileReader();
-		reader.onload = (ev) => {
+		reader.onload = async (ev) => {
 			const dataUrl = ev.target.result;
+			let detectedSide = currentScene.textSide || 'right';
+			try {
+				detectedSide = await detectEmptySide(dataUrl);
+			} catch {}
+			const autoAlign = detectedSide === 'right' ? 'right' : 'left';
 			scenes[activeSceneIndex] = {
 				...currentScene,
 				image: dataUrl,
-				imageTitle: file.name.slice(0, 40)
+				imageTitle: file.name.slice(0, 40),
+				textSide: detectedSide,
+				layoutSide: detectedSide,
+				textAlign: autoAlign,
+				textOffsetX: 0,
+				textOffsetY: 0
 			};
 			scenes = [...scenes];
 			showImagePicker = false;
@@ -748,32 +754,16 @@
 				parsed = analyzeScript(script);
 				addGenLog('FALLBACK', `Parser lokal: ${parsed.length} adegan`, 'info');
 			} else addGenLog('DEEPSEEK', `AI: ${parsed.length} adegan`, 'success');
-			// High-retention pacing guarantee: maximum 16 words (~5-7.5s) per scene
-			const { splitSentenceIntoPacedSegments } = await import('$lib/services/scriptAnalyzer.js');
-			const pacedParsed = [];
-			for (const sc of parsed) {
-				const scWords = (sc.narration || '').split(/\s+/).filter(Boolean);
-				if (scWords.length > 16) {
-					const chunks = splitSentenceIntoPacedSegments(sc.narration, 15);
-					chunks.forEach((chunkText, cIdx) => {
-						pacedParsed.push({
-							...sc,
-							narration: chunkText,
-							visualQuery: sc.visualQuery || '',
-							key_point: cIdx === 0 ? (sc.key_point || sc.keyPoint || '') : chunkText.slice(0, 28),
-							chapter: cIdx === 0 ? sc.chapter : null
-						});
-					});
-				} else {
-					pacedParsed.push(sc);
-				}
-			}
-			parsed = pacedParsed;
 
+			// Natural pacing: preserve parsed scenes intact based on complete sentences & thoughts
 			genProgress.totalScenes = parsed.length;
 			genProgress.percent = 15;
 			const populated = [];
 			scenes = [];
+			// Track used image URLs so NO two scenes in the project share the same image
+			const usedAssetUrls = new Set();
+			let prevImageUrl = '';
+
 			for (let i = 0; i < parsed.length; i++) {
 				const sc = parsed[i];
 				genProgress.currentScene = i + 1;
@@ -781,15 +771,47 @@
 				genProgress.activeNarration = sc.narration || '';
 				genProgress.percent = Math.round(15 + (i / parsed.length) * 70);
 				addGenLog('SCENE', `Adegan ${i+1}/${parsed.length}: "${sc.visualQuery}"`, 'highlight');
-				let matchedAsset = availableAssets[i % (availableAssets.length || 1)];
+
+				// Intelligent Non-Duplicating Asset Picker:
+				// 1. If it's a continuation chunk (duration > 6s split), user wants a random DIFFERENT image!
+				// 2. If it's a new scene, find matching keyword assets that haven't been used yet.
+				// 3. Fallback: pick a RANDOM unused asset from all 586 stickman illustrations.
+				// 4. Strict guarantee: never use an image that equals prevImageUrl or is already used.
+				let matchedAsset = null;
 				if (availableAssets.length > 0) {
-					const qWords = (sc.visualQuery || '').toLowerCase().split(/\s+/);
-					const match = availableAssets.find(a => a.keywords.some(k => qWords.some(qw => qw.includes(k) || k.includes(qw))));
-					if (match) matchedAsset = match;
+					const isChunk = Boolean(sc.isContinuation);
+					const qWords = (sc.visualQuery || '').toLowerCase().split(/\s+/).filter(w => w.length > 2);
+
+					if (!isChunk && qWords.length > 0) {
+						const matchingUnused = availableAssets.filter(a =>
+							!usedAssetUrls.has(a.url) &&
+							a.url !== prevImageUrl &&
+							a.keywords?.some(k => qWords.some(qw => qw.includes(k) || k.includes(qw)))
+						);
+						if (matchingUnused.length > 0) {
+							// Randomize among matches so consecutive scenes with similar queries don't pick the same
+							matchedAsset = matchingUnused[Math.floor(Math.random() * matchingUnused.length)];
+						}
+					}
+
+					// Fallback: Random unused asset from the library (guarantees unique visuals and no duplicate scenes)
+					if (!matchedAsset) {
+						const unusedList = availableAssets.filter(a => !usedAssetUrls.has(a.url) && a.url !== prevImageUrl);
+						if (unusedList.length > 0) {
+							matchedAsset = unusedList[Math.floor(Math.random() * unusedList.length)];
+						} else {
+							// In case scenes count > total available assets, avoid adjacent repeats
+							const nonAdjacent = availableAssets.filter(a => a.url !== prevImageUrl);
+							matchedAsset = nonAdjacent[Math.floor(Math.random() * nonAdjacent.length)] || availableAssets[0];
+						}
+					}
 				}
+
 				if (matchedAsset) {
+					usedAssetUrls.add(matchedAsset.url);
+					prevImageUrl = matchedAsset.url;
 					genProgress.stats.localFootage++;
-					addGenLog('STICKMAN', `Gambar: ${matchedAsset.slug} (${matchedAsset.title.slice(0,50)})`, 'success');
+					addGenLog('STICKMAN', `Gambar unik: ${matchedAsset.slug} (${matchedAsset.title.slice(0, 45)})`, 'success');
 				}
 				let voiceData = null;
 				try {
@@ -832,18 +854,19 @@
 					imageAnim: stickmanImageAnim,
 					idleMotion: stickmanIdleMotion,
 					doodleType: stickmanDoodle,
-					sfxType: stickmanSfx,
+					sfxType: 'none',
 					textOffsetX: 0,
 					textOffsetY: 0,
 					textRotate: stickmanTextRotate,
 					textScale: stickmanTextScale,
-					voiceAudioUrl: voiceData?.audioUrl || null,
+					voiceAudioUrl: voiceData?.staticAudioUrl || voiceData?.audioUrl || null,
 					audioDuration: voiceData?.duration || 4,
 					wordTimings: voiceData?.wordTimings || []
 				});
 			}
 			scenes = populated;
 			activeSceneIndex = 0;
+			selectScene(0);
 			genProgress.percent = 100;
 			addGenLog('DONE', `Selesai! ${scenes.length} adegan siap (pacing visual 5-7 detik)`, 'success');
 			setTimeout(() => { isGenerating = false; }, 800);
@@ -855,47 +878,106 @@
 
 	let autoAdvancePlay = $state(true);
 
-	function onVoiceAudioEnded() {
+	function getActiveAudio() {
+		return activePlayerId === 'A' ? audioElA : audioElB;
+	}
+
+	function getInactiveAudio() {
+		return activePlayerId === 'A' ? audioElB : audioElA;
+	}
+
+	function preloadNextAudio() {
+		const nextScene = scenes[activeSceneIndex + 1];
+		const nextUrl = nextScene?.voiceAudioUrl;
+		const inactive = getInactiveAudio();
+		if (nextUrl && inactive) {
+			if (inactive.src !== nextUrl) {
+				inactive.src = nextUrl;
+			}
+			inactive.load();
+		}
+	}
+
+	function playActiveSceneAudio() {
+		if (!isPlaying || !currentScene?.voiceAudioUrl) return;
+		const curUrl = currentScene.voiceAudioUrl;
+		const active = getActiveAudio();
+		if (!active) return;
+
+		if (active.src !== curUrl) {
+			active.src = curUrl;
+			active.load();
+		}
+
+		const playPromise = active.play();
+		if (playPromise !== undefined) {
+			playPromise.catch(() => {
+				active.addEventListener('canplay', () => {
+					if (isPlaying) active.play().catch(() => {});
+				}, { once: true });
+			});
+		}
+
+		preloadNextAudio();
+	}
+
+	function onVoiceAudioEnded(fromPlayer) {
+		if (fromPlayer !== activePlayerId) return;
 		if (isPlaying && autoAdvancePlay && activeSceneIndex < scenes.length - 1) {
-			activeSceneIndex++;
-			// Brief event-loop tick so Svelte can update DOM & browser can exit ended state
+			// Natural 0.20s (200ms) breathing pause between scenes
 			setTimeout(() => {
-				playActiveSceneAudio();
-			}, 70);
+				if (!isPlaying) return;
+				activeSceneIndex++;
+				activePlayerId = activePlayerId === 'A' ? 'B' : 'A';
+
+				const newActive = getActiveAudio();
+				if (newActive && currentScene?.voiceAudioUrl) {
+					if (newActive.src !== currentScene.voiceAudioUrl) {
+						newActive.src = currentScene.voiceAudioUrl;
+						newActive.load();
+					}
+					const p = newActive.play();
+					if (p !== undefined) {
+						p.catch(() => {
+							newActive.addEventListener('canplay', () => {
+								if (isPlaying) newActive.play().catch(() => {});
+							}, { once: true });
+						});
+					}
+				}
+
+				// Preload subsequent scene into the now idle player
+				preloadNextAudio();
+			}, 200);
 		} else {
 			isPlaying = false;
 		}
 	}
 
-	function playActiveSceneAudio() {
-		if (!isPlaying || !currentScene?.voiceAudioUrl || !voiceAudioEl) return;
-		playSfxSample(currentScene?.sfxType || stickmanSfx);
-		const targetUrl = currentScene.voiceAudioUrl;
-
-		if (voiceAudioEl.src !== targetUrl) {
-			voiceAudioEl.src = targetUrl;
-		}
-
-		const playPromise = voiceAudioEl.play();
-		if (playPromise !== undefined) {
-			playPromise.catch(() => {
-				voiceAudioEl?.addEventListener('canplay', () => {
-					if (isPlaying) voiceAudioEl?.play().catch(() => {});
-				}, { once: true });
-			});
+	function selectScene(idx) {
+		if (idx < 0 || idx >= scenes.length) return;
+		activeSceneIndex = idx;
+		if (isPlaying) {
+			playActiveSceneAudio();
+		} else {
+			const active = getActiveAudio();
+			if (active && scenes[idx]?.voiceAudioUrl) {
+				active.src = scenes[idx].voiceAudioUrl;
+				active.load();
+			}
+			preloadNextAudio();
 		}
 	}
 
 	function togglePlay() {
 		if (!currentScene?.voiceAudioUrl) return;
-		if (isPlaying) { isPlaying = false; voiceAudioEl?.pause(); }
-		else {
+		if (isPlaying) {
+			isPlaying = false;
+			audioElA?.pause();
+			audioElB?.pause();
+		} else {
 			isPlaying = true;
-			playSfxSample(currentScene?.sfxType || stickmanSfx);
-			if (voiceAudioEl) {
-				if (voiceAudioEl.src !== currentScene.voiceAudioUrl) voiceAudioEl.src = currentScene.voiceAudioUrl;
-				voiceAudioEl.play().catch(()=>{});
-			}
+			playActiveSceneAudio();
 		}
 	}
 
@@ -906,7 +988,7 @@
 
 		const { splitSentenceIntoPacedSegments } = await import('$lib/services/scriptAnalyzer.js');
 		const midWords = Math.ceil(words.length / 2);
-		const parts = splitSentenceIntoPacedSegments(currentScene.narration, Math.max(6, midWords));
+		const parts = splitSentenceIntoPacedSegments(currentScene.narration, Math.max(5, midWords));
 		if (parts.length < 2) return;
 
 		const firstPart = parts[0];
@@ -915,9 +997,21 @@
 		currentScene.narration = firstPart;
 		currentScene.audioDuration = Math.max(3, Number((firstPart.split(/\s+/).length * 0.45).toFixed(1)));
 
-		const nextIdx = (activeSceneIndex + 1) % (availableAssets.length || 1);
-		const nextAsset = availableAssets[nextIdx] || availableAssets[0];
-		const nextTextSide = currentScene.textSide === 'right' ? 'left' : 'right';
+		// Find a unique random asset not currently used in scenes to guarantee different visuals
+		const usedImages = new Set(scenes.map(s => s.image).filter(Boolean));
+		const candidateAssets = availableAssets.filter(a => !usedImages.has(a.url) && a.url !== currentScene.image);
+		const nextAsset = candidateAssets.length > 0
+			? candidateAssets[Math.floor(Math.random() * candidateAssets.length)]
+			: availableAssets.filter(a => a.url !== currentScene.image)[Math.floor(Math.random() * (availableAssets.length - 1))] || availableAssets[0];
+
+		let nextTextSide = 'right';
+		if (nextAsset?.url) {
+			try {
+				nextTextSide = await detectEmptySide(nextAsset.url);
+			} catch {
+				nextTextSide = currentScene.textSide === 'right' ? 'left' : 'right';
+			}
+		}
 
 		const newScene = {
 			...currentScene,
@@ -931,6 +1025,8 @@
 			textSide: nextTextSide,
 			layoutSide: nextTextSide,
 			textAlign: nextTextSide === 'right' ? 'right' : 'left',
+			textOffsetX: 0,
+			textOffsetY: 0,
 			voiceAudioUrl: null,
 			audioDuration: Math.max(3, Number((secondPart.split(/\s+/).length * 0.45).toFixed(1)))
 		};
@@ -941,6 +1037,133 @@
 		// Trigger voiceover generation for both split scenes
 		regenerateVoiceoverForScene(activeSceneIndex);
 		regenerateVoiceoverForScene(activeSceneIndex + 1);
+	}
+
+	let isRandomizingDuplicates = $state(false);
+
+	async function randomizeDuplicateSceneImages() {
+		if (!scenes.length || isRandomizingDuplicates) return;
+		isRandomizingDuplicates = true;
+		try {
+			const seenImages = new Set();
+			let changedCount = 0;
+
+			for (let i = 0; i < scenes.length; i++) {
+				const sc = scenes[i];
+				const prevImg = i > 0 ? scenes[i - 1].image : '';
+				// Check if duplicate across project or identical to previous scene
+				if (!sc.image || seenImages.has(sc.image) || sc.image === prevImg) {
+					const unused = availableAssets.filter(a => !seenImages.has(a.url) && a.url !== prevImg && a.url !== sc.image);
+					const chosen = unused.length > 0
+						? unused[Math.floor(Math.random() * unused.length)]
+						: availableAssets.filter(a => a.url !== prevImg)[Math.floor(Math.random() * (availableAssets.length - 1))] || availableAssets[0];
+
+					if (chosen) {
+						sc.image = chosen.url;
+						sc.imageTitle = chosen.title;
+						try {
+							sc.textSide = await detectEmptySide(chosen.url);
+						} catch {
+							sc.textSide = sc.textSide === 'right' ? 'left' : 'right';
+						}
+						sc.layoutSide = sc.textSide;
+						sc.textAlign = sc.textSide === 'right' ? 'right' : 'left';
+						sc.textOffsetX = 0;
+						sc.textOffsetY = 0;
+						changedCount++;
+					}
+				}
+				if (sc.image) seenImages.add(sc.image);
+			}
+
+			scenes = [...scenes];
+			if (changedCount > 0) {
+				addGenLog('STICKMAN', `Berhasil mengganti ${changedCount} gambar adegan yang sama dengan gambar random unik!`, 'success');
+			} else {
+				addGenLog('INFO', 'Semua gambar adegan sudah unik (tidak ada gambar duplikat).', 'info');
+			}
+		} finally {
+			isRandomizingDuplicates = false;
+		}
+	}
+
+	let isAutoSplitting = $state(false);
+
+	async function autoSplitLongScenes() {
+		if (!scenes.length || isAutoSplitting || isGenerating) return;
+		isAutoSplitting = true;
+		try {
+			const { splitSentenceIntoPacedSegments } = await import('$lib/services/scriptAnalyzer.js');
+			const newScenes = [];
+			const usedImages = new Set(scenes.map(s => s.image).filter(Boolean));
+			let splitCount = 0;
+
+			for (let i = 0; i < scenes.length; i++) {
+				const sc = scenes[i];
+				const words = (sc.narration || '').split(/\s+/).filter(Boolean);
+				// Scene duration > 6.0s or > 13 words
+				if ((sc.audioDuration > 6.0 || words.length > 13) && words.length >= 6) {
+					const chunks = splitSentenceIntoPacedSegments(sc.narration, 12);
+					if (chunks.length > 1) {
+						splitCount++;
+						for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
+							const chunkText = chunks[cIdx];
+							if (cIdx === 0) {
+								sc.narration = chunkText;
+								sc.audioDuration = Math.max(3, Number((chunkText.split(/\s+/).length * 0.45).toFixed(1)));
+								newScenes.push(sc);
+							} else {
+								const candidate = availableAssets.filter(a => !usedImages.has(a.url) && a.url !== sc.image);
+								const chosen = candidate.length > 0
+									? candidate[Math.floor(Math.random() * candidate.length)]
+									: availableAssets[Math.floor(Math.random() * availableAssets.length)];
+								let side = 'right';
+								if (chosen?.url) {
+									usedImages.add(chosen.url);
+									try {
+										side = await detectEmptySide(chosen.url);
+									} catch {
+										side = sc.textSide === 'right' ? 'left' : 'right';
+									}
+								}
+								newScenes.push({
+									...sc,
+									id: `scene-split-${Date.now()}-${cIdx}`,
+									narration: chunkText,
+									keyPoint: chunkText.slice(0, 28),
+									chapter: null,
+									image: chosen ? chosen.url : sc.image,
+									imageTitle: chosen ? chosen.title : sc.imageTitle,
+									textSide: side,
+									layoutSide: side,
+									textAlign: side === 'right' ? 'right' : 'left',
+									textOffsetX: 0,
+									textOffsetY: 0,
+									voiceAudioUrl: null,
+									audioDuration: Math.max(3, Number((chunkText.split(/\s+/).length * 0.45).toFixed(1)))
+								});
+							}
+						}
+						continue;
+					}
+				}
+				newScenes.push(sc);
+			}
+
+			if (splitCount > 0) {
+				scenes = newScenes;
+				addGenLog('INFO', `Otomatis memotong ${splitCount} adegan berdurasi >6 detik dan mengganti dengan gambar random baru!`, 'success');
+				for (let j = 0; j < scenes.length; j++) {
+					if (!scenes[j].voiceAudioUrl) {
+						regenerateVoiceoverForScene(j);
+					}
+				}
+			} else {
+				addGenLog('INFO', 'Tidak ada adegan yang melebihi 6 detik.', 'info');
+			}
+		} finally {
+			isAutoSplitting = false;
+		}
 	}
 
 	async function startStickmanRender() {
@@ -1371,7 +1594,7 @@
 					<div class="monitor-meta">
 						{#if currentScene}
 							<span class="scene-counter-badge">Adegan {activeSceneIndex + 1} / {scenes.length}</span>
-							<span class="pacing-badge" title="Pacing retensi tinggi: visual berganti tiap 5-7 detik">⚡ Cut 6-8s</span>
+							<span class="pacing-badge" title="Transisi visual alami berdasarkan alur kalimat utuh">🌿 Natural Flow</span>
 							{#if currentScene.chapter}
 								<span class="scene-chapter-badge" class:hook-badge={currentScene.chapter.isHook}>
 									{currentScene.chapter.tag || 'BAB'}: {currentScene.chapter.title || ''}
@@ -1379,7 +1602,7 @@
 							{/if}
 						{:else}
 							<span class="aspect-badge">16:9 Full HD • 30 FPS</span>
-							<span class="pacing-badge">⚡ Auto-Cut 6-8s</span>
+							<span class="pacing-badge">🌿 Natural Flow</span>
 						{/if}
 					</div>
 				</div>
@@ -1388,8 +1611,6 @@
 					{@const _curAlign = currentScene.textAlign || stickmanTextAlign}
 					{@const _isMiddle = _curAlign === 'middle'}
 					{@const _effImgAnim = getEffectiveImageAnimClass(currentScene, activeSceneIndex)}
-					{@const _effDoodle = currentScene.doodleType || stickmanDoodle || 'none'}
-					{@const _effSide = currentScene.textSide || currentScene.layoutSide || 'right'}
 					<div bind:this={canvasEl} bind:clientHeight={canvasHeight} class="stickman-canvas">
 						<div class="canvas-viewport" style="inset: {stickmanVideoPadding}%;">
 							{#key `${currentScene.image}-${activeSceneIndex}-${currentScene.imageAnim || stickmanImageAnim}-${currentScene.idleMotion || stickmanIdleMotion}-${currentScene.textSide}`}
@@ -1401,50 +1622,12 @@
 								</div>
 							{/key}
 							<div
-								class="text-overlay {(currentScene.textSide || currentScene.layoutSide)} anim-{(currentScene.textAnim || stickmanAnim)} align-{_curAlign} doodle-mode-{_effDoodle} side-{_effSide}"
+								class="text-overlay {(currentScene.textSide || currentScene.layoutSide)} anim-{(currentScene.textAnim || stickmanAnim)} align-{_curAlign}"
 								style="{getOverlayStyle(currentScene)} cursor: {drag.active ? 'grabbing' : 'grab'};"
 								onpointerdown={onTextPointerDown}
 								role="presentation"
 								title="Drag untuk geser — klik textarea di bawah untuk edit bebas (Enter = baris baru)"
 							>
-								{#if _effDoodle === 'speech-bubble'}
-									<img
-										class="doodle-preview doodle-bubble-bg side-{_effSide}"
-										src="/stickman/doodles/speech-bubble-{_effSide}.png"
-										alt="balon kata"
-									/>
-								{:else if _effDoodle === 'thought-bubble'}
-									<img
-										class="doodle-preview doodle-bubble-bg side-{_effSide}"
-										src="/stickman/doodles/thought-bubble-{_effSide}.png"
-										alt="balon pikiran"
-									/>
-								{:else if _effDoodle === 'circle-highlight'}
-									<img
-										class="doodle-preview doodle-highlight-bg"
-										src="/stickman/doodles/circle-highlight.png"
-										alt="lingkaran sorot"
-									/>
-								{:else if _effDoodle === 'arrow-curved'}
-									<img
-										class="doodle-preview doodle-arrow-accent side-{_effSide}"
-										src="/stickman/doodles/arrow-curved.png"
-										alt="panah coretan"
-									/>
-								{:else if _effDoodle === 'idea-bulb'}
-									<img
-										class="doodle-preview doodle-icon-accent side-{_effSide}"
-										src="/stickman/doodles/idea-bulb.png"
-										alt="lampu ide"
-									/>
-								{:else if _effDoodle === 'question-mark'}
-									<img
-										class="doodle-preview doodle-icon-accent side-{_effSide}"
-										src="/stickman/doodles/question-mark.png"
-										alt="tanda tanya"
-									/>
-								{/if}
-
 								<div class="two-lines free-mode text-idle-{(currentScene?.textIdleMotion || stickmanTextIdleMotion || 'shake')}" style="font-family: {stickmanFontFamily}; align-items: {_curAlign === 'right' ? 'flex-end' : _curAlign === 'center' || _curAlign === 'middle' ? 'center' : 'flex-start'}; text-align: {_curAlign === 'right' ? 'right' : _curAlign === 'center' || _curAlign === 'middle' ? 'center' : 'left'};">
 									{#each getEditorLines(currentScene.keyPoint) as line, idx}
 										{@const isTop = idx === 0}
@@ -1456,6 +1639,14 @@
 							<button class="flip-btn" onclick={flipCurrentTextSide} title="Pindah teks ke sisi lain">
 								<span>↔</span> Flip teks
 							</button>
+							<button class="auto-align-btn" onclick={autoAlignCurrentScene} title="Deteksi otomatis posisi gambar agar teks tidak menumpuk">
+								<span>🎯</span> Auto Posisi
+							</button>
+							<div class="canvas-fs-pill" title="Ubah Ukuran Huruf Langsung di Layar">
+								<button type="button" class="c-fs-btn" onclick={() => changeFontSize(-4)} title="Perkecil Ukuran Huruf (A-)">A-</button>
+								<span class="c-fs-val">{currentScene?.fontSize || stickmanFontSize}px</span>
+								<button type="button" class="c-fs-btn" onclick={() => changeFontSize(4)} title="Perbesar Ukuran Huruf (A+)">A+</button>
+							</div>
 							<button class="change-img-btn" onclick={openImagePicker} title="Ganti gambar adegan ini">
 								<span>🖼️</span> Ganti Gambar
 							</button>
@@ -1485,7 +1676,7 @@
 					<div class="slide-nav">
 						<button
 							class="slide-nav-btn"
-							onclick={() => { if (activeSceneIndex > 0) activeSceneIndex -= 1; }}
+							onclick={() => { if (activeSceneIndex > 0) selectScene(activeSceneIndex - 1); }}
 							disabled={activeSceneIndex === 0}
 							title="Adegan sebelumnya"
 						>&#8592;</button>
@@ -1495,7 +1686,7 @@
 								<button
 									class="slide-dot"
 									class:active={i === activeSceneIndex}
-									onclick={() => activeSceneIndex = i}
+									onclick={() => selectScene(i)}
 									title="Adegan {i + 1}"
 								></button>
 							{/each}
@@ -1505,7 +1696,7 @@
 
 						<button
 							class="slide-nav-btn"
-							onclick={() => { if (activeSceneIndex < scenes.length - 1) activeSceneIndex += 1; }}
+							onclick={() => { if (activeSceneIndex < scenes.length - 1) selectScene(activeSceneIndex + 1); }}
 							disabled={activeSceneIndex === scenes.length - 1}
 							title="Adegan berikutnya"
 						>&#8594;</button>
@@ -1528,7 +1719,7 @@
 										class:active={i === activeSceneIndex}
 										class:has-chapter={!!sc.chapter}
 										class:is-hook={sc.chapter?.isHook}
-										onclick={() => activeSceneIndex = i}
+										onclick={() => selectScene(i)}
 										title="Adegan {i + 1}{sc.chapter ? ': ' + (sc.chapter.title || '') : ''}"
 									>
 										{#if sc.image}
@@ -1553,11 +1744,14 @@
 						{#if isPlaying}<Pause size={16} />{:else}<Play size={16} />{/if}
 						<span>{isPlaying ? 'Pause' : 'Play Narasi'}</span>
 					</button>
-					<button class="ctrl-btn" onclick={() => { if (scenes.length) activeSceneIndex = (activeSceneIndex + 1) % scenes.length; }}>
+					<button class="ctrl-btn" onclick={() => { if (scenes.length) selectScene((activeSceneIndex + 1) % scenes.length); }}>
 						<span>Next →</span>
 					</button>
 					<button class="ctrl-btn" onclick={flipCurrentTextSide} title="Pindah teks ke sisi kosong lain">
 						<span>↔ Flip Sisi</span>
+					</button>
+					<button class="ctrl-btn" onclick={autoAlignCurrentScene} title="Deteksi otomatis posisi kosong gambar adegan ini">
+						<span>🎯 Auto Sisi</span>
 					</button>
 					<button
 						type="button"
@@ -1567,6 +1761,15 @@
 						title="Bagi adegan ini jadi 2 adegan (durasi 5-7 detik) agar gambar berganti lebih cepat"
 					>
 						<span>✂️ Split Adegan</span>
+					</button>
+					<button
+						type="button"
+						class="ctrl-btn btn-random-dup"
+						onclick={randomizeDuplicateSceneImages}
+						disabled={isRandomizingDuplicates || !scenes.length}
+						title="Ganti semua adegan yang menggunakan gambar sama dengan gambar random unik"
+					>
+						<span>🎲 {isRandomizingDuplicates ? 'Mengacak...' : 'Ganti Gambar Duplikat'}</span>
 					</button>
 					<button
 						type="button"
@@ -1587,9 +1790,15 @@
 						<Mic size={14} />
 						<span>{isRegeneratingVoice ? 'Memproses...' : '🎙️ Suara'}</span>
 					</button>
+					<div class="quick-fs-control" title="Ubah ukuran huruf adegan ini">
+						<button type="button" class="ctrl-btn quick-fs-btn" onclick={() => changeFontSize(-4)} title="Perkecil huruf (A-)">A-</button>
+						<span class="quick-fs-val">{currentScene?.fontSize || stickmanFontSize}px</span>
+						<button type="button" class="ctrl-btn quick-fs-btn" onclick={() => changeFontSize(4)} title="Perbesar huruf (A+)">A+</button>
+					</div>
 					<span class="hint">Auto: {(currentScene?.textSide || currentScene?.layoutSide) === 'left' ? 'kiri' : 'kanan'}</span>
 				</div>
-				<audio bind:this={voiceAudioEl} src={currentScene?.voiceAudioUrl || ''} onended={onVoiceAudioEnded}></audio>
+				<audio bind:this={audioElA} preload="auto" onended={() => onVoiceAudioEnded('A')}></audio>
+				<audio bind:this={audioElB} preload="auto" onended={() => onVoiceAudioEnded('B')}></audio>
 
 				{#if currentScene}
 					<div class="free-editor">
@@ -1602,7 +1811,10 @@
 				<div class="scene-style-cards">
 					<!-- Typography Card -->
 					<div class="style-card">
-						<div class="style-card-title">✏️ Tipografi & Warna Teks</div>
+						<div class="style-card-title">
+							<span>✏️ Tipografi & Warna Teks</span>
+							<button type="button" class="transform-btn auto-all-btn" onclick={autoAlignAllScenes} title="Deteksi otomatis posisi kosong semua gambar agar teks tidak menumpuk">🎯 Auto Posisi Semua Scene</button>
+						</div>
 						<div class="style-card-content">
 							<div class="style-row">
 								<span class="style-label">Rata:</span>
@@ -1637,19 +1849,45 @@
 								</div>
 							</div>
 
+							<div class="style-row font-size-control-group">
+								<div class="fs-header-row">
+									<span class="style-label fs-main-label">🔤 Ukuran Huruf: <strong class="fs-badge">{currentScene?.fontSize || stickmanFontSize}px</strong></span>
+									<button type="button" class="transform-btn fs-apply-all-btn" onclick={applyFontSizeToAll} title="Terapkan ukuran font ke semua scene">Terapkan ke Semua Scene</button>
+								</div>
+
+								<div class="fs-slider-row">
+									<button type="button" class="fs-step-btn" onclick={() => changeFontSize(-4)} title="Perkecil (-4px)">➖</button>
+									<input
+										type="range"
+										min="24"
+										max="120"
+										step="2"
+										value={currentScene?.fontSize || stickmanFontSize}
+										oninput={(e) => setSceneFontSize(Number(e.currentTarget.value))}
+										class="size-range fs-slider"
+									/>
+									<button type="button" class="fs-step-btn" onclick={() => changeFontSize(4)} title="Perbesar (+4px)">➕</button>
+								</div>
+
+								<div class="fs-presets-row">
+									<span class="fs-preset-label">Pilihan Cepat:</span>
+									<div class="fs-presets-list">
+										{#each FONT_SIZE_PRESETS as p}
+											<button
+												type="button"
+												class="fs-preset-pill"
+												class:on={Math.abs((currentScene?.fontSize || stickmanFontSize) - p.val) <= 3}
+												onclick={() => setSceneFontSize(p.val)}
+											>
+												{p.label}
+											</button>
+										{/each}
+									</div>
+								</div>
+							</div>
+
 							<div class="style-row">
-								<span class="style-label">Ukuran {currentScene?.fontSize || stickmanFontSize}px:</span>
-								<input
-									type="range"
-									min="24"
-									max="96"
-									step="2"
-									value={currentScene?.fontSize || stickmanFontSize}
-									oninput={(e) => setSceneFontSize(Number(e.currentTarget.value))}
-									class="size-range"
-								/>
-								<button class="transform-btn" onclick={applyFontSizeToAll} title="Terapkan ukuran font ke semua scene">Semua</button>
-								<span class="style-label font-label">Font:</span>
+								<span class="style-label font-label">Jenis Font:</span>
 								<select bind:value={stickmanFontFamily} class="font-select">
 									{#each FONT_OPTIONS as f}<option value={f.value}>{f.label}</option>{/each}
 								</select>
@@ -1659,7 +1897,7 @@
 
 					<!-- Animation & Effects Card -->
 					<div class="style-card">
-						<div class="style-card-title">🎬 Animasi, SFX & Safe Area</div>
+						<div class="style-card-title">🎬 Animasi & Safe Area</div>
 						<div class="style-card-content">
 							<div class="style-row">
 								<span class="style-label">Masuk Teks:</span>
@@ -1679,67 +1917,6 @@
 									{/each}
 								</div>
 								<button class="transform-btn" onclick={applyIdleMotionToAll} title="Terapkan ke semua scene">Semua</button>
-							</div>
-
-							<div class="style-row">
-								<span class="style-label">Balon & Coretan:</span>
-								<div class="anim-pills">
-									{#each DOODLE_OPTIONS as dOpt}
-										<button
-											type="button"
-											class="anim-pill"
-											class:on={(currentScene?.doodleType || stickmanDoodle) === dOpt.id}
-											onclick={() => currentScene ? setSceneDoodle(dOpt.id) : (stickmanDoodle = dOpt.id)}
-										>
-											{dOpt.label}
-										</button>
-									{/each}
-								</div>
-								<button class="transform-btn" onclick={applyDoodleToAll} title="Terapkan balon/coretan ke semua scene">Semua</button>
-							</div>
-
-							<div class="style-row">
-								<span class="style-label">Audio SFX:</span>
-								<div class="anim-pills">
-									{#each SFX_OPTIONS as sOpt}
-										<button
-											type="button"
-											class="anim-pill"
-											class:on={(currentScene?.sfxType || stickmanSfx) === sOpt.id}
-											onclick={() => currentScene ? setSceneSfx(sOpt.id) : (stickmanSfx = sOpt.id, playSfxSample(sOpt.id))}
-											title="Klik untuk dengar preview suara"
-										>
-											{sOpt.label}
-										</button>
-									{/each}
-									{#each customSfxList as cOpt}
-										<button
-											type="button"
-											class="anim-pill custom-sfx-pill"
-											class:on={(currentScene?.sfxType || stickmanSfx) === cOpt.id}
-											onclick={() => currentScene ? setSceneSfx(cOpt.id) : (stickmanSfx = cOpt.id, playSfxSample(cOpt.id))}
-											title="Custom SFX Uploaded"
-										>
-											{cOpt.label}
-										</button>
-									{/each}
-									<button
-										type="button"
-										class="anim-pill upload-sfx-pill"
-										onclick={() => customFileInputEl?.click()}
-										title="Upload file audio SFX kustom (.mp3, .wav)"
-									>
-										📁 + Upload SFX
-									</button>
-									<input
-										bind:this={customFileInputEl}
-										type="file"
-										accept="audio/mp3,audio/wav,audio/mpeg"
-										style="display: none;"
-										onchange={handleCustomSfxUpload}
-									/>
-								</div>
-								<button class="transform-btn" onclick={applySfxToAll} title="Terapkan audio SFX ke semua scene">Semua</button>
 							</div>
 
 							<div class="style-row">
@@ -3547,69 +3724,198 @@
 	@keyframes stickImgZoomIn { 0% { transform: scale(1); } 100% { transform: scale(1.08); } }
 	@keyframes stickImgPop { 0% { transform: scale(0.82); opacity: 0.4; } 100% { transform: scale(1); opacity: 1; } }
 	@keyframes stickImgFade { 0% { opacity: 0; } 100% { opacity: 1; } }
-		.text-overlay { position: absolute; width: 34%; display: inline-flex; flex-direction: column; touch-action: none; user-select: none; overflow: visible; }
-		.text-overlay.align-middle { width: 66%; }
+		.text-overlay { position: absolute; width: 32%; max-width: 34%; display: inline-flex; flex-direction: column; touch-action: none; user-select: none; overflow: visible; }
+		.text-overlay.align-middle { width: 56%; max-width: 60%; }
 		.text-overlay.align-center { text-align: center; }
 		.text-overlay.align-right { text-align: right; }
 		.text-overlay.align-left { text-align: left; }
-		.doodle-preview { pointer-events: none; user-select: none; }
-		.doodle-bubble-bg {
-			position: absolute;
-			inset: -14px -18px -36px -18px;
-			width: calc(100% + 36px);
-			height: calc(100% + 50px);
-			object-fit: fill;
-			z-index: 0;
-			filter: drop-shadow(0 4px 14px rgba(0,0,0,0.12));
-		}
-		.doodle-bubble-bg.side-right {
-			inset: -14px -16px -38px -26px;
-			width: calc(100% + 42px);
-			height: calc(100% + 52px);
-		}
-		.doodle-bubble-bg.side-left {
-			inset: -14px -26px -38px -16px;
-			width: calc(100% + 42px);
-			height: calc(100% + 52px);
-		}
-		.doodle-circle-bg {
-			position: absolute;
-			inset: -18px -26px;
-			width: calc(100% + 52px);
-			height: calc(100% + 36px);
-			object-fit: fill;
-			z-index: 0;
-		}
-		.doodle-arrow {
-			position: absolute;
-			width: 140px;
-			top: 50%;
-			transform: translateY(-50%);
-			z-index: 2;
-			filter: drop-shadow(0 2px 8px rgba(220,38,38,0.25));
-		}
-		.doodle-arrow.side-left { right: -130px; }
-		.doodle-arrow.side-right { left: -130px; }
-		.doodle-bulb {
-			position: absolute;
-			width: 62px;
-			top: -58px;
-			z-index: 2;
-			animation: stickIdleBreathe 2.4s ease-in-out infinite alternate;
-			filter: drop-shadow(0 2px 10px rgba(251,191,36,0.35));
-		}
-		.doodle-bulb.side-left { right: 15px; }
-		.doodle-bulb.side-right { left: 15px; }
-		.doodle-question {
-			position: absolute;
-			width: 66px;
-			top: -52px;
-			z-index: 2;
-			animation: stickIdleShake 2s ease-in-out infinite alternate;
-			filter: drop-shadow(0 2px 8px rgba(220,38,38,0.25));
-		}
-		.doodle-question.side-left { right: 15px; }
-		.doodle-question.side-right { left: 15px; }
+	/* Canvas Font Size Stepper Pill */
+	.canvas-fs-pill {
+		position: absolute;
+		bottom: 8px;
+		left: 178px;
+		z-index: 12;
+		background: rgba(15, 23, 42, 0.88);
+		border: 1px solid rgba(255, 255, 255, 0.22);
+		border-radius: 8px;
+		display: inline-flex;
+		align-items: center;
+		padding: 2px 4px;
+		backdrop-filter: blur(6px);
+		gap: 3px;
+	}
+	.c-fs-btn {
+		background: rgba(255, 255, 255, 0.1);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		color: #e2e8f0;
+		font-size: 0.7rem;
+		font-weight: 700;
+		padding: 2px 6px;
+		border-radius: 5px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.c-fs-btn:hover {
+		background: #6366f1;
+		color: #ffffff;
+		border-color: #818cf8;
+	}
+	.c-fs-val {
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: #fde68a;
+		min-width: 38px;
+		text-align: center;
+	}
+
+	/* Player Bar Quick Font Stepper */
+	.quick-fs-control {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		background: rgba(15, 23, 42, 0.7);
+		border: 1px solid var(--line);
+		border-radius: var(--r-md);
+		padding: 3px 6px;
+	}
+	.quick-fs-btn {
+		padding: 3px 8px !important;
+		font-size: 0.75rem !important;
+		font-weight: 700 !important;
+		background: rgba(255, 255, 255, 0.08) !important;
+		border: 1px solid rgba(255, 255, 255, 0.15) !important;
+	}
+	.quick-fs-btn:hover {
+		background: #6366f1 !important;
+		color: #ffffff !important;
+	}
+	.quick-fs-val {
+		font-size: 0.78rem;
+		font-weight: 700;
+		color: #fde68a;
+		padding: 0 4px;
+		min-width: 36px;
+		text-align: center;
+	}
+
+	/* Typography Card Font Size Controller */
+	.font-size-control-group {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		background: rgba(15, 23, 42, 0.5);
+		border: 1px solid rgba(255, 255, 255, 0.07);
+		border-radius: var(--r-md);
+		padding: 10px 12px;
+		width: 100%;
+		box-sizing: border-box;
+	}
+	.fs-header-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+	}
+	.fs-main-label {
+		font-size: 0.85rem;
+		color: #f1f5f9;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.fs-badge {
+		background: rgba(99, 102, 241, 0.2);
+		border: 1px solid rgba(99, 102, 241, 0.45);
+		color: #a5b4fc;
+		padding: 2px 8px;
+		border-radius: 999px;
+		font-size: 0.82rem;
+		font-weight: 800;
+	}
+	.fs-apply-all-btn {
+		background: rgba(99, 102, 241, 0.15) !important;
+		border-color: rgba(99, 102, 241, 0.4) !important;
+		color: #c7d2fe !important;
+		font-size: 0.72rem !important;
+		padding: 4px 10px !important;
+	}
+	.fs-apply-all-btn:hover {
+		background: #6366f1 !important;
+		color: #ffffff !important;
+	}
+	.fs-slider-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		width: 100%;
+	}
+	.fs-step-btn {
+		background: rgba(255, 255, 255, 0.08);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		color: #f1f5f9;
+		font-size: 0.76rem;
+		font-weight: 700;
+		width: 30px;
+		height: 30px;
+		border-radius: 8px;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.15s ease;
+		flex-shrink: 0;
+	}
+	.fs-step-btn:hover {
+		background: #6366f1;
+		border-color: #818cf8;
+		transform: scale(1.08);
+	}
+	.fs-slider {
+		flex: 1;
+		accent-color: var(--primary);
+		height: 6px;
+		cursor: pointer;
+	}
+	.fs-presets-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+	.fs-preset-label {
+		font-size: 0.72rem;
+		color: var(--text-3);
+		font-weight: 600;
+	}
+	.fs-presets-list {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+	.fs-preset-pill {
+		font-size: 0.72rem;
+		font-weight: 600;
+		padding: 3px 9px;
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		color: var(--text-2);
+		cursor: pointer;
+		transition: all 0.14s ease;
+	}
+	.fs-preset-pill:hover {
+		background: rgba(99, 102, 241, 0.25);
+		border-color: rgba(99, 102, 241, 0.5);
+		color: #ffffff;
+		transform: translateY(-1px);
+	}
+	.fs-preset-pill.on {
+		background: #6366f1;
+		border-color: #818cf8;
+		color: #ffffff;
+		font-weight: 700;
+		box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+	}
 	.transform-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 	.transform-btn {
 		font-size: 0.68rem;
@@ -3634,23 +3940,10 @@
 	.slider-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 	.range-input { width: 120px; accent-color: var(--primary); }
 	.point-only-text { margin: 0; font-weight: 800; line-height: 1.18; letter-spacing: 0.01em; overflow-wrap: break-word; filter: blur(0.2px) contrast(1.04); }
-	.two-lines { position: relative; z-index: 1; display: flex; flex-direction: column; line-height: 1.04; gap: 2px; padding: 6px 10px; width: 100%; box-sizing: border-box; overflow: visible; }
-	.two-lines .line { white-space: nowrap; overflow: visible; }
-	.doodle-mode-speech-bubble .two-lines,
-	.doodle-mode-thought-bubble .two-lines {
-		padding: 14px 20px 24px 20px;
-		min-width: 140px;
-	}
-	.doodle-mode-speech-bubble.side-right .two-lines,
-	.doodle-mode-thought-bubble.side-right .two-lines {
-		padding: 14px 16px 26px 26px;
-	}
-	.doodle-mode-speech-bubble.side-left .two-lines,
-	.doodle-mode-thought-bubble.side-left .two-lines {
-		padding: 14px 26px 26px 16px;
-	}
-	.two-lines .line { display: block; font-weight: 700; -webkit-text-stroke: 0.6px currentColor; letter-spacing: 0.01em; white-space: pre-wrap; overflow-wrap: break-word; }
-	.line1, .line2 { display: block; font-weight: 900; letter-spacing: 0.01em; white-space: nowrap; }
+	.two-lines { position: relative; z-index: 1; display: flex; flex-direction: column; line-height: 1.15; gap: 3px; padding: 6px 10px; width: 100%; max-width: 100%; box-sizing: border-box; overflow: visible; }
+	.two-lines .line { display: block; font-weight: 700; -webkit-text-stroke: 0.6px currentColor; letter-spacing: 0.01em; white-space: normal; overflow-wrap: break-word; word-break: break-word; max-width: 100%; }
+
+	.line1, .line2 { display: block; font-weight: 900; letter-spacing: 0.01em; white-space: normal; overflow-wrap: break-word; word-break: break-word; }
 	.point-only-input { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); font-weight: 600; background: rgba(255,255,255,0.92); border: 1px solid var(--line); padding: 4px 8px; border-radius: 999px; min-width: 140px; max-width: 70%; text-align: center; font-size: 0.78rem; color: #111827; outline: none; z-index: 4; }
 	.free-editor { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--r-md); }
 	.free-textarea { width: 100%; min-height: 76px; background: var(--bg-surface); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 0.85rem; line-height: 1.45; resize: vertical; outline: none; }
@@ -3685,7 +3978,65 @@
 	@keyframes stickSlideInRight { 0%{transform:translateX(18px);opacity:0} 100%{transform:none;opacity:1} }
 	@keyframes stickFade { 0%{opacity:0;filter:blur(6px)} 100%{opacity:1;filter:none} }
 	@keyframes stickType { 0%{width:0} 100%{width:100%} }
-	.flip-btn { position: absolute; bottom: 10px; right: 10px; z-index: 3; font-size: 0.72rem; padding: 5px 8px; border-radius: 999px; background: rgba(0,0,0,0.55); color: #fff; border: 1px solid rgba(255,255,255,0.2); }
+	.flip-btn {
+		position: absolute;
+		bottom: 8px;
+		left: 8px;
+		z-index: 12;
+		font-size: 0.72rem;
+		font-weight: 600;
+		padding: 4px 10px;
+		border-radius: 8px;
+		background: rgba(0, 0, 0, 0.62);
+		color: #e2e8f0;
+		border: 1px solid rgba(255, 255, 255, 0.22);
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		backdrop-filter: blur(6px);
+		transition: all 0.16s ease;
+	}
+	.flip-btn:hover {
+		background: rgba(99, 102, 241, 0.7);
+		border-color: #6366f1;
+		color: #fff;
+		transform: translateY(-1px);
+	}
+	.auto-align-btn {
+		position: absolute;
+		bottom: 8px;
+		left: 86px;
+		z-index: 12;
+		font-size: 0.72rem;
+		font-weight: 700;
+		padding: 4px 10px;
+		border-radius: 8px;
+		background: rgba(15, 23, 42, 0.85);
+		color: #c7d2fe;
+		border: 1px solid rgba(99, 102, 241, 0.45);
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		backdrop-filter: blur(6px);
+		transition: all 0.16s ease;
+	}
+	.auto-align-btn:hover {
+		background: rgba(99, 102, 241, 0.35);
+		border-color: #818cf8;
+		color: #ffffff;
+		transform: translateY(-1px);
+	}
+	.auto-all-btn {
+		background: rgba(99, 102, 241, 0.15) !important;
+		border-color: rgba(99, 102, 241, 0.45) !important;
+		color: #c7d2fe !important;
+	}
+	.auto-all-btn:hover {
+		background: rgba(99, 102, 241, 0.35) !important;
+		color: #ffffff !important;
+	}
 	.player-controls { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
 	.ctrl-btn { padding: 7px 12px; background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--r-md); color: var(--text); display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; font-weight: 500; cursor: pointer; transition: all 0.16s ease; }
 	.ctrl-btn:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -3698,6 +4049,30 @@
 	.btn-split-scene:hover:not(:disabled) {
 		background: rgba(245, 158, 11, 0.28) !important;
 		border-color: #f59e0b !important;
+		color: #ffffff !important;
+		transform: translateY(-1px);
+	}
+	.btn-random-dup {
+		background: rgba(168, 85, 247, 0.14) !important;
+		border-color: rgba(168, 85, 247, 0.4) !important;
+		color: #e9d5ff !important;
+		font-weight: 600 !important;
+	}
+	.btn-random-dup:hover:not(:disabled) {
+		background: rgba(168, 85, 247, 0.28) !important;
+		border-color: #a855f7 !important;
+		color: #ffffff !important;
+		transform: translateY(-1px);
+	}
+	.btn-autosplit-all {
+		background: rgba(236, 72, 153, 0.14) !important;
+		border-color: rgba(236, 72, 153, 0.4) !important;
+		color: #fbcfe8 !important;
+		font-weight: 600 !important;
+	}
+	.btn-autosplit-all:hover:not(:disabled) {
+		background: rgba(236, 72, 153, 0.28) !important;
+		border-color: #ec4899 !important;
 		color: #ffffff !important;
 		transform: translateY(-1px);
 	}

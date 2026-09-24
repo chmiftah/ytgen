@@ -40,7 +40,7 @@
 		{ id: 'curiosity_gap', icon: '🪝', label: 'Curiosity Gap', desc: 'Bongkar paradoks atau fakta yang menentang logika umum' },
 		{ id: 'relatable_pain', icon: '🧠', label: 'Relatable Pain', desc: 'Membahas keresahan nyata: prokrastinasi & lelah mental' },
 		{ id: 'story_twist', icon: '📈', label: 'Story & Twist', desc: 'Studi kasus nyata dengan dinamika naik-turun dan kejutan' },
-		{ id: 'mind_bending', icon: '🤯', label: 'Analogi Gila', desc: 'Konsep rumit dipecah jadi perumpamaan stickman visual' }
+		{ id: 'mind_bending', icon: '🤯', label: 'Analogi Gila', desc: 'Konsep rumit dipecah jadi perumpamaan visual sehari-hari' }
 	];
 
 	const VIRAL_IDEAS = [
