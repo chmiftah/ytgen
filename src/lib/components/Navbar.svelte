@@ -21,6 +21,13 @@
 		</div>
 	</div>
 
+	<div class="nav-studios">
+		<a href="/studio" class="studio-pill active">🎬 Cinematic</a>
+		<a href="/stickman-studio" class="studio-pill">🎨 Stickman</a>
+		<a href="/docu-studio" class="studio-pill">📰 Docu-Style</a>
+		<a href="/typography-studio" class="studio-pill">⚡ Dan Koe</a>
+	</div>
+
 	<div class="nav-right">
 		{#if onOpenTitleGenerator}
 			<button class="btn btn-sm nav-btn" onclick={onOpenTitleGenerator}>
@@ -120,6 +127,34 @@
 		height: 6px;
 		border-radius: 50%;
 		background: var(--success);
+	}
+
+	.nav-studios {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		background: var(--bg-card);
+		padding: 3px 6px;
+		border-radius: var(--r-full, 999px);
+		border: 1px solid var(--line);
+	}
+
+	.studio-pill {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--text-2);
+		text-decoration: none;
+		padding: 4px 10px;
+		border-radius: var(--r-full, 999px);
+		transition: all 0.2s;
+	}
+	.studio-pill:hover {
+		color: var(--text);
+		background: var(--bg-card-hover);
+	}
+	.studio-pill.active {
+		color: #ffffff;
+		background: var(--primary, #3b82f6);
 	}
 
 	.nav-right {

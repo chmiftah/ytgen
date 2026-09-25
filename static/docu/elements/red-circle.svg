@@ -1,0 +1,21 @@
+<svg width="440" height="320" viewBox="0 0 440 320" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="wax-pencil">
+      <feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="3" result="noise" />
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="4" />
+    </filter>
+  </defs>
+  <!-- Hand-drawn investigation clue circle (double loop) -->
+  <path d="M 90 150 
+           C 85 80, 200 45, 330 65 
+           C 410 80, 420 220, 310 270 
+           C 180 310, 60 270, 75 160 
+           C 90 60, 230 40, 360 70 
+           C 425 100, 420 230, 280 265" 
+        fill="none" 
+        stroke="#DC2626" 
+        stroke-width="6" 
+        stroke-linecap="round" 
+        stroke-dasharray="1400" 
+        filter="url(#wax-pencil)" />
+</svg>

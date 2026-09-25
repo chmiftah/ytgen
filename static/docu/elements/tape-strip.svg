@@ -1,0 +1,14 @@
+<svg width="320" height="90" viewBox="0 0 320 90" xmlns="http://www.w3.org/2000/svg">
+  <!-- Translucent aged scotch tape with serrated ripped edges -->
+  <path d="M 8 18 
+           L 18 12 L 28 16 L 38 10 L 48 14 L 305 12
+           L 314 26 L 308 42 L 316 62 L 306 78
+           L 295 76 L 280 80 L 265 74 L 18 78
+           L 10 65 L 16 50 L 8 36 Z" 
+        fill="#fef08a" 
+        fill-opacity="0.65" 
+        stroke="#eab308" 
+        stroke-opacity="0.3" 
+        stroke-width="1.5" />
+  <rect x="25" y="24" width="270" height="42" fill="#ffffff" fill-opacity="0.15" />
+</svg>

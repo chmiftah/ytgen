@@ -3,19 +3,22 @@ import path from 'path';
 import { spawn } from 'child_process';
 import ffmpegPath from 'ffmpeg-static';
 
-function runFFmpeg(args, timeoutMs = 180000) {
+function runFFmpeg(args, timeoutMs = 300000) {
 	return new Promise((resolve, reject) => {
 		const proc = spawn(ffmpegPath || 'ffmpeg', args);
 		let stderr = '';
 		proc.stderr.on('data', (d) => { stderr += d.toString(); });
-		const timer = setTimeout(() => { proc.kill('SIGKILL'); reject(new Error('FFmpeg timeout')); }, timeoutMs);
+		const timer = setTimeout(() => {
+			proc.kill('SIGKILL');
+			reject(new Error(`FFmpeg timeout after ${Math.round(timeoutMs / 1000)}s`));
+		}, timeoutMs);
 		proc.on('close', (code) => { clearTimeout(timer); if (code === 0) resolve(); else reject(new Error(`FFmpeg ${code}: ${stderr.slice(-1200)}`)); });
 		proc.on('error', (e) => { clearTimeout(timer); reject(e); });
 	});
 }
 
 function makeSilent(dest, dur) {
-	return runFFmpeg(['-f','lavfi','-i','anullsrc=r=44100:cl=stereo','-t', String(dur), '-y', dest], 30000);
+	return runFFmpeg(['-f','lavfi','-i','anullsrc=r=44100:cl=stereo','-t', String(dur), '-y', dest], 120000);
 }
 
 function formatASSTime(sec) {
@@ -292,8 +295,10 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 		effectiveAnim = cycle[sceneIndex % cycle.length];
 	}
 
+	const clipCodec = ['-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p'];
+
 	if (!imgPath || !fs.existsSync(imgPath)) {
-		await runFFmpeg(['-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`, '-t', String(dur), '-pix_fmt', 'yuv420p', '-y', vDest], 20000);
+		await runFFmpeg(['-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`, '-t', String(dur), ...clipCodec, '-y', vDest], 180000);
 		return;
 	}
 
@@ -327,8 +332,8 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 			await runFFmpeg([
 				'-loop', '1', '-i', imgPath,
 				'-vf', `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},format=yuv420p`,
-				'-t', String(dur + 0.3), '-pix_fmt', 'yuv420p', '-y', vDest
-			], 30000);
+				'-t', String(dur + 0.3), ...clipCodec, '-y', vDest
+			], 240000);
 			return;
 		}
 		// Static entrance with idle shake/breathe inside padded viewport
@@ -337,8 +342,8 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 			'-loop', '1', '-i', imgPath,
 			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
 			'-filter_complex', filter,
-			'-map', '[v]', '-t', String(dur + 0.3), '-pix_fmt', 'yuv420p', '-y', vDest
-		], 45000);
+			'-map', '[v]', '-t', String(dur + 0.3), ...clipCodec, '-y', vDest
+		], 240000);
 		return;
 	}
 
@@ -351,8 +356,8 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 			'-loop', '1', '-i', imgPath,
 			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
 			'-filter_complex', filter,
-			'-map', '[v]', '-t', String(dur + 0.3), '-pix_fmt', 'yuv420p', '-y', vDest
-		], 45000);
+			'-map', '[v]', '-t', String(dur + 0.3), ...clipCodec, '-y', vDest
+		], 240000);
 		return;
 	}
 
@@ -366,8 +371,8 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 			'-loop', '1', '-i', imgPath,
 			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
 			'-filter_complex', filter,
-			'-map', '[v]', '-t', String(dur + 0.3), '-pix_fmt', 'yuv420p', '-y', vDest
-		], 45000);
+			'-map', '[v]', '-t', String(dur + 0.3), ...clipCodec, '-y', vDest
+		], 240000);
 		return;
 	}
 
@@ -379,8 +384,8 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 			'-loop', '1', '-i', imgPath,
 			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
 			'-filter_complex', filter,
-			'-map', '[v]', '-t', String(dur + 0.3), '-pix_fmt', 'yuv420p', '-y', vDest
-		], 45000);
+			'-map', '[v]', '-t', String(dur + 0.3), ...clipCodec, '-y', vDest
+		], 240000);
 		return;
 	}
 
@@ -392,8 +397,8 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 			'-loop', '1', '-i', imgPath,
 			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
 			'-filter_complex', filter,
-			'-map', '[v]', '-t', String(dur + 0.3), '-pix_fmt', 'yuv420p', '-y', vDest
-		], 45000);
+			'-map', '[v]', '-t', String(dur + 0.3), ...clipCodec, '-y', vDest
+		], 240000);
 		return;
 	}
 
@@ -403,8 +408,8 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 			'-loop', '1', '-i', imgPath,
 			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
 			'-filter_complex', filter,
-			'-map', '[v]', '-t', String(dur + 0.3), '-pix_fmt', 'yuv420p', '-y', vDest
-		], 45000);
+			'-map', '[v]', '-t', String(dur + 0.3), ...clipCodec, '-y', vDest
+		], 240000);
 		return;
 	}
 
@@ -414,8 +419,8 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 		'-loop', '1', '-i', imgPath,
 		'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
 		'-filter_complex', filter,
-		'-map', '[v]', '-t', String(dur + 0.3), '-pix_fmt', 'yuv420p', '-y', vDest
-	], 30000);
+		'-map', '[v]', '-t', String(dur + 0.3), ...clipCodec, '-y', vDest
+	], 240000);
 }
 
 async function applyDoodleOverlay(vClipPath, dur, W, H, doodleType, textSide, sc = {}, tmpDir, videoPadding = 4) {
@@ -538,7 +543,7 @@ async function applyDoodleOverlay(vClipPath, dur, W, H, doodleType, textSide, sc
 			'-c:v', 'libx264', '-preset', 'ultrafast',
 			'-pix_fmt', 'yuv420p',
 			'-y', vOverlaid
-		], 30000);
+		], 240000);
 		if (fs.existsSync(vOverlaid)) {
 			await fs.promises.rename(vOverlaid, vClipPath);
 		}
@@ -568,7 +573,7 @@ export async function POST({ request }) {
 			const normCodec = hasVT ? ['-c:v','h264_videotoolbox','-b:v',is720?'3500k':'6000k','-realtime','1'] : ['-c:v','libx264','-preset','ultrafast'];
 			const finalCodec = hasVT ? ['-c:v','h264_videotoolbox','-b:v',is720?'4500k':'8000k','-realtime','0'] : ['-c:v','libx264','-preset','fast','-crf','22'];
 			let prepped=0;
-			await asyncPool(4, scenes.map((s,i)=>({s,i})), async({s,i})=>{
+			await asyncPool(2, scenes.map((s,i)=>({s,i})), async({s,i})=>{
 				const vDest=path.join(tmp,`video-${i}.mp4`);
 				const aDest=path.join(tmp,`audio-${i}.mp3`);
 				const SCENE_BREATH_PAUSE = 0.20;
@@ -584,23 +589,7 @@ export async function POST({ request }) {
 				} else if (s.voiceAudioUrl && fs.existsSync(s.voiceAudioUrl)) {
 					try { await fs.promises.copyFile(s.voiceAudioUrl, aDest); aOk = true; } catch {}
 				}
-				if (aOk && SCENE_BREATH_PAUSE > 0) {
-					try {
-						const padded = path.join(tmp, `audio-pad-${i}.mp3`);
-						await runFFmpeg([
-							'-i', aDest,
-							'-af', `apad=pad_dur=${SCENE_BREATH_PAUSE}`,
-							'-c:a', 'libmp3lame', '-b:a', '192k',
-							'-y', padded
-						], 15000);
-						if (fs.existsSync(padded)) {
-							await fs.promises.rename(padded, aDest);
-						}
-					} catch {}
-				}
 				if(!aOk) await makeSilent(aDest, dur);
-
-
 
 				const rawImg = s.image || s.imageUrl || '';
 				let imgPath='';
@@ -611,8 +600,6 @@ export async function POST({ request }) {
 				const side = (s.textSide || s.layoutSide || (i % 2 === 0 ? 'left' : 'right')).toLowerCase();
 				await renderImageClip(imgPath, vDest, dur, W, H, effectiveImageAnim, i, side, effectiveIdleMotion, videoPadding);
 
-
-
 				prepped++; send({progress: Math.round(10+prepped/scenes.length*35), step:`Gambar adegan ${prepped}/${scenes.length}`});
 			});
 			send({progress:48, step:'Normalisasi...'});
@@ -621,15 +608,25 @@ export async function POST({ request }) {
 				const vDest=path.join(tmp,`video-${i}.mp4`);
 				const aDest=path.join(tmp,`audio-${i}.mp3`);
 				const out=path.join(tmp,`scene-${i}-norm.mp4`);
-				const dur=Number(s.audioDuration||s.estimatedDuration||5);
-				await runFFmpeg(['-stream_loop','-1','-i',vDest,'-i',aDest,'-filter_complex',`[0:v]scale=${W}:${H},fps=30,format=yuv420p[v]`,'-map','[v]','-map','1:a','-t',String(dur),...normCodec,'-c:a','aac','-b:a','128k','-ar','44100','-ac','2','-y',out],90000);
+				const SCENE_BREATH_PAUSE = 0.20;
+				const dur = Number((Number(s.audioDuration || s.estimatedDuration || 5) + SCENE_BREATH_PAUSE).toFixed(2));
+				await runFFmpeg([
+					'-stream_loop', '-1', '-i', vDest,
+					'-i', aDest,
+					'-filter_complex', `[0:v]scale=${W}:${H},fps=30,format=yuv420p[v];[1:a]apad=pad_dur=${SCENE_BREATH_PAUSE},aformat=sample_rates=44100:channel_layouts=stereo[a]`,
+					'-map', '[v]', '-map', '[a]',
+					'-t', String(dur),
+					...normCodec,
+					'-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+					'-y', out
+				], 300000);
 				clips[i]=out;
 			});
 			send({progress:75, step:'Join...'});
 			const list=path.join(tmp,'concat.txt');
 			await fs.promises.writeFile(list, clips.map(p=>`file '${p}'`).join('\n'));
 			const combined=path.join(tmp,'combined.mp4');
-			await runFFmpeg(['-f','concat','-safe','0','-i',list,'-c','copy','-y',combined],120000);
+			await runFFmpeg(['-f','concat','-safe','0','-i',list,'-c','copy','-y',combined], 300000);
 			send({progress:80, step:'Text ASS...'});
 			const ass=buildSplitASS(scenes, W, H, { textColor: stickmanTextColor, textColorTop: stickmanTextColorTop, textColorBottom: stickmanTextColorBottom, fontSize: stickmanFontSize, fontFamily: stickmanFontFamily, defaultAnim: stickmanAnim, defaultAlign: stickmanTextAlign, defaultTextIdle: stickmanTextIdleMotion, previewCanvasHeight, videoPadding });
 			const assPath=path.join(tmp,'split.ass');
@@ -650,7 +647,7 @@ export async function POST({ request }) {
 				} else fArgs.push('-filter_complex',`[0:v]${subFilter}[v];[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a]`,'-map','[v]','-map','[a]');
 			} else fArgs.push('-filter_complex',`[0:v]${subFilter}[v];[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a]`,'-map','[v]','-map','[a]');
 			fArgs.push(...finalCodec,'-c:a','aac','-b:a','192k','-ar','44100','-ac','2','-movflags','+faststart','-y',outPath);
-			await runFFmpeg(fArgs,600000);
+			await runFFmpeg(fArgs, 1200000);
 			fs.rm(tmp,{recursive:true,force:true},()=>{});
 			send({progress:100, step:'Selesai', done:true, downloadUrl:`/renders/${outName}`, filename:outName});
 		}catch(e){ console.error(e); send({error:e.message}); } finally{ ctrl?.close(); }

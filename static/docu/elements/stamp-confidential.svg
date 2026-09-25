@@ -1,0 +1,14 @@
+<svg width="540" height="180" viewBox="0 0 540 180" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="distress-crimson">
+      <feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves="3" result="noise" />
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="3" />
+    </filter>
+  </defs>
+  <g transform="rotate(4 270 90)" filter="url(#distress-crimson)">
+    <rect x="15" y="25" width="510" height="130" rx="10" fill="none" stroke="#991B1B" stroke-width="7" />
+    <rect x="25" y="35" width="490" height="110" fill="#991B1B" fill-opacity="0.1" />
+    <text x="270" y="105" font-family="'Impact', 'Arial Black', sans-serif" font-size="54" font-weight="bold" fill="#991B1B" text-anchor="middle" letter-spacing="6">CONFIDENTIAL</text>
+    <text x="270" y="132" font-family="monospace" font-size="14" font-weight="bold" fill="#7F1D1D" text-anchor="middle" letter-spacing="3">DEPT OF ARCHIVES - LEVEL 4</text>
+  </g>
+</svg>

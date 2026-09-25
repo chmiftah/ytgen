@@ -1,5 +1,5 @@
 <script>
-	import { Play, Sparkles, Wand2, Zap, Film, ArrowRight, Share2 } from 'lucide-svelte';
+	import { Play, Sparkles, Wand2, Zap, Film, ArrowRight, Share2, FileText, Stamp } from 'lucide-svelte';
 </script>
 
 <div class="landing-page">
@@ -22,19 +22,27 @@
 			<div class="hero-text">
 				<div class="badge">
 					<Sparkles size={14} />
-					<span>AI Powered Video Generation</span>
+					<span>4 In 1 Video Engine</span>
 				</div>
 				<h1>Produksi Video YouTube <span class="gradient-text">Dalam Hitungan Menit</span></h1>
-				<p>Ubah naskah menjadi video YouTube Long (16:9) lengkap dengan footage sinematik, voiceover AI, dan subtitle otomatis secara instan.</p>
+				<p>Ubah naskah menjadi video YouTube Long (16:9) lengkap: footage sinematik, animasi stickman explainer, kolase dokumenter investigatif Vox, atau motion typography filosofis ala Dan Koe.</p>
 				
 				<div class="hero-actions">
 					<a href="/studio" class="btn btn-primary btn-lg">
 						<Wand2 size={20} />
-						<span>Cinematic Video Studio</span>
+						<span>Cinematic Studio</span>
 					</a>
 					<a href="/stickman-studio" class="btn btn-accent btn-lg">
 						<Film size={20} />
-						<span>Stickman Explainer Studio</span>
+						<span>Stickman Studio</span>
+					</a>
+					<a href="/docu-studio" class="btn btn-docu btn-lg">
+						<FileText size={20} />
+						<span>Docu-Style Studio</span>
+					</a>
+					<a href="/typography-studio" class="btn btn-typo btn-lg">
+						<Zap size={20} />
+						<span>Dan Koe Typography</span>
 					</a>
 				</div>
 			</div>
@@ -81,6 +89,16 @@
 				<div class="feature-icon"><Sparkles size={24} /></div>
 				<h3>Animated Subtitles</h3>
 				<p>Subtitle bergaya "Viral Pop" atau "Cinematic" yang otomatis sinkron dengan jeda nafas narator.</p>
+			</div>
+			<div class="feature-card glass-panel">
+				<div class="feature-icon"><FileText size={24} /></div>
+				<h3>Docu-Style & Vox Collage</h3>
+				<p>Estetika dokumenter investigatif dengan tekstur kertas, polaroid, selotip, stempel classified, dan tipografi arsip.</p>
+			</div>
+			<div class="feature-card glass-panel">
+				<div class="feature-icon"><Zap size={24} /></div>
+				<h3>Motion Typography (Dan Koe)</h3>
+				<p>Tipografi kinetik filosofis dengan latar charcoal/matte black, accent glowing keywords, dan diagram mental model.</p>
 			</div>
 		</div>
 	</section>
@@ -198,6 +216,30 @@
 		display: flex;
 		gap: 16px;
 		flex-wrap: wrap;
+	}
+
+	.btn-docu {
+		background: #991b1b;
+		color: #ffffff;
+		border: 1px solid #ef4444;
+	}
+	.btn-docu:hover {
+		background: #dc2626;
+		transform: translateY(-2px);
+		box-shadow: 0 8px 24px rgba(239, 68, 68, 0.35);
+	}
+
+	.btn-typo {
+		background: #111116;
+		color: #f59e0b;
+		border: 1px solid rgba(245, 158, 11, 0.4);
+	}
+	.btn-typo:hover {
+		background: #1b1b22;
+		border-color: #f59e0b;
+		color: #fbbf24;
+		transform: translateY(-2px);
+		box-shadow: 0 8px 24px rgba(245, 158, 11, 0.25);
 	}
 
 	.hero-visual {

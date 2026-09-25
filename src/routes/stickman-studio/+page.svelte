@@ -969,15 +969,19 @@
 		}
 	}
 
-	function togglePlay() {
-		if (!currentScene?.voiceAudioUrl) return;
+	async function togglePlay() {
 		if (isPlaying) {
 			isPlaying = false;
 			audioElA?.pause();
 			audioElB?.pause();
 		} else {
-			isPlaying = true;
-			playActiveSceneAudio();
+			if (!currentScene?.voiceAudioUrl) {
+				await regenerateVoiceoverForScene(activeSceneIndex);
+			}
+			if (currentScene?.voiceAudioUrl) {
+				isPlaying = true;
+				playActiveSceneAudio();
+			}
 		}
 	}
 
@@ -1740,7 +1744,7 @@
 
 				<!-- Player Controls -->
 				<div class="player-controls">
-					<button class="ctrl-btn ctrl-play-btn" onclick={togglePlay} disabled={!currentScene?.voiceAudioUrl}>
+					<button class="ctrl-btn ctrl-play-btn" onclick={togglePlay}>
 						{#if isPlaying}<Pause size={16} />{:else}<Play size={16} />{/if}
 						<span>{isPlaying ? 'Pause' : 'Play Narasi'}</span>
 					</button>
