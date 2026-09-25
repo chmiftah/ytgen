@@ -5,11 +5,18 @@
 
 export const BGM_TRACKS = [
 	{
-		id: 'local-documentary',
-		name: 'Dokumenter Sinematik',
-		mood: 'Serius & Mengalir',
-		url: '/bgm/bgm-soundhelix-1.mp3',
-		badge: 'Rekomendasi'
+		id: 'lofi-chill',
+		name: 'Midnight Chill Lofi',
+		mood: 'Santai, Hangat & Malam Hari',
+		url: '/bgm/bgm-lofi-chill.mp3',
+		badge: '🌙 Rekomendasi Overthinking'
+	},
+	{
+		id: 'stickman-playful',
+		name: 'Playful Cartoon Stickman',
+		mood: 'Ceria, Lincah & Menghibur',
+		url: '/bgm/bgm-stickman-playful.mp3',
+		badge: '🎨 Khas Kartun'
 	},
 	{
 		id: 'ambient-focus',
@@ -17,6 +24,13 @@ export const BGM_TRACKS = [
 		mood: 'Tenang & Reflektif',
 		url: '/bgm/bgm-ambient.mp3',
 		badge: 'Fokus'
+	},
+	{
+		id: 'local-documentary',
+		name: 'Dokumenter Sinematik',
+		mood: 'Serius & Mengalir',
+		url: '/bgm/bgm-soundhelix-1.mp3',
+		badge: 'Dokumenter'
 	},
 	{
 		id: 'inspiring-story',

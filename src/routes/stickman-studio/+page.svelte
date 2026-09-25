@@ -288,7 +288,7 @@
 	}
 
 	// Backsound (BGM) State
-	let selectedBgmId = $state('local-documentary');
+	let selectedBgmId = $state('lofi-chill');
 	let bgmVolume = $state(0.10);
 	let previewBgmAudioEl = null;
 	let isPlayingBgmPreview = $state(false);
