@@ -1625,21 +1625,23 @@
 									></div>
 								</div>
 							{/key}
-							<div
-								class="text-overlay {(currentScene.textSide || currentScene.layoutSide)} anim-{(currentScene.textAnim || stickmanAnim)} align-{_curAlign}"
-								style="{getOverlayStyle(currentScene)} cursor: {drag.active ? 'grabbing' : 'grab'};"
-								onpointerdown={onTextPointerDown}
-								role="presentation"
-								title="Drag untuk geser — klik textarea di bawah untuk edit bebas (Enter = baris baru)"
-							>
-								<div class="two-lines free-mode text-idle-{(currentScene?.textIdleMotion || stickmanTextIdleMotion || 'shake')}" style="font-family: {stickmanFontFamily}; align-items: {_curAlign === 'right' ? 'flex-end' : _curAlign === 'center' || _curAlign === 'middle' ? 'center' : 'flex-start'}; text-align: {_curAlign === 'right' ? 'right' : _curAlign === 'center' || _curAlign === 'middle' ? 'center' : 'left'};">
-									{#each getEditorLines(currentScene.keyPoint) as line, idx}
-										{@const isTop = idx === 0}
-										{@const col = isTop ? (currentScene.textColorTop || stickmanTextColorTop) : (currentScene.textColorBottom || stickmanTextColorBottom)}
-										<span class="line anim-target" style="color: {col}; font-size: {getDisplayFontSize(currentScene.keyPoint, currentScene)}px; text-shadow: none;">{line}</span>
-									{/each}
+							{#key `${activeSceneIndex}-${currentScene.keyPoint}-${currentScene.textAnim || stickmanAnim}`}
+								<div
+									class="text-overlay {(currentScene.textSide || currentScene.layoutSide)} anim-{(currentScene.textAnim || stickmanAnim)} align-{_curAlign}"
+									style="{getOverlayStyle(currentScene)} cursor: {drag.active ? 'grabbing' : 'grab'};"
+									onpointerdown={onTextPointerDown}
+									role="presentation"
+									title="Drag untuk geser — klik textarea di bawah untuk edit bebas (Enter = baris baru)"
+								>
+									<div class="two-lines free-mode text-idle-{(currentScene?.textIdleMotion || stickmanTextIdleMotion || 'shake')}" style="font-family: {stickmanFontFamily}; align-items: {_curAlign === 'right' ? 'flex-end' : _curAlign === 'center' || _curAlign === 'middle' ? 'center' : 'flex-start'}; text-align: {_curAlign === 'right' ? 'right' : _curAlign === 'center' || _curAlign === 'middle' ? 'center' : 'left'};">
+										{#each getEditorLines(currentScene.keyPoint) as line, idx}
+											{@const isTop = idx === 0}
+											{@const col = isTop ? (currentScene.textColorTop || stickmanTextColorTop) : (currentScene.textColorBottom || stickmanTextColorBottom)}
+											<span class="line anim-target" style="color: {col}; font-size: {getDisplayFontSize(currentScene.keyPoint, currentScene)}px; text-shadow: none;">{line}</span>
+										{/each}
+									</div>
 								</div>
-							</div>
+							{/key}
 							<button class="flip-btn" onclick={flipCurrentTextSide} title="Pindah teks ke sisi lain">
 								<span>↔</span> Flip teks
 							</button>
@@ -3952,11 +3954,12 @@
 	.free-editor { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding: 10px 12px; background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--r-md); }
 	.free-textarea { width: 100%; min-height: 76px; background: var(--bg-surface); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 0.85rem; line-height: 1.45; resize: vertical; outline: none; }
 	.free-textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99,102,241,0.16); }
-	.anim-pop .anim-target { animation: stickPop 0.55s cubic-bezier(0.34,1.56,0.64,1) both; }
-	.anim-slide.left .anim-target { animation: stickSlideInLeft 0.45s ease both; }
-	.anim-slide.right .anim-target { animation: stickSlideInRight 0.45s ease both; }
-	.anim-fade .anim-target { animation: stickFade 0.6s ease both; }
-	.anim-typewriter .anim-target { overflow: hidden; white-space: nowrap; animation: stickType 1.1s steps(30) both; max-width: 100%; }
+	.anim-none .anim-target { animation: stickFadeQuick 0.25s ease 0.45s both; }
+	.anim-pop .anim-target { animation: stickPop 0.55s cubic-bezier(0.34,1.56,0.64,1) 0.45s both; }
+	.anim-slide.left .anim-target { animation: stickSlideInLeft 0.45s ease 0.45s both; }
+	.anim-slide.right .anim-target { animation: stickSlideInRight 0.45s ease 0.45s both; }
+	.anim-fade .anim-target { animation: stickFade 0.6s ease 0.45s both; }
+	.anim-typewriter .anim-target { overflow: hidden; white-space: nowrap; animation: stickType 1.1s steps(30) 0.45s both; max-width: 100%; }
 	.text-idle-shake { animation: textChalkJitter 1.8s ease-in-out infinite alternate; will-change: transform; }
 	.text-idle-breathe { animation: textBreathe 3.2s ease-in-out infinite alternate; will-change: transform; }
 	.text-idle-drift { animation: textDrift 4.5s ease-out infinite alternate; will-change: transform; }
@@ -3982,6 +3985,7 @@
 	@keyframes stickSlideInRight { 0%{transform:translateX(18px);opacity:0} 100%{transform:none;opacity:1} }
 	@keyframes stickFade { 0%{opacity:0;filter:blur(6px)} 100%{opacity:1;filter:none} }
 	@keyframes stickType { 0%{width:0} 100%{width:100%} }
+	@keyframes stickFadeQuick { 0%{opacity:0} 100%{opacity:1} }
 	.flip-btn {
 		position: absolute;
 		bottom: 8px;

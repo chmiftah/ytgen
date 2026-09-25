@@ -132,7 +132,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 	for (let i = 0; i < scenes.length; i++) {
 		const sc = scenes[i];
 		const dur = Number((Number(sc.audioDuration || sc.estimatedDuration || 5) + 0.20).toFixed(2));
-		const durMs = Math.round((dur - 0.24) * 1000);
 		const kpRaw = (sc.keyPoint || sc.narration || '').replace(/\{/g, '(').replace(/\}/g, ')').slice(0, 140);
 		const lines = getLines(kpRaw);
 		if (!lines.length) { t += dur; continue; }
@@ -196,27 +195,33 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 			}
 		}
 
-		// Entrance animation tags
+		// Entrance animation tags & timings:
+		// Requirement: Gambar muncul dulu (t=0), baru teks muncul menyusul (t=textDelay ~0.48s).
+		// Ketika ganti scene, gambar dan teks menghilang bersamaan (fade-out 250ms).
+		const textDelay = Math.min(0.50, Math.max(0.25, Number((dur * 0.16).toFixed(2))));
+		const exitDurMs = 250;
+		const durMs = Math.round((dur - textDelay) * 1000);
+
 		let animTag = '';
 		let isMove = false;
 		let moveStartX = posX;
 		let entranceDur = 450;
 
 		if (anim === 'pop') {
-			animTag = `\\fscx${Math.round(scalePct * 0.7)}\\fscy${Math.round(scalePct * 0.7)}\\fad(120,120)\\t(0,250,\\fscx${Math.round(scalePct * 1.08)}\\fscy${Math.round(scalePct * 1.08)})\\t(250,450,\\fscx${scalePct}\\fscy${scalePct})`;
+			animTag = `\\fscx${Math.round(scalePct * 0.7)}\\fscy${Math.round(scalePct * 0.7)}\\fad(120,${exitDurMs})\\t(0,250,\\fscx${Math.round(scalePct * 1.08)}\\fscy${Math.round(scalePct * 1.08)})\\t(250,450,\\fscx${scalePct}\\fscy${scalePct})`;
 			entranceDur = 450;
 		} else if (anim === 'slide') {
 			isMove = true;
 			moveStartX = side === 'left' ? posX - 120 : posX + 120;
 			entranceDur = 400;
 		} else if (anim === 'fade') {
-			animTag = `\\fad(350,200)`;
+			animTag = `\\fad(350,${exitDurMs})`;
 			entranceDur = 350;
 		} else if (anim === 'typewriter') {
-			animTag = `\\fad(120,100)\\t(0,${Math.min(900, Math.round((dur - 0.3) * 1000))},${scaleTag})`;
+			animTag = `\\fad(120,${exitDurMs})\\t(0,${Math.min(900, Math.round((dur - textDelay - 0.3) * 1000))},${scaleTag})`;
 			entranceDur = 600;
 		} else {
-			animTag = `\\fad(80,80)`;
+			animTag = `\\fad(80,${exitDurMs})`;
 			entranceDur = 100;
 		}
 
@@ -226,8 +231,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 			let currT = entranceDur;
 			let step = 480;
 			let toggle = true;
-			while (currT < durMs - 200) {
-				const nextT = Math.min(durMs - 120, currT + step);
+			while (currT < durMs - exitDurMs) {
+				const nextT = Math.min(durMs - exitDurMs, currT + step);
 				const targetRot = (rot + (toggle ? 0.7 : -0.7)).toFixed(1);
 				const targetScale = Math.round(scalePct * (toggle ? 1.02 : 0.99));
 				idleTags += `\\t(${currT},${nextT},\\frz${targetRot}\\fscx${targetScale}\\fscy${targetScale})`;
@@ -238,8 +243,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 			let currT = entranceDur;
 			let step = 850;
 			let toggle = true;
-			while (currT < durMs - 200) {
-				const nextT = Math.min(durMs - 120, currT + step);
+			while (currT < durMs - exitDurMs) {
+				const nextT = Math.min(durMs - exitDurMs, currT + step);
 				const targetScale = Math.round(scalePct * (toggle ? 1.03 : 0.99));
 				idleTags += `\\t(${currT},${nextT},\\fscx${targetScale}\\fscy${targetScale})`;
 				currT = nextT;
@@ -248,7 +253,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 		} else if (textIdle === 'drift') {
 			const targetScale = Math.round(scalePct * 1.04);
 			const targetRot = (rot + 0.5).toFixed(1);
-			idleTags = `\\t(${entranceDur},${durMs - 120},\\frz${targetRot}\\fscx${targetScale}\\fscy${targetScale})`;
+			idleTags = `\\t(${entranceDur},${durMs - exitDurMs},\\frz${targetRot}\\fscx${targetScale}\\fscy${targetScale})`;
 		}
 
 		// Different colors between top line (idx 0) and bottom lines (idx >= 1) with matching stroke for thickness
@@ -267,10 +272,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 			const isTop = idx === 0;
 			const col = isTop ? scColorTop : scColorBottom;
 			const lineY = Math.round(posY - totalBlockH / 2 + (idx * lineSpacing));
-			const linePosOrMove = isMove ? `\\move(${moveStartX},${lineY},${posX},${lineY},0,380)\\fad(120,120)` : `\\pos(${posX},${lineY})`;
+			const linePosOrMove = isMove ? `\\move(${moveStartX},${lineY},${posX},${lineY},0,380)\\fad(120,${exitDurMs})` : `\\pos(${posX},${lineY})`;
 			const lineTags = `\\an${align}${linePosOrMove}\\fs${assFontSize}\\fn${fam}\\b0\\bord1.5\\shad0${rotTag}${isMove ? '' : scaleTag}${animTag}${idleTags}\\1c&H${col}&\\3c&H${col}&\\bord1.5`;
 
-			ass += `Dialogue: 0,${formatASSTime(t + 0.12)},${formatASSTime(t + dur - 0.12)},Default,,0,0,0,,{${lineTags}}${lineText}\n`;
+			// Teks mulai muncul di t + textDelay (setelah gambar muncul) dan fade out bersamaan di akhir adegan
+			ass += `Dialogue: 0,${formatASSTime(t + textDelay)},${formatASSTime(t + dur)},Default,,0,0,0,,{${lineTags}}${lineText}\n`;
 		}
 		t += dur;
 	}
@@ -331,13 +337,13 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 		if (idleMotion === 'none' && padPct === 0) {
 			await runFFmpeg([
 				'-loop', '1', '-i', imgPath,
-				'-vf', `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},format=yuv420p`,
+				'-vf', `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white,format=yuv420p`,
 				'-t', String(dur + 0.3), ...clipCodec, '-y', vDest
 			], 240000);
 			return;
 		}
-		// Static entrance with idle shake/breathe inside padded viewport
-		const filter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xIdle})':y='${padY}+(${yIdle})'[v]`;
+		// Static entrance with idle shake/breathe inside padded viewport & simultaneous fade out
+		const filter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xIdle})':y='${padY}+(${yIdle})',fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white[v]`;
 		await runFFmpeg([
 			'-loop', '1', '-i', imgPath,
 			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
@@ -351,7 +357,7 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 		const yEntrance = `-${innerH}*(1-sin(t/0.55*1.5708))`;
 		const yExpr = `if(lt(t,0.55), ${yEntrance}, ${yIdle})`;
 		const xExpr = `if(lt(t,0.55), 0, ${xIdle})`;
-		const filter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xExpr})':y='${padY}+(${yExpr})'[v]`;
+		const filter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xExpr})':y='${padY}+(${yExpr})',fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white[v]`;
 		await runFFmpeg([
 			'-loop', '1', '-i', imgPath,
 			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
@@ -366,7 +372,7 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 		const xEntrance = isFromLeft ? `-${innerW}*(1-sin(t/0.55*1.5708))` : `${innerW}*(1-sin(t/0.55*1.5708))`;
 		const xExpr = `if(lt(t,0.55), ${xEntrance}, ${xIdle})`;
 		const yExpr = `if(lt(t,0.55), 0, ${yIdle})`;
-		const filter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xExpr})':y='${padY}+(${yExpr})'[v]`;
+		const filter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xExpr})':y='${padY}+(${yExpr})',fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white[v]`;
 		await runFFmpeg([
 			'-loop', '1', '-i', imgPath,
 			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
@@ -379,7 +385,7 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 	if (effectiveAnim === 'zoom-in') {
 		const xShakeZ = idleMotion === 'shake' ? '+4*sin(it*4.2)' : idleMotion === 'breathe' ? '+5*sin(it*1.6)' : '';
 		const yShakeZ = idleMotion === 'shake' ? '+4*cos(it*3.5)' : idleMotion === 'breathe' ? '+4*cos(it*1.2)' : '';
-		const filter = `[0:v]scale=${Math.round(innerW * 1.15)}:${Math.round(innerH * 1.15)},zoompan=z='min(zoom+0.0006,1.08)':x='iw/2-(iw/zoom/2)${xShakeZ}':y='ih/2-(ih/zoom/2)${yShakeZ}':d=1:s=${innerW}x${innerH}:fps=30,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}'[v]`;
+		const filter = `[0:v]scale=${Math.round(innerW * 1.15)}:${Math.round(innerH * 1.15)},zoompan=z='min(zoom+0.0006,1.08)':x='iw/2-(iw/zoom/2)${xShakeZ}':y='ih/2-(ih/zoom/2)${yShakeZ}':d=1:s=${innerW}x${innerH}:fps=30,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}',fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white[v]`;
 		await runFFmpeg([
 			'-loop', '1', '-i', imgPath,
 			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
@@ -392,7 +398,7 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 	if (effectiveAnim === 'pop') {
 		const xShakeP = idleMotion === 'shake' ? '+4*sin(it*4.2)' : '';
 		const yShakeP = idleMotion === 'shake' ? '+4*cos(it*3.5)' : '';
-		const filter = `[0:v]scale=${Math.round(innerW * 1.16)}:${Math.round(innerH * 1.16)},zoompan=z='if(lt(it,0.45), 0.84+0.16*sin(it/0.45*1.5708), min(1.0+(it-0.45)*0.002, 1.03))':x='iw/2-(iw/zoom/2)${xShakeP}':y='ih/2-(ih/zoom/2)${yShakeP}':d=1:s=${innerW}x${innerH}:fps=30,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}'[v]`;
+		const filter = `[0:v]scale=${Math.round(innerW * 1.16)}:${Math.round(innerH * 1.16)},zoompan=z='if(lt(it,0.45), 0.84+0.16*sin(it/0.45*1.5708), min(1.0+(it-0.45)*0.002, 1.03))':x='iw/2-(iw/zoom/2)${xShakeP}':y='ih/2-(ih/zoom/2)${yShakeP}':d=1:s=${innerW}x${innerH}:fps=30,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}',fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white[v]`;
 		await runFFmpeg([
 			'-loop', '1', '-i', imgPath,
 			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
@@ -403,7 +409,7 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 	}
 
 	if (effectiveAnim === 'fade') {
-		const filter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},fade=t=in:st=0:d=0.5,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xIdle})':y='${padY}+(${yIdle})'[v]`;
+		const filter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},fade=t=in:st=0:d=0.5,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xIdle})':y='${padY}+(${yIdle})',fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white[v]`;
 		await runFFmpeg([
 			'-loop', '1', '-i', imgPath,
 			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
@@ -414,7 +420,7 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 	}
 
 	// Default fallback
-	const filter = `[0:v]scale=${innerW}:${innerH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}'[v]`;
+	const filter = `[0:v]scale=${innerW}:${innerH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}',fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white[v]`;
 	await runFFmpeg([
 		'-loop', '1', '-i', imgPath,
 		'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
@@ -532,7 +538,7 @@ async function applyDoodleOverlay(vClipPath, dur, W, H, doodleType, textSide, sc
 	}
 
 	const vOverlaid = path.join(tmpDir, `doodle-overlay-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.mp4`);
-	const overlayFilter = `[1:v]scale=${dW}:${dH},fade=t=in:st=0.06:d=0.20:alpha=1[doodle];[0:v][doodle]overlay=x=${dX}:y=${dY}[v]`;
+	const overlayFilter = `[1:v]scale=${dW}:${dH},fade=t=in:st=0.50:d=0.20:alpha=1,fade=t=out:st=${Math.max(0.6, dur - 0.25)}:d=0.25:alpha=1[doodle];[0:v][doodle]overlay=x=${dX}:y=${dY}[v]`;
 	try {
 		await runFFmpeg([
 			'-i', vClipPath,
