@@ -654,16 +654,24 @@
 	// Image Picker Modal state
 	let showImagePicker = $state(false);
 	let imagePickerFilter = $state('');
+	let selectedImageCategory = $state('all');
 	let imageUploadInputEl = $state(null);
+	let stickmanCategories = $state([]);
 
 	let filteredAssets = $derived(
-		imagePickerFilter.trim()
-			? availableAssets.filter(a =>
-					a.title?.toLowerCase().includes(imagePickerFilter.toLowerCase()) ||
-					a.slug?.toLowerCase().includes(imagePickerFilter.toLowerCase()) ||
-					(a.keywords || []).some(k => k.toLowerCase().includes(imagePickerFilter.toLowerCase()))
-				)
-			: availableAssets
+		availableAssets.filter(a => {
+			if (selectedImageCategory !== 'all') {
+				if (!a.categories?.includes(selectedImageCategory)) return false;
+			}
+			const q = imagePickerFilter.trim().toLowerCase();
+			if (!q) return true;
+			return (
+				a.title?.toLowerCase().includes(q) ||
+				a.slug?.toLowerCase().includes(q) ||
+				(a.keywords || []).some(k => k.toLowerCase().includes(q)) ||
+				(a.tagsId || []).some(t => t.toLowerCase().includes(q))
+			);
+		})
 	);
 
 	function openImagePicker() {
@@ -725,7 +733,10 @@
 		try {
 			const res = await fetch('/api/stickman-assets');
 			const data = await res.json();
-			if (data.success) availableAssets = data.assets;
+			if (data.success) {
+				availableAssets = data.assets || [];
+				if (data.categories) stickmanCategories = data.categories;
+			}
 		} catch (err) { console.warn('stickman assets', err); }
 	});
 
@@ -767,42 +778,60 @@
 			for (let i = 0; i < parsed.length; i++) {
 				const sc = parsed[i];
 				genProgress.currentScene = i + 1;
-				genProgress.activeQuery = sc.visualQuery || '';
+				genProgress.activeQuery = sc.stickmanQuery || sc.visualQuery || '';
 				genProgress.activeNarration = sc.narration || '';
 				genProgress.percent = Math.round(15 + (i / parsed.length) * 70);
-				addGenLog('SCENE', `Adegan ${i+1}/${parsed.length}: "${sc.visualQuery}"`, 'highlight');
+				const sceneLogLabel = sc.stickmanQuery ? `[Aksi: "${sc.stickmanQuery}"]` : `"${sc.visualQuery}"`;
+				addGenLog('SCENE', `Adegan ${i+1}/${parsed.length}: ${sceneLogLabel}`, 'highlight');
 
-				// Intelligent Non-Duplicating Asset Picker:
-				// 1. If it's a continuation chunk (duration > 6s split), user wants a random DIFFERENT image!
-				// 2. If it's a new scene, find matching keyword assets that haven't been used yet.
-				// 3. Fallback: pick a RANDOM unused asset from all 586 stickman illustrations.
-				// 4. Strict guarantee: never use an image that equals prevImageUrl or is already used.
+				// Dedicated Intelligent Stickman Asset Picker:
+				// 1. Matches sc.stickmanQuery (English actions generated specifically for stickman)
+				// 2. Matches Indonesian keywords from sc.narration and sc.keyPoint with asset.tagsId
+				// 3. Scores all 586 assets, avoids duplicate scenes, picks the best contextual character!
 				let matchedAsset = null;
 				if (availableAssets.length > 0) {
-					const isChunk = Boolean(sc.isContinuation);
-					const qWords = (sc.visualQuery || '').toLowerCase().split(/\s+/).filter(w => w.length > 2);
+					const stickQ = (sc.stickmanQuery || '').toLowerCase().trim();
+					const qWords = stickQ.split(/\s+/).filter(w => w.length > 2);
+					const narWords = (sc.narration || '').toLowerCase().split(/[\s,.;!?—–]+/).filter(w => w.length > 2);
+					const keyWords = (sc.keyPoint || '').toLowerCase().split(/[\s,.;!?—–]+/).filter(w => w.length > 2);
 
-					if (!isChunk && qWords.length > 0) {
-						const matchingUnused = availableAssets.filter(a =>
-							!usedAssetUrls.has(a.url) &&
-							a.url !== prevImageUrl &&
-							a.keywords?.some(k => qWords.some(qw => qw.includes(k) || k.includes(qw)))
-						);
-						if (matchingUnused.length > 0) {
-							// Randomize among matches so consecutive scenes with similar queries don't pick the same
-							matchedAsset = matchingUnused[Math.floor(Math.random() * matchingUnused.length)];
+					const scored = availableAssets.map(asset => {
+						let score = 0;
+						// English stickman_query match (High weight)
+						for (const qw of qWords) {
+							if (asset.title?.toLowerCase().includes(qw)) score += 8;
+							else if (asset.keywords?.some(k => k.includes(qw) || qw.includes(k))) score += 5;
 						}
+						// Indonesian keyPoint & narration tags match (Medium weight)
+						for (const kw of keyWords) {
+							if (asset.tagsId?.some(t => t.includes(kw) || kw.includes(t))) score += 6;
+						}
+						for (const nw of narWords) {
+							if (asset.tagsId?.some(t => t === nw)) score += 3;
+							else if (asset.tagsId?.some(t => t.includes(nw) || nw.includes(t))) score += 2;
+						}
+						return { asset, score };
+					});
+
+					const unusedScored = scored.filter(s => !usedAssetUrls.has(s.asset.url) && s.asset.url !== prevImageUrl);
+					unusedScored.sort((a, b) => b.score - a.score);
+
+					// If we have high scoring unused matches (> 0): pick randomly among top 3 highest scores
+					// This ensures both high semantic relevance AND natural variety across consecutive generations!
+					if (unusedScored.length > 0 && unusedScored[0].score > 0) {
+						const topScore = unusedScored[0].score;
+						const topCandidates = unusedScored.filter(s => s.score >= Math.max(1, topScore - 3)).slice(0, 4);
+						matchedAsset = topCandidates[Math.floor(Math.random() * topCandidates.length)].asset;
 					}
 
-					// Fallback: Random unused asset from the library (guarantees unique visuals and no duplicate scenes)
+					// Fallback: pick best scoring non-adjacent asset or random unused
 					if (!matchedAsset) {
-						const unusedList = availableAssets.filter(a => !usedAssetUrls.has(a.url) && a.url !== prevImageUrl);
-						if (unusedList.length > 0) {
-							matchedAsset = unusedList[Math.floor(Math.random() * unusedList.length)];
+						if (unusedScored.length > 0) {
+							matchedAsset = unusedScored[Math.floor(Math.random() * Math.min(10, unusedScored.length))].asset;
 						} else {
-							// In case scenes count > total available assets, avoid adjacent repeats
-							const nonAdjacent = availableAssets.filter(a => a.url !== prevImageUrl);
-							matchedAsset = nonAdjacent[Math.floor(Math.random() * nonAdjacent.length)] || availableAssets[0];
+							const nonAdjacent = scored.filter(s => s.asset.url !== prevImageUrl);
+							nonAdjacent.sort((a, b) => b.score - a.score);
+							matchedAsset = nonAdjacent[0]?.asset || availableAssets[0];
 						}
 					}
 				}
@@ -811,7 +840,8 @@
 					usedAssetUrls.add(matchedAsset.url);
 					prevImageUrl = matchedAsset.url;
 					genProgress.stats.localFootage++;
-					addGenLog('STICKMAN', `Gambar unik: ${matchedAsset.slug} (${matchedAsset.title.slice(0, 45)})`, 'success');
+					const queryLabel = sc.stickmanQuery ? `[Aksi: "${sc.stickmanQuery}"]` : `"${sc.visualQuery}"`;
+					addGenLog('STICKMAN', `${queryLabel} ➡️ ${matchedAsset.title.slice(0, 45)}`, 'success');
 				}
 				let voiceData = null;
 				try {
@@ -2049,7 +2079,7 @@
 					<input
 						type="text"
 						bind:value={imagePickerFilter}
-						placeholder="🔍 Cari gambar (nama, keyword)..."
+						placeholder="🔍 Cari gambar dwibahasa (uang, sedih, laptop, tidur, ide, crypto, coin, dll)..."
 						class="img-picker-search"
 					/>
 					<button
@@ -2069,8 +2099,38 @@
 					/>
 				</div>
 
+				<div class="img-picker-cats">
+					<button
+						type="button"
+						class="cat-pill"
+						class:active={selectedImageCategory === 'all'}
+						onclick={() => selectedImageCategory = 'all'}
+					>
+						✨ Semua ({availableAssets.length})
+					</button>
+					{#each stickmanCategories as cat}
+						<button
+							type="button"
+							class="cat-pill"
+							class:active={selectedImageCategory === cat.id}
+							onclick={() => selectedImageCategory = cat.id}
+						>
+							{cat.label}
+						</button>
+					{/each}
+				</div>
+
 				<div class="img-picker-count">
-					{filteredAssets.length} gambar{imagePickerFilter ? ` (filter: "${imagePickerFilter}")` : ''}
+					<span>{filteredAssets.length} gambar stickman ditemukan</span>
+					{#if imagePickerFilter || selectedImageCategory !== 'all'}
+						<button
+							type="button"
+							class="btn-reset-filter"
+							onclick={() => { imagePickerFilter = ''; selectedImageCategory = 'all'; }}
+						>
+							↺ Reset filter
+						</button>
+					{/if}
 				</div>
 
 				<div class="img-picker-grid">
@@ -2501,11 +2561,55 @@
 		transition: background 0.18s;
 	}
 	.btn-upload-img:hover { background: rgba(99,102,241,0.32); color: #e0e7ff; }
-	.img-picker-count {
-		padding: 6px 20px;
-		font-size: 0.72rem;
-		color: #64748b;
+	.img-picker-cats {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		padding: 8px 20px;
+		border-bottom: 1px solid rgba(255,255,255,0.05);
+		background: rgba(0,0,0,0.18);
 	}
+	.cat-pill {
+		font-size: 0.74rem;
+		font-weight: 600;
+		padding: 4px 10px;
+		border-radius: 999px;
+		background: rgba(255,255,255,0.04);
+		color: #94a3b8;
+		border: 1px solid rgba(255,255,255,0.08);
+		cursor: pointer;
+		transition: all 0.15s ease;
+		white-space: nowrap;
+	}
+	.cat-pill:hover {
+		background: rgba(255,255,255,0.09);
+		border-color: rgba(99,102,241,0.4);
+		color: #f1f5f9;
+	}
+	.cat-pill.active {
+		background: #6366f1;
+		color: #ffffff;
+		border-color: #6366f1;
+		box-shadow: 0 2px 8px rgba(99,102,241,0.3);
+	}
+	.img-picker-count {
+		padding: 8px 20px 4px;
+		font-size: 0.75rem;
+		color: #64748b;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.btn-reset-filter {
+		background: transparent;
+		border: none;
+		color: #818cf8;
+		font-size: 0.73rem;
+		cursor: pointer;
+		padding: 0;
+		text-decoration: underline;
+	}
+	.btn-reset-filter:hover { color: #a5b4fc; }
 	.img-picker-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));

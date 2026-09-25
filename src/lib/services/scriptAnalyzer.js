@@ -94,6 +94,40 @@ export function extractVisualQuery(narrationText) {
 }
 
 /**
+ * Dedicated Stickman Action & Emotion Query Extractor
+ * Maps Indonesian narrative keywords to concrete 2D stickman character actions
+ */
+export function extractStickmanQuery(narrationText) {
+	if (!narrationText) return 'standing character';
+	const lower = narrationText.toLowerCase();
+
+	const STICKMAN_THEMES = [
+		{ match: ['uang', 'kaya', 'finansial', 'gaji', 'investasi', 'saham', 'koin', 'modal', 'bisnis', 'cuan', 'rupiah', 'dolar', 'dompet', 'emas'], query: 'standing gold coins wealth' },
+		{ match: ['kerja', 'laptop', 'komputer', 'kantor', 'lembur', 'tugas', 'deadline', 'ngetik', 'proyek', 'pekerjaan', 'karir'], query: 'typing computer desk deadline' },
+		{ match: ['sedih', 'menangis', 'gagal', 'kecewa', 'hancur', 'patah', 'luka', 'putus asa', 'nangis', 'penyesalan', 'rugi'], query: 'crying sad tissue tears' },
+		{ match: ['bingung', 'ragu', 'pilihan', 'arah', 'dilema', 'tersesat', 'bimbang', 'mana', 'tanya', 'jalan'], query: 'shrugging confusion two paths' },
+		{ match: ['lelah', 'capek', 'tidur', 'kasur', 'rebahan', 'ngantuk', 'begadang', 'istirahat', 'yawn', 'malam'], query: 'sleeping bed exhausted yawning' },
+		{ match: ['ide', 'solusi', 'solutif', 'paham', 'rahasia', 'pikiran', 'otak', 'terbuka', 'bohlam', 'cerdas', 'tahu'], query: 'pointing glowing light idea brain' },
+		{ match: ['beban', 'stres', 'stress', 'tekanan', 'berat', 'masalah', 'takut', 'cemas', 'panik', 'gelisah', 'terjebak'], query: 'holding heavy boulder overwhelmed' },
+		{ match: ['olahraga', 'lari', 'push up', 'sehat', 'latihan', 'gerak', 'energi', 'fisik', 'gym', 'otot'], query: 'doing push up running' },
+		{ match: ['sukses', 'menang', 'hebat', 'bangga', 'juara', 'jempol', 'berhasil', 'senang', 'bahagia', 'senyum'], query: 'giving double thumbs up celebrating' },
+		{ match: ['minum', 'kopi', 'haus', 'air', 'cangkir', 'kafe', 'santai'], query: 'drinking from water bottle' },
+		{ match: ['waktu', 'jam', 'terlambat', 'disiplin', 'konsisten', 'cepat', 'fokus', 'rutinitas', 'kebiasaan'], query: 'running clock time discipline' },
+		{ match: ['dunia', 'lingkungan', 'masyarakat', 'sosial', 'orang lain', 'manusia'], query: 'standing looking at mountain horizon' }
+	];
+
+	for (const item of STICKMAN_THEMES) {
+		for (const keyword of item.match) {
+			if (lower.includes(keyword)) {
+				return item.query;
+			}
+		}
+	}
+
+	return 'expressive character standing';
+}
+
+/**
  * Split long sentence into high-retention segments (maxWords ~12-13 words, ~5-6 seconds max)
  */
 export function splitSentenceIntoPacedSegments(sentence, maxWords = 32) {
@@ -393,6 +427,7 @@ export function createSceneObject(index, text, chapter = null) {
 	const chapterOffset = (chapter && !isHook) ? (2.8 + pauseDuration) : 0;
 	const estimatedDuration = Math.max(3.5, Number(((words.length * 0.45) + chapterOffset + outroPause).toFixed(1)));
 	const visualQuery = extractVisualQuery(text);
+	const stickmanQuery = extractStickmanQuery(text);
 
 	let formattedTag = chapter?.tag;
 	if (chapter && (formattedTag === undefined || formattedTag === null)) {
@@ -413,6 +448,7 @@ export function createSceneObject(index, text, chapter = null) {
 		narration: text,
 		words,
 		visualQuery,
+		stickmanQuery,
 		estimatedDuration,
 		footage: null, // Will be populated by Pexels or StockLibrary
 		voiceAudioUrl: null, // Will be populated by ElevenLabs or fallback
