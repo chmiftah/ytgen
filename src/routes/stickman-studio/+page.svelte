@@ -332,6 +332,51 @@
 		{ id: 6, label: '6% (Whiteboard)', desc: 'Jarak lega seperti kanvas papan tulis' }
 	];
 
+	// Canvas Background & Paper Style Themes
+	let stickmanBgTheme = $state('white');
+	const BG_THEME_OPTIONS = [
+		{ id: 'white', label: '📄 Putih', desc: 'Putih bersih klasik bawaan stickman' },
+		{ id: 'sketchbook', label: '📜 Sketsa', desc: 'Kertas krem Moleskine hangat (#F5EEDB)' },
+		{ id: 'kraft', label: '📦 Kraft', desc: 'Kertas cokelat vintage daur ulang (#EADEC6)' },
+		{ id: 'grid', label: '📓 Grid', desc: 'Buku catatan berpetak / jurnal ide' },
+		{ id: 'chalkboard', label: '⬛ Kapur', desc: 'Dark mode chalkboard papan tulis hitam (#121212)' }
+	];
+
+	function setStickmanTheme(themeId) {
+		stickmanBgTheme = themeId;
+		if (scenes.length) {
+			scenes = scenes.map(s => ({ ...s, bgTheme: themeId }));
+		}
+	}
+
+	function getCanvasContainerStyle(theme) {
+		if (theme === 'sketchbook') return 'background-color: #F5EEDB;';
+		if (theme === 'kraft') return 'background-color: #EADEC6;';
+		if (theme === 'grid') {
+			return 'background-color: #F5EEDB; background-image: linear-gradient(rgba(0,0,0,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.08) 1px, transparent 1px); background-size: 24px 24px;';
+		}
+		if (theme === 'chalkboard') return 'background-color: #121212;';
+		return 'background-color: #ffffff;';
+	}
+
+	function getStickmanBgLayerStyle(image, theme) {
+		if (!image) return '';
+		const imgUrl = `url('${image}')`;
+		if (theme === 'sketchbook') {
+			return `background-color: #F5EEDB; background-image: ${imgUrl}; background-size: cover; background-position: center; background-blend-mode: multiply;`;
+		}
+		if (theme === 'kraft') {
+			return `background-color: #EADEC6; background-image: ${imgUrl}; background-size: cover; background-position: center; background-blend-mode: multiply;`;
+		}
+		if (theme === 'grid') {
+			return `background-color: #F5EEDB; background-image: linear-gradient(rgba(0,0,0,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.08) 1px, transparent 1px), ${imgUrl}; background-size: 24px 24px, 24px 24px, cover; background-position: center; background-blend-mode: multiply, multiply, multiply;`;
+		}
+		if (theme === 'chalkboard') {
+			return `background-color: #121212; background-image: ${imgUrl}; background-size: cover; background-position: center; filter: invert(1);`;
+		}
+		return `background-color: #ffffff; background-image: ${imgUrl}; background-size: cover; background-position: center;`;
+	}
+
 	async function regenerateVoiceoverForScene(sceneIndex) {
 		if (!scenes[sceneIndex]) return;
 		const sc = scenes[sceneIndex];
@@ -1226,6 +1271,7 @@
 					stickmanSfx,
 					previewCanvasHeight: canvasHeight || 430,
 					videoPadding: stickmanVideoPadding,
+					canvasTheme: stickmanBgTheme,
 					bgmUrl: effBgmUrl,
 					bgmVolume: Number(bgmVolume)
 				})
@@ -1645,13 +1691,13 @@
 					{@const _curAlign = currentScene.textAlign || stickmanTextAlign}
 					{@const _isMiddle = _curAlign === 'middle'}
 					{@const _effImgAnim = getEffectiveImageAnimClass(currentScene, activeSceneIndex)}
-					<div bind:this={canvasEl} bind:clientHeight={canvasHeight} class="stickman-canvas">
+					<div bind:this={canvasEl} bind:clientHeight={canvasHeight} class="stickman-canvas theme-{stickmanBgTheme}" style="{getCanvasContainerStyle(stickmanBgTheme)}">
 						<div class="canvas-viewport" style="inset: {stickmanVideoPadding}%;">
-							{#key `${currentScene.image}-${activeSceneIndex}-${currentScene.imageAnim || stickmanImageAnim}-${currentScene.idleMotion || stickmanIdleMotion}-${currentScene.textSide}`}
+							{#key `${currentScene.image}-${activeSceneIndex}-${currentScene.imageAnim || stickmanImageAnim}-${currentScene.idleMotion || stickmanIdleMotion}-${currentScene.textSide}-${stickmanBgTheme}`}
 								<div class="stickman-entrance-wrapper anim-img-{_effImgAnim} side-{(currentScene.textSide || currentScene.layoutSide || 'right')}">
 									<div
 										class="stickman-bg-layer idle-motion-{(currentScene?.idleMotion || stickmanIdleMotion || 'shake')}"
-										style="background-image: url({currentScene.image});"
+										style="{getStickmanBgLayerStyle(currentScene.image, stickmanBgTheme)}"
 									></div>
 								</div>
 							{/key}
@@ -1666,7 +1712,8 @@
 									<div class="two-lines free-mode text-idle-{(currentScene?.textIdleMotion || stickmanTextIdleMotion || 'shake')}" style="font-family: {stickmanFontFamily}; align-items: {_curAlign === 'right' ? 'flex-end' : _curAlign === 'center' || _curAlign === 'middle' ? 'center' : 'flex-start'}; text-align: {_curAlign === 'right' ? 'right' : _curAlign === 'center' || _curAlign === 'middle' ? 'center' : 'left'};">
 										{#each getEditorLines(currentScene.keyPoint) as line, idx}
 											{@const isTop = idx === 0}
-											{@const col = isTop ? (currentScene.textColorTop || stickmanTextColorTop) : (currentScene.textColorBottom || stickmanTextColorBottom)}
+											{@const rawCol = isTop ? (currentScene.textColorTop || stickmanTextColorTop) : (currentScene.textColorBottom || stickmanTextColorBottom)}
+											{@const col = (stickmanBgTheme === 'chalkboard' && (rawCol === '#111827' || rawCol === '#000000')) ? '#FFFFFF' : (stickmanBgTheme === 'chalkboard' && rawCol?.toLowerCase() === '#dc2626') ? '#F87171' : rawCol}
 											<span class="line anim-target" style="color: {col}; font-size: {getDisplayFontSize(currentScene.keyPoint, currentScene)}px; text-shadow: none;">{line}</span>
 										{/each}
 									</div>
@@ -1971,6 +2018,24 @@
 									{/each}
 								</div>
 								<span class="hint-text" style="font-size: 0.72rem; color: var(--text-3); margin-left: 6px;">Margin aman YouTube</span>
+							</div>
+
+							<div class="style-row">
+								<span class="style-label">Tema Kanvas:</span>
+								<div class="anim-pills">
+									{#each BG_THEME_OPTIONS as tOpt}
+										<button
+											type="button"
+											class="anim-pill"
+											class:on={stickmanBgTheme === tOpt.id}
+											onclick={() => setStickmanTheme(tOpt.id)}
+											title={tOpt.desc}
+										>
+											{tOpt.label}
+										</button>
+									{/each}
+								</div>
+								<span class="hint-text" style="font-size: 0.72rem; color: var(--text-3); margin-left: 6px;">Warna kertas & dark mode</span>
 							</div>
 						</div>
 					</div>
@@ -3794,7 +3859,7 @@
 		border-color: var(--primary) !important;
 		font-weight: 700 !important;
 	}
-	.stickman-canvas { position: absolute; inset: 0; background: #ffffff; overflow: hidden; }
+	.stickman-canvas { position: absolute; inset: 0; background: #ffffff; overflow: hidden; transition: background-color 0.25s ease; }
 	.canvas-viewport { position: absolute; inset: 4%; overflow: hidden; box-sizing: border-box; transition: inset 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
 	.stickman-entrance-wrapper { position: absolute; inset: 0; overflow: hidden; }
 	.stickman-bg-layer { position: absolute; inset: -4%; background-size: cover; background-position: center; will-change: transform; }

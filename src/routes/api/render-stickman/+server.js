@@ -104,8 +104,15 @@ function buildSplitASS(scenes, W = 1920, H = 1080, opts = {}) {
 	const baseFontSize = Number(opts.fontSize) || 60;
 	const canvasRefH = Number(opts.previewCanvasHeight) || 430;
 	const fam = resolveFontFamily(opts.fontFamily || "'Shadows Into Light',cursive");
-	const colorTopBgr = hexToAssBgr(opts.textColorTop || '#DC2626');
-	const colorBottomBgr = hexToAssBgr(opts.textColorBottom || opts.textColor || '#111827');
+
+	const isChalkboard = (opts.canvasTheme || '').toLowerCase() === 'chalkboard';
+	const rawTopOpt = opts.textColorTop || '#DC2626';
+	const effTopOpt = (isChalkboard && rawTopOpt.toLowerCase() === '#dc2626') ? '#F87171' : rawTopOpt;
+	const colorTopBgr = hexToAssBgr(effTopOpt);
+
+	const rawBottomOpt = opts.textColorBottom || opts.textColor || '#111827';
+	const effBottomOpt = (isChalkboard && (rawBottomOpt.toLowerCase() === '#111827' || rawBottomOpt.toLowerCase() === '#000000')) ? '#FFFFFF' : rawBottomOpt;
+	const colorBottomBgr = hexToAssBgr(effBottomOpt);
 
 	function getLines(text) {
 		const raw = String(text || '').split('\n').map(s => s.trim()).filter(Boolean);
@@ -257,8 +264,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 		}
 
 		// Different colors between top line (idx 0) and bottom lines (idx >= 1) with matching stroke for thickness
-		const scColorTop = sc.textColorTop ? hexToAssBgr(sc.textColorTop) : colorTopBgr;
-		const scColorBottom = sc.textColorBottom ? hexToAssBgr(sc.textColorBottom) : colorBottomBgr;
+		const rawScTop = sc.textColorTop || effTopOpt;
+		const effScTop = (isChalkboard && rawScTop.toLowerCase() === '#dc2626') ? '#F87171' : rawScTop;
+		const scColorTop = hexToAssBgr(effScTop);
+
+		const rawScBottom = sc.textColorBottom || effBottomOpt;
+		const effScBottom = (isChalkboard && (rawScBottom.toLowerCase() === '#111827' || rawScBottom.toLowerCase() === '#000000')) ? '#FFFFFF' : rawScBottom;
+		const scColorBottom = hexToAssBgr(effScBottom);
 
 		// Line spacing: each line is a separate Dialogue event with \pos(x,Y), where Y is the
 		// vertical center of the glyph. Because Shadows Into Light has large font metrics
@@ -294,7 +306,7 @@ async function asyncPool(limit, items, fn) {
 	return Promise.all(res);
 }
 
-async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, textSide, idleMotion = 'shake', videoPadding = 4) {
+async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, textSide, idleMotion = 'shake', videoPadding = 4, canvasTheme = 'white') {
 	let effectiveAnim = animType || 'dynamic';
 	if (effectiveAnim === 'dynamic') {
 		const cycle = ['slide-top', 'slide-side', 'zoom-in', 'pop'];
@@ -303,8 +315,32 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 
 	const clipCodec = ['-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p'];
 
+	const isChalkboard = canvasTheme === 'chalkboard';
+	const isPaper = ['sketchbook', 'kraft', 'grid'].includes(canvasTheme);
+
+	let themeBgInput = null;
+	let fadeColor = 'white';
+
+	if (canvasTheme === 'sketchbook') {
+		themeBgInput = `color=c='#F5EEDB':size=${W}x${H}:rate=30`;
+		fadeColor = '0xF5EEDB';
+	} else if (canvasTheme === 'kraft') {
+		themeBgInput = `color=c='#EADEC6':size=${W}x${H}:rate=30`;
+		fadeColor = '0xEADEC6';
+	} else if (canvasTheme === 'grid') {
+		themeBgInput = `color=c='#F5EEDB':size=${W}x${H}:rate=30,drawgrid=width=36:height=36:thickness=1:color=black@0.07`;
+		fadeColor = '0xF5EEDB';
+	} else if (canvasTheme === 'chalkboard') {
+		themeBgInput = `color=c=0x121212:size=${W}x${H}:rate=30`;
+		fadeColor = '0x121212';
+	}
+
 	if (!imgPath || !fs.existsSync(imgPath)) {
-		await runFFmpeg(['-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`, '-t', String(dur), ...clipCodec, '-y', vDest], 180000);
+		if (themeBgInput) {
+			await runFFmpeg(['-f', 'lavfi', '-i', themeBgInput, '-vf', `fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=${fadeColor},format=yuv420p`, '-t', String(dur), ...clipCodec, '-y', vDest], 180000);
+		} else {
+			await runFFmpeg(['-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`, '-t', String(dur), ...clipCodec, '-y', vDest], 180000);
+		}
 		return;
 	}
 
@@ -330,101 +366,54 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 
 	const padW = Math.round(innerW * 1.05);
 	const padH = Math.round(innerH * 1.05);
-	const offX = Math.round((padW - innerW) / 2);
-	const offY = Math.round((padH - innerH) / 2);
 
+	let animFilter = '';
 	if (effectiveAnim === 'static') {
-		if (idleMotion === 'none' && padPct === 0) {
-			await runFFmpeg([
-				'-loop', '1', '-i', imgPath,
-				'-vf', `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white,format=yuv420p`,
-				'-t', String(dur + 0.3), ...clipCodec, '-y', vDest
-			], 240000);
-			return;
-		}
-		// Static entrance with idle shake/breathe inside padded viewport & simultaneous fade out
-		const filter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xIdle})':y='${padY}+(${yIdle})',fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white[v]`;
-		await runFFmpeg([
-			'-loop', '1', '-i', imgPath,
-			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
-			'-filter_complex', filter,
-			'-map', '[v]', '-t', String(dur + 0.3), ...clipCodec, '-y', vDest
-		], 240000);
-		return;
-	}
-
-	if (effectiveAnim === 'slide-top') {
+		animFilter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xIdle})':y='${padY}+(${yIdle})'[animFrame]`;
+	} else if (effectiveAnim === 'slide-top') {
 		const yEntrance = `-${innerH}*(1-sin(t/0.55*1.5708))`;
 		const yExpr = `if(lt(t,0.55), ${yEntrance}, ${yIdle})`;
 		const xExpr = `if(lt(t,0.55), 0, ${xIdle})`;
-		const filter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xExpr})':y='${padY}+(${yExpr})',fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white[v]`;
-		await runFFmpeg([
-			'-loop', '1', '-i', imgPath,
-			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
-			'-filter_complex', filter,
-			'-map', '[v]', '-t', String(dur + 0.3), ...clipCodec, '-y', vDest
-		], 240000);
-		return;
-	}
-
-	if (effectiveAnim === 'slide-side') {
+		animFilter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xExpr})':y='${padY}+(${yExpr})'[animFrame]`;
+	} else if (effectiveAnim === 'slide-side') {
 		const isFromLeft = textSide === 'right'; // If text is right, character is left
 		const xEntrance = isFromLeft ? `-${innerW}*(1-sin(t/0.55*1.5708))` : `${innerW}*(1-sin(t/0.55*1.5708))`;
 		const xExpr = `if(lt(t,0.55), ${xEntrance}, ${xIdle})`;
 		const yExpr = `if(lt(t,0.55), 0, ${yIdle})`;
-		const filter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xExpr})':y='${padY}+(${yExpr})',fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white[v]`;
-		await runFFmpeg([
-			'-loop', '1', '-i', imgPath,
-			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
-			'-filter_complex', filter,
-			'-map', '[v]', '-t', String(dur + 0.3), ...clipCodec, '-y', vDest
-		], 240000);
-		return;
-	}
-
-	if (effectiveAnim === 'zoom-in') {
+		animFilter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xExpr})':y='${padY}+(${yExpr})'[animFrame]`;
+	} else if (effectiveAnim === 'zoom-in') {
 		const xShakeZ = idleMotion === 'shake' ? '+4*sin(it*4.2)' : idleMotion === 'breathe' ? '+5*sin(it*1.6)' : '';
 		const yShakeZ = idleMotion === 'shake' ? '+4*cos(it*3.5)' : idleMotion === 'breathe' ? '+4*cos(it*1.2)' : '';
-		const filter = `[0:v]scale=${Math.round(innerW * 1.15)}:${Math.round(innerH * 1.15)},zoompan=z='min(zoom+0.0006,1.08)':x='iw/2-(iw/zoom/2)${xShakeZ}':y='ih/2-(ih/zoom/2)${yShakeZ}':d=1:s=${innerW}x${innerH}:fps=30,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}',fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white[v]`;
-		await runFFmpeg([
-			'-loop', '1', '-i', imgPath,
-			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
-			'-filter_complex', filter,
-			'-map', '[v]', '-t', String(dur + 0.3), ...clipCodec, '-y', vDest
-		], 240000);
-		return;
-	}
-
-	if (effectiveAnim === 'pop') {
+		animFilter = `[0:v]scale=${Math.round(innerW * 1.15)}:${Math.round(innerH * 1.15)},zoompan=z='min(zoom+0.0006,1.08)':x='iw/2-(iw/zoom/2)${xShakeZ}':y='ih/2-(ih/zoom/2)${yShakeZ}':d=1:s=${innerW}x${innerH}:fps=30,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}'[animFrame]`;
+	} else if (effectiveAnim === 'pop') {
 		const xShakeP = idleMotion === 'shake' ? '+4*sin(it*4.2)' : '';
 		const yShakeP = idleMotion === 'shake' ? '+4*cos(it*3.5)' : '';
-		const filter = `[0:v]scale=${Math.round(innerW * 1.16)}:${Math.round(innerH * 1.16)},zoompan=z='if(lt(it,0.45), 0.84+0.16*sin(it/0.45*1.5708), min(1.0+(it-0.45)*0.002, 1.03))':x='iw/2-(iw/zoom/2)${xShakeP}':y='ih/2-(ih/zoom/2)${yShakeP}':d=1:s=${innerW}x${innerH}:fps=30,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}',fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white[v]`;
-		await runFFmpeg([
-			'-loop', '1', '-i', imgPath,
-			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
-			'-filter_complex', filter,
-			'-map', '[v]', '-t', String(dur + 0.3), ...clipCodec, '-y', vDest
-		], 240000);
-		return;
+		animFilter = `[0:v]scale=${Math.round(innerW * 1.16)}:${Math.round(innerH * 1.16)},zoompan=z='if(lt(it,0.45), 0.84+0.16*sin(it/0.45*1.5708), min(1.0+(it-0.45)*0.002, 1.03))':x='iw/2-(iw/zoom/2)${xShakeP}':y='ih/2-(ih/zoom/2)${yShakeP}':d=1:s=${innerW}x${innerH}:fps=30,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}'[animFrame]`;
+	} else if (effectiveAnim === 'fade') {
+		animFilter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},fade=t=in:st=0:d=0.5,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xIdle})':y='${padY}+(${yIdle})'[animFrame]`;
+	} else {
+		animFilter = `[0:v]scale=${innerW}:${innerH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}'[animFrame]`;
 	}
 
-	if (effectiveAnim === 'fade') {
-		const filter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},fade=t=in:st=0:d=0.5,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xIdle})':y='${padY}+(${yIdle})',fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white[v]`;
-		await runFFmpeg([
-			'-loop', '1', '-i', imgPath,
-			'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
-			'-filter_complex', filter,
-			'-map', '[v]', '-t', String(dur + 0.3), ...clipCodec, '-y', vDest
-		], 240000);
-		return;
-	}
-
-	// Default fallback
-	const filter = `[0:v]scale=${innerW}:${innerH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}',fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white[v]`;
-	await runFFmpeg([
+	let fullFilter = '';
+	const ffmpegInputs = [
 		'-loop', '1', '-i', imgPath,
-		'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`,
-		'-filter_complex', filter,
+		'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`
+	];
+
+	if (isPaper && themeBgInput) {
+		ffmpegInputs.push('-f', 'lavfi', '-i', themeBgInput);
+		fullFilter = `${animFilter};[animFrame]format=gbrp[animGbrp];[2:v]format=gbrp[bgGbrp];[bgGbrp][animGbrp]blend=all_mode=multiply,fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=${fadeColor},format=yuv420p[v]`;
+	} else if (isChalkboard && themeBgInput) {
+		ffmpegInputs.push('-f', 'lavfi', '-i', themeBgInput);
+		fullFilter = `${animFilter};[animFrame]negate,format=gbrp[animGbrp];[2:v]format=gbrp[bgGbrp];[bgGbrp][animGbrp]blend=all_mode=screen,fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=0x121212,format=yuv420p[v]`;
+	} else {
+		fullFilter = `${animFilter},fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white,format=yuv420p[v]`;
+	}
+
+	await runFFmpeg([
+		...ffmpegInputs,
+		'-filter_complex', fullFilter,
 		'-map', '[v]', '-t', String(dur + 0.3), ...clipCodec, '-y', vDest
 	], 240000);
 }
@@ -568,7 +557,7 @@ export async function POST({ request }) {
 	const stream = new ReadableStream({ start(c){ ctrl=c; } });
 	(async()=>{
 		try{
-			const { scenes, renderQuality='1080p', bgmUrl=null, bgmVolume=0.06, videoTitle='', stickmanTextColor='#111827', stickmanTextColorTop='#DC2626', stickmanTextColorBottom='#111827', stickmanFontSize=60, stickmanFontFamily="'Shadows Into Light',cursive", stickmanAnim='pop', stickmanTextAlign='left', stickmanImageAnim='dynamic', stickmanIdleMotion='shake', stickmanTextIdleMotion='shake', stickmanDoodle='speech-bubble', stickmanSfx='pop', previewCanvasHeight=430, videoPadding=4 } = await request.json();
+			const { scenes, renderQuality='1080p', bgmUrl=null, bgmVolume=0.06, videoTitle='', stickmanTextColor='#111827', stickmanTextColorTop='#DC2626', stickmanTextColorBottom='#111827', stickmanFontSize=60, stickmanFontFamily="'Shadows Into Light',cursive", stickmanAnim='pop', stickmanTextAlign='left', stickmanImageAnim='dynamic', stickmanIdleMotion='shake', stickmanTextIdleMotion='shake', stickmanDoodle='speech-bubble', stickmanSfx='pop', previewCanvasHeight=430, videoPadding=4, canvasTheme='white' } = await request.json();
 			if(!scenes?.length){ send({error:'No scenes'}); ctrl?.close(); return; }
 			const slug = String(videoTitle||'stickman-video').replace(/[^a-zA-Z0-9 _-]+/g,'').replace(/\s+/g,'-').slice(0,60).toLowerCase() || `stickman-${rid}`;
 			outName = `${slug}--${Date.now()}.mp4`; outPath = path.resolve(`./static/renders/${outName}`);
@@ -604,7 +593,7 @@ export async function POST({ request }) {
 				const effectiveImageAnim = s.imageAnim || stickmanImageAnim || 'dynamic';
 				const effectiveIdleMotion = s.idleMotion || stickmanIdleMotion || 'shake';
 				const side = (s.textSide || s.layoutSide || (i % 2 === 0 ? 'left' : 'right')).toLowerCase();
-				await renderImageClip(imgPath, vDest, dur, W, H, effectiveImageAnim, i, side, effectiveIdleMotion, videoPadding);
+				await renderImageClip(imgPath, vDest, dur, W, H, effectiveImageAnim, i, side, effectiveIdleMotion, videoPadding, canvasTheme);
 
 				prepped++; send({progress: Math.round(10+prepped/scenes.length*35), step:`Gambar adegan ${prepped}/${scenes.length}`});
 			});
@@ -634,7 +623,7 @@ export async function POST({ request }) {
 			const combined=path.join(tmp,'combined.mp4');
 			await runFFmpeg(['-f','concat','-safe','0','-i',list,'-c','copy','-y',combined], 300000);
 			send({progress:80, step:'Text ASS...'});
-			const ass=buildSplitASS(scenes, W, H, { textColor: stickmanTextColor, textColorTop: stickmanTextColorTop, textColorBottom: stickmanTextColorBottom, fontSize: stickmanFontSize, fontFamily: stickmanFontFamily, defaultAnim: stickmanAnim, defaultAlign: stickmanTextAlign, defaultTextIdle: stickmanTextIdleMotion, previewCanvasHeight, videoPadding });
+			const ass=buildSplitASS(scenes, W, H, { textColor: stickmanTextColor, textColorTop: stickmanTextColorTop, textColorBottom: stickmanTextColorBottom, fontSize: stickmanFontSize, fontFamily: stickmanFontFamily, defaultAnim: stickmanAnim, defaultAlign: stickmanTextAlign, defaultTextIdle: stickmanTextIdleMotion, previewCanvasHeight, videoPadding, canvasTheme });
 			const assPath=path.join(tmp,'split.ass');
 			await fs.promises.writeFile(assPath, ass);
 			const safeAss = assPath.replace(/\\/g, '/').replace(/:/g, '\\:');
