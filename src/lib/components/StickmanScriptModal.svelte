@@ -20,6 +20,7 @@
 	let formula = $state('curiosity_gap');
 	let durationTarget = $state('medium');
 	let languageStyle = $state('casual_smart');
+	let scriptLanguage = $state('id');
 	let customNotes = $state('');
 
 	let generatedScript = $state('');
@@ -43,7 +44,7 @@
 		{ id: 'mind_bending', icon: '🤯', label: 'Analogi Gila', desc: 'Konsep rumit dipecah jadi perumpamaan visual sehari-hari' }
 	];
 
-	const VIRAL_IDEAS = [
+	const VIRAL_IDEAS_ID = [
 		{
 			niche: 'psychology',
 			title: 'Jebakan Dopamin',
@@ -70,6 +71,36 @@
 			prompt: 'Kisah fatal ketika raksasa rental film menertawakan ide Netflix dan bangkrut dalam semalam'
 		}
 	];
+
+	const VIRAL_IDEAS_EN = [
+		{
+			niche: 'psychology',
+			title: 'The Dopamine Trap',
+			prompt: 'Why scrolling social media before bed destroys your brain chemistry and keeps you awake'
+		},
+		{
+			niche: 'finance',
+			title: 'Lifestyle Inflation',
+			prompt: 'Why high-income earners stay broke and live paycheck to paycheck: the rat race explained'
+		},
+		{
+			niche: 'science',
+			title: 'The Time Paradox',
+			prompt: 'Why time feels like it flies exponentially faster as you age and how to slow down your perception'
+		},
+		{
+			niche: 'philosophy',
+			title: 'Zero Validation Power',
+			prompt: 'The psychological shift that happens when you stop seeking external approval from anyone'
+		},
+		{
+			niche: 'psychology',
+			title: '2 AM Overthinking',
+			prompt: 'What actually happens inside your brain when you cannot sleep at 2 AM and how to shut it off'
+		}
+	];
+
+	let activeViralIdeas = $derived(scriptLanguage === 'en' ? VIRAL_IDEAS_EN : VIRAL_IDEAS_ID);
 
 	let wordCount = $derived(generatedScript.trim() ? generatedScript.trim().split(/\s+/).length : 0);
 	let estimatedSeconds = $derived(Math.round(wordCount * 0.43));
@@ -98,6 +129,7 @@
 					formula,
 					durationTarget,
 					languageStyle,
+					language: scriptLanguage,
 					customNotes: customNotes.trim(),
 					apiKey: deepseekApiKey
 				})
@@ -147,7 +179,7 @@
 	function handleApplyScript() {
 		if (!generatedScript.trim()) return;
 		if (onSelectScript) {
-			onSelectScript(generatedScript);
+			onSelectScript(generatedScript, scriptLanguage);
 		}
 		if (onClose) onClose();
 	}
@@ -181,25 +213,50 @@
 			<div class="modal-body">
 				<!-- Left Column: Settings & Prompts -->
 				<div class="form-col">
+					<!-- Language Selector -->
+					<div class="field-group">
+						<span class="sub-label">🌐 Bahasa Naskah:</span>
+						<div class="lang-pills">
+							<button
+								type="button"
+								class="lang-pill"
+								class:active={scriptLanguage === 'id'}
+								onclick={() => scriptLanguage = 'id'}
+							>
+								<span>🇮🇩 Bahasa Indonesia</span>
+							</button>
+							<button
+								type="button"
+								class="lang-pill"
+								class:active={scriptLanguage === 'en'}
+								onclick={() => scriptLanguage = 'en'}
+							>
+								<span>🇺🇸 English (US)</span>
+							</button>
+						</div>
+					</div>
+
 					<!-- Topic Input -->
 					<div class="field-group">
 						<label for="stickman-topic">
-							<span>Topik / Masalah yang Ingin Dibahas</span>
+							<span>{scriptLanguage === 'en' ? 'Topic / Core Question' : 'Topik / Masalah yang Ingin Dibahas'}</span>
 							<span class="required">*</span>
 						</label>
 						<textarea
 							id="stickman-topic"
 							bind:value={topic}
 							rows="3"
-							placeholder="Contoh: Kenapa orang pintar sering terjebak overthinking dan malas bertindak..."
+							placeholder={scriptLanguage === 'en' 
+								? "e.g. Why smart people get stuck in chronic overthinking and analysis paralysis..."
+								: "Contoh: Kenapa orang pintar sering terjebak overthinking dan malas bertindak..."}
 						></textarea>
 					</div>
 
 					<!-- Viral Idea Pills -->
 					<div class="field-group">
-						<span class="sub-label">⚡ Contoh Ide Viral Sekali Klik:</span>
+						<span class="sub-label">{scriptLanguage === 'en' ? '⚡ 1-Click Viral Topic Ideas:' : '⚡ Contoh Ide Viral Sekali Klik:'}</span>
 						<div class="idea-pills">
-							{#each VIRAL_IDEAS as idea}
+							{#each activeViralIdeas as idea}
 								<button
 									type="button"
 									class="idea-pill"
@@ -494,6 +551,42 @@
 		outline: none;
 		border-color: #6366f1;
 		box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+	}
+
+	.lang-pills {
+		display: flex;
+		gap: 8px;
+	}
+
+	.lang-pill {
+		flex: 1;
+		padding: 7px 12px;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 8px;
+		font-size: 0.76rem;
+		font-weight: 500;
+		color: #94a3b8;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		transition: all 0.15s ease;
+	}
+
+	.lang-pill:hover {
+		background: rgba(255, 255, 255, 0.08);
+		border-color: rgba(255, 255, 255, 0.2);
+		color: #f8fafc;
+	}
+
+	.lang-pill.active {
+		background: rgba(99, 102, 241, 0.22);
+		border-color: #6366f1;
+		color: #e0e7ff;
+		font-weight: 600;
+		box-shadow: 0 0 12px rgba(99, 102, 241, 0.2);
 	}
 
 	.idea-pills {

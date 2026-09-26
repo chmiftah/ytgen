@@ -11,6 +11,7 @@ export async function POST({ request }) {
 			durationTarget = 'medium', // 'short' (1-2m), 'medium' (3-5m), 'long' (6-9m)
 			formula = 'curiosity_gap', // 'curiosity_gap', 'relatable_pain', 'story_twist', 'mind_bending'
 			languageStyle = 'casual_smart', // 'casual_smart' (kamu/kita), 'creator_punchy' (santai energik), 'documentary' (berbobot)
+			language = 'id', // 'id' or 'en'
 			customNotes = '',
 			apiKey
 		} = await request.json();
@@ -19,70 +20,151 @@ export async function POST({ request }) {
 			return json({ success: false, error: 'Topik atau ide naskah wajib diisi' }, { status: 400 });
 		}
 
+		const isEn = language === 'en' || /\b(the|and|you|this|that|with|for|what|why|how|when|they|have|from|will|your|about)\b/i.test(topic);
 		const effectiveApiKey = apiKey && apiKey.trim().length > 10 ? apiKey.trim() : DEFAULT_DEEPSEEK_KEY;
 
-		// Duration & Word count targets (Indonesian speech pacing ~140-150 words/min)
-		let wordCountTarget = '600–850 kata (~4-6 menit)';
-		let chapterCount = '4 hingga 5 bab mengalir';
+		// Duration & Word count targets (Pacing ~140-160 words/min)
+		let wordCountTarget = isEn ? '600–850 words (~4-6 minutes)' : '600–850 kata (~4-6 menit)';
 		let maxTokens = 4000;
 
 		if (durationTarget === 'short') {
-			wordCountTarget = '280–420 kata (~2-3 menit)';
-			chapterCount = '2 hingga 3 bab padat';
+			wordCountTarget = isEn ? '280–420 words (~2-3 minutes)' : '280–420 kata (~2-3 menit)';
 			maxTokens = 2500;
 		} else if (durationTarget === 'medium') {
-			wordCountTarget = '600–850 kata (~4-6 menit)';
-			chapterCount = '4 hingga 5 bab mengalir';
+			wordCountTarget = isEn ? '600–850 words (~4-6 minutes)' : '600–850 kata (~4-6 menit)';
 			maxTokens = 4000;
 		} else if (durationTarget === 'long' || durationTarget === 'long_8') {
-			wordCountTarget = '1.050–1.350 kata (~7-9 menit)';
-			chapterCount = '6 hingga 8 bab mendalam';
+			wordCountTarget = isEn ? '1,050–1,350 words (~7-9 minutes)' : '1.050–1.350 kata (~7-9 menit)';
 			maxTokens = 5500;
 		} else if (durationTarget === 'long_12' || durationTarget === '10-12' || durationTarget === 'very_long') {
-			wordCountTarget = '1.500–1.850 kata (~10-12 menit)';
-			chapterCount = '8 hingga 11 bab terstruktur';
+			wordCountTarget = isEn ? '1,500–1,850 words (~10-12 minutes)' : '1.500–1.850 kata (~10-12 menit)';
 			maxTokens = 7500;
 		} else if (durationTarget === 'long_15' || durationTarget === '13-15' || durationTarget === 'extended_15') {
-			wordCountTarget = '1.950–2.400 kata (~13-15 menit)';
-			chapterCount = '11 hingga 14 bab komprehensif & mendalam';
+			wordCountTarget = isEn ? '1,950–2,400 words (~13-15 minutes)' : '1.950–2.400 kata (~13-15 menit)';
 			maxTokens = 8192;
 		}
 
 		// Viral Formula Guidelines
 		let formulaInstruction = '';
-		if (formula === 'curiosity_gap') {
-			formulaInstruction = `FORMULA: THE CURIOSITY GAP & PARADOX
+		if (isEn) {
+			if (formula === 'curiosity_gap') {
+				formulaInstruction = `FORMULA: THE CURIOSITY GAP & PARADOX
+- Open with a counter-intuitive fact or paradox (e.g., "Why the harder you try to relax, the more anxious your brain becomes?").
+- Create an Open Loop in the very first 5 seconds: a hidden mechanism that 90% of people misunderstand.
+- Withhold the full resolution until the climax; build curiosity layer by layer.`;
+			} else if (formula === 'relatable_pain') {
+				formulaInstruction = `FORMULA: RELATABLE PAIN & PATTERN INTERRUPT
+- Start directly inside a hyper-relatable moment (e.g., "You climb into bed at 11 PM, but your thumb reflexively keeps scrolling until 2 in the morning.").
+- Validate the viewer's frustration: "This is not laziness; it is a hijacked biological survival mechanism."
+- Deliver an instant psychological 'Aha-Moment'.`;
+			} else if (formula === 'story_twist') {
+				formulaInstruction = `FORMULA: DRAMATIC STORYTELLING & CASE STUDY
+- Start in media res: right at the tipping point of a high-stakes moment.
+- Tell a true story or case study with dramatic tension and rising stakes.
+- Reveal an unexpected plot twist midway through that reframes the entire narrative.`;
+			} else if (formula === 'mind_bending') {
+				formulaInstruction = `FORMULA: MIND-BENDING ANALOGY
+- Deconstruct an intimidating concept into a visual everyday metaphor.
+- Use striking imagery (e.g., "Imagine your consciousness has two conflicting managers fighting for control of the steering wheel...").
+- Make the viewer think: "I have never heard anyone explain it this clearly before."`;
+			}
+		} else {
+			if (formula === 'curiosity_gap') {
+				formulaInstruction = `FORMULA: THE CURIOSITY GAP & PARADOX
 - Mulai dengan fakta atau kontradiksi yang menentang keyakinan umum (misal: "Kenapa makin keras kamu mencoba santai, otakmu justru makin cemas?").
 - Buka "Open Loop" di detik pertama: ada satu rahasia ganjil yang tidak disadari 90% orang, dan kita akan bongkar lapis demi lapis sampai akhir.
 - Jangan berikan solusi di awal; bangun rasa penasaran bertahap.`;
-		} else if (formula === 'relatable_pain') {
-			formulaInstruction = `FORMULA: RELATABLE PAIN & PATTERN INTERRUPT
+			} else if (formula === 'relatable_pain') {
+				formulaInstruction = `FORMULA: RELATABLE PAIN & PATTERN INTERRUPT
 - Mulai langsung dengan visualisasi momen nyata yang sering dialami penonton (misal: "Pernah nggak kamu udah rebahan di kasur jam 11 malam, tapi tanganmu refleks terus scroll HP sampai jam 2 pagi?").
 - Validasi perasaan penonton: "Ini bukan karena kamu malas, tapi karena ada mekanisme biologis yang dibajak."
 - Sajikan 'Aha-Moment' psikologis yang melegakan sekaligus menampar pola pikir lama.`;
-		} else if (formula === 'story_twist') {
-			formulaInstruction = `FORMULA: DRAMATIC STORYTELLING & CASE STUDY
+			} else if (formula === 'story_twist') {
+				formulaInstruction = `FORMULA: DRAMATIC STORYTELLING & CASE STUDY
 - Mulai di tengah kejadian paling genting atau momen krusial (In-Media-Res).
 - Ceritakan studi kasus nyata (tokoh, brand, atau eksperimen misterius) dengan dinamika naik-turun.
 - Selipkan plot twist di pertengahan cerita yang membuat penonton sadar bahwa mereka salah menduga.`;
-		} else if (formula === 'mind_bending') {
-			formulaInstruction = `FORMULA: MIND-BENDING ANALOGY (ANALOGI GILA)
+			} else if (formula === 'mind_bending') {
+				formulaInstruction = `FORMULA: MIND-BENDING ANALOGY (ANALOGI GILA)
 - Pecah konsep rumit menjadi perumpamaan visual sehari-hari yang sangat gampang dibayangkan.
 - Gunakan analogi unik (misal: "Bayangkan pikiranmu punya dua manajer yang saling berebut kendali...").
 - Buat penonton merasa: "Gila, ternyata sesimpel dan sejelas ini penjelasannya!"`;
+			}
 		}
 
 		// Style of Language
 		let styleInstruction = '';
-		if (languageStyle === 'casual_smart') {
-			styleInstruction = 'Gaya bahasa Indonesia santai cerdas (menggunakan kata "kamu" dan "kita"). Hangat, akrab, seperti ngobrol dengan teman pintar di kafe tanpa kata-kata kaku.';
-		} else if (languageStyle === 'creator_punchy') {
-			styleInstruction = 'Gaya bahasa kreator modern yang lincah, ekspresif, dan punchy. Kalimat-kalimat pendek, berenergi tinggi, ritme cepat, tanpa basa-basi.';
-		} else if (languageStyle === 'documentary') {
-			styleInstruction = 'Gaya bahasa narasi dokumenter mendalam, tenang, berbobot, dengan pilihan kata yang elegan dan memikat imajinasi.';
+		if (isEn) {
+			if (languageStyle === 'casual_smart') {
+				styleInstruction = 'Smart conversational English (using "you" and "we"). Warm, intimate, articulate, like talking to an insightful mentor in a quiet room.';
+			} else if (languageStyle === 'creator_punchy') {
+				styleInstruction = 'Punchy modern YouTube creator style. Short rhythmic sentences, high energy, fast cadence, zero fluff or filler words.';
+			} else if (languageStyle === 'documentary') {
+				styleInstruction = 'Deep documentary narration style. Calm, cinematic, authoritative, profound, captivating the imagination.';
+			}
+		} else {
+			if (languageStyle === 'casual_smart') {
+				styleInstruction = 'Gaya bahasa Indonesia santai cerdas (menggunakan kata "kamu" dan "kita"). Hangat, akrab, seperti ngobrol dengan teman pintar di kafe tanpa kata-kata kaku.';
+			} else if (languageStyle === 'creator_punchy') {
+				styleInstruction = 'Gaya bahasa kreator modern yang lincah, ekspresif, dan punchy. Kalimat-kalimat pendek, berenergi tinggi, ritme cepat, tanpa basa-basi.';
+			} else if (languageStyle === 'documentary') {
+				styleInstruction = 'Gaya bahasa narasi dokumenter mendalam, tenang, berbobot, dengan pilihan kata yang elegan dan memikat imajinasi.';
+			}
 		}
 
-		const systemPrompt = `Lo adalah scriptwriter YouTube storytelling & explainer kelas dunia (ala Dan Koe, Ferry Irwandi, Satu Persen, Ali Abdaal, Kurzgesagt, dan Menjadi Manusia).
+		const systemPrompt = isEn ? `You are an elite, world-class YouTube storytelling & explainer scriptwriter (style of Dan Koe, Ali Abdaal, Johnny Harris, Kurzgesagt, and CGP Grey).
+
+Your scripts consistently achieve:
+1. Average View Duration (AVD) / Audience Retention above 65%.
+2. Gripping first-second hook that freezes the viewer and demands their full attention.
+3. Rhythmic, concise, punchy sentences tailored specifically for spoken voiceover.
+4. WRITE FOR THE EAR, NOT FOR THE EYE. This is an intimate, high-impact conversation with a real human.
+
+==================================================
+⛔ STRICT BAN (ABSOLUTELY FORBIDDEN):
+==================================================
+1. NEVER USE THE WORDS "STICKMAN", "CHARACTER", "DRAWING", "IMAGE", OR "ANIMATION" IN THE SCRIPT!
+2. NEVER WRITE VISUAL STAGE DIRECTIONS OR BRACKETED ACTIONS IN THE TEXT!
+   ❌ FORBIDDEN EXAMPLES:
+   - "Stickman picks up a small coin and runs..."
+   - "The character looks confused at the screen..."
+   - "Draw a diagram of the brain..."
+   Remember: Every word in the script is strictly SPOKEN VOICEOVER read aloud by the narrator. The viewer is listening to an engrossing story, NOT a cartoon commentary!
+
+3. PURE DIRECT VOICEOVER:
+   ✅ EXCELLENT EXAMPLES:
+   - "Imagine waking up at 6 AM, and before your feet even touch the floor, your mind is already drowning in panic..."
+   - "The real secret is deceptively simple: change one tiny lever today, and let compound interest do the heavy lifting."
+   - "Stop waiting until you feel ready. Readiness is an illusion your brain uses to delay discomfort."
+
+==================================================
+SCRIPT STRUCTURE:
+==================================================
+1. PURE SEAMLESS FLOW:
+   - Write in clean, sequential paragraphs.
+   - Do NOT insert chapter titles or bracketed chapter headers unless requested.
+   - Separate ideas naturally with paragraph breaks.
+
+2. ZERO INTRO & ZERO FLUFF:
+   - NEVER greet the audience ("Hey guys", "Welcome back", "In this video...").
+   - The first sentence MUST punch straight into the core paradox or pain point.
+
+3. TARGET WORD COUNT:
+   - Target total script length: ${wordCountTarget}.
+   - Write a complete, ready-to-record voiceover script without cutting corners.
+
+4. PACING & CADENCE:
+   - Keep sentences punchy (10–18 words per sentence).
+   - Every 2-3 sentences, offer a novel perspective or 'Aha-Moment'.
+
+${formulaInstruction}
+
+TONE & STYLE:
+${styleInstruction}
+
+${customNotes ? `ADDITIONAL NOTES:\n${customNotes}` : ''}
+
+Output ONLY the complete spoken narration voiceover text. ZERO mentions of 'stickman' and ZERO visual directions!` : `Lo adalah scriptwriter YouTube storytelling & explainer kelas dunia (ala Dan Koe, Ferry Irwandi, Satu Persen, Ali Abdaal, Kurzgesagt, dan Menjadi Manusia).
 
 Naskah lo selalu punya:
 1. Average View Duration (AVD) / Retensi Penonton di atas 65%.
@@ -138,6 +220,10 @@ ${customNotes ? `CATATAN TAMBAHAN:\n${customNotes}` : ''}
 
 Output HANYA teks naskah narasi lengkap yang mengalir alami tanpa ada judul bab atau tag bab sama sekali. ZERO kata 'stickman' dan ZERO tag bab!`;
 
+		const userPromptText = isEn 
+			? `Write a gripping, high-retention YouTube voiceover script about: "${topic}". Niche: ${niche}. Remember the strict rules: Pure spoken voiceover, flow naturally without chapter headings, and NEVER mention the word "stickman" or visual stage directions!` 
+			: `Tuliskan naskah video YouTube viral berbobot tentang: "${topic}". Niche: ${niche}. Ingat aturan mutlak: Naskah LANGSUNG MENGALIR tanpa ada judul bab sama sekali, 100% narasi suara manusia murni, dan DILARANG menyebut kata "stickman" atau instruksi panggung visual!`;
+
 		const response = await fetch('https://api.deepseek.com/chat/completions', {
 			method: 'POST',
 			headers: {
@@ -148,7 +234,7 @@ Output HANYA teks naskah narasi lengkap yang mengalir alami tanpa ada judul bab 
 				model: 'deepseek-chat',
 				messages: [
 					{ role: 'system', content: systemPrompt },
-					{ role: 'user', content: `Tuliskan naskah video YouTube viral berbobot tentang: "${topic}". Niche: ${niche}. Ingat aturan mutlak: Naskah LANGSUNG MENGALIR tanpa ada judul bab sama sekali, 100% narasi suara manusia murni, dan DILARANG menyebut kata "stickman" atau instruksi panggung visual!` }
+					{ role: 'user', content: userPromptText }
 				],
 				temperature: 0.85,
 				max_tokens: maxTokens,

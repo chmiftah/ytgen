@@ -238,13 +238,13 @@ export function normalize_for_tts(text) {
 export function humanizeScript(rawScript, options = {}) {
 	if (!rawScript || typeof rawScript !== 'string') return '';
 
-	// Support stickman script chapter preservation if chapters exist ([Bab ...], [Hook ...], etc.)
-	const chapterHeaderRegex = /\[(Bab|Hook|Adegan|Scene)[^\]]+\]/i;
+	// Support stickman script chapter preservation if chapters exist ([Bab ...], [Chapter ...], [Hook ...], etc.)
+	const chapterHeaderRegex = /\[(Bab|Hook|Adegan|Scene|Chapter|Part|Section)[^\]]+\]/i;
 	if (chapterHeaderRegex.test(rawScript)) {
-		const parts = rawScript.split(/(?=\[(?:Bab|Hook|Adegan|Scene)[^\]]+\])/i);
+		const parts = rawScript.split(/(?=\[(?:Bab|Hook|Adegan|Scene|Chapter|Part|Section)[^\]]+\])/i);
 		return parts
 			.map((part) => {
-				const match = part.match(/^(\[(?:Bab|Hook|Adegan|Scene)[^\]]+\])\s*([\s\S]*)$/i);
+				const match = part.match(/^(\[(?:Bab|Hook|Adegan|Scene|Chapter|Part|Section)[^\]]+\])\s*([\s\S]*)$/i);
 				if (match) {
 					const header = match[1].trim();
 					const body = match[2].trim();

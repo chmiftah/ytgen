@@ -316,19 +316,38 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 	const clipCodec = ['-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p'];
 
 	const isChalkboard = canvasTheme === 'chalkboard';
-	const isPaper = ['sketchbook', 'kraft', 'grid'].includes(canvasTheme);
+	const isPaper = ['sketchbook', 'kraft', 'grid', 'doodle'].includes(canvasTheme);
 
+	let themeBgFile = null;
 	let themeBgInput = null;
 	let fadeColor = 'white';
 
 	if (canvasTheme === 'sketchbook') {
-		themeBgInput = `color=c='#F5EEDB':size=${W}x${H}:rate=30`;
+		themeBgInput = `color=c=0xF5EEDB:size=${W}x${H}:rate=30`;
 		fadeColor = '0xF5EEDB';
 	} else if (canvasTheme === 'kraft') {
-		themeBgInput = `color=c='#EADEC6':size=${W}x${H}:rate=30`;
-		fadeColor = '0xEADEC6';
+		const kraftPath = path.resolve('./static/stickman/themes/kraft-bg.jpg');
+		if (fs.existsSync(kraftPath)) {
+			themeBgFile = kraftPath;
+		} else {
+			themeBgInput = `color=c=0xD4BA88:size=${W}x${H}:rate=30`;
+		}
+		fadeColor = '0xD4BA88';
 	} else if (canvasTheme === 'grid') {
-		themeBgInput = `color=c='#F5EEDB':size=${W}x${H}:rate=30,drawgrid=width=36:height=36:thickness=1:color=black@0.07`;
+		const gridPath = path.resolve('./static/stickman/themes/grid-bg.png');
+		if (fs.existsSync(gridPath)) {
+			themeBgFile = gridPath;
+		} else {
+			themeBgInput = `color=c=0xF5EEDB:size=${W}x${H}:rate=30,format=gbrp,drawgrid=w=40:h=40:t=1:c=0x405575@0.22,drawgrid=w=200:h=200:t=2:c=0x354560@0.35`;
+		}
+		fadeColor = '0xF5EEDB';
+	} else if (canvasTheme === 'doodle') {
+		const doodlePath = path.resolve('./static/stickman/themes/doodle-bg.jpg');
+		if (fs.existsSync(doodlePath)) {
+			themeBgFile = doodlePath;
+		} else {
+			themeBgInput = `color=c=0xF5EEDB:size=${W}x${H}:rate=30`;
+		}
 		fadeColor = '0xF5EEDB';
 	} else if (canvasTheme === 'chalkboard') {
 		themeBgInput = `color=c=0x121212:size=${W}x${H}:rate=30`;
@@ -336,7 +355,9 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 	}
 
 	if (!imgPath || !fs.existsSync(imgPath)) {
-		if (themeBgInput) {
+		if (themeBgFile) {
+			await runFFmpeg(['-loop', '1', '-i', themeBgFile, '-vf', `scale=${W}:${H},fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=${fadeColor},format=yuv420p`, '-t', String(dur), ...clipCodec, '-y', vDest], 180000);
+		} else if (themeBgInput) {
 			await runFFmpeg(['-f', 'lavfi', '-i', themeBgInput, '-vf', `fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=${fadeColor},format=yuv420p`, '-t', String(dur), ...clipCodec, '-y', vDest], 180000);
 		} else {
 			await runFFmpeg(['-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`, '-t', String(dur), ...clipCodec, '-y', vDest], 180000);
@@ -401,9 +422,14 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 		'-f', 'lavfi', '-i', `color=c=white:size=${W}x${H}:rate=30`
 	];
 
-	if (isPaper && themeBgInput) {
-		ffmpegInputs.push('-f', 'lavfi', '-i', themeBgInput);
-		fullFilter = `${animFilter};[animFrame]format=gbrp[animGbrp];[2:v]format=gbrp[bgGbrp];[bgGbrp][animGbrp]blend=all_mode=multiply,fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=${fadeColor},format=yuv420p[v]`;
+	if (isPaper) {
+		if (themeBgFile) {
+			ffmpegInputs.push('-loop', '1', '-i', themeBgFile);
+			fullFilter = `${animFilter};[animFrame]format=gbrp[animGbrp];[2:v]scale=${W}:${H},format=gbrp[bgGbrp];[bgGbrp][animGbrp]blend=all_mode=multiply,fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=${fadeColor},format=yuv420p[v]`;
+		} else if (themeBgInput) {
+			ffmpegInputs.push('-f', 'lavfi', '-i', themeBgInput);
+			fullFilter = `${animFilter};[animFrame]format=gbrp[animGbrp];[2:v]format=gbrp[bgGbrp];[bgGbrp][animGbrp]blend=all_mode=multiply,fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=${fadeColor},format=yuv420p[v]`;
+		}
 	} else if (isChalkboard && themeBgInput) {
 		ffmpegInputs.push('-f', 'lavfi', '-i', themeBgInput);
 		fullFilter = `${animFilter};[animFrame]negate,format=gbrp[animGbrp];[2:v]format=gbrp[bgGbrp];[bgGbrp][animGbrp]blend=all_mode=screen,fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=0x121212,format=yuv420p[v]`;

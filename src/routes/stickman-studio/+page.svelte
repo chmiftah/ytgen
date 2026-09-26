@@ -16,6 +16,12 @@
 
 	let script = $state(SCRIPT_PRESETS[0].text);
 	let videoTitle = $state(SCRIPT_PRESETS[0].title);
+	let presetLangFilter = $state('all');
+	let filteredPresets = $derived(
+		presetLangFilter === 'all'
+			? SCRIPT_PRESETS
+			: SCRIPT_PRESETS.filter((p) => (p.lang || 'id') === presetLangFilter)
+	);
 	let showScriptModal = $state(false);
 	let showTitleModal = $state(false);
 	let isGeneratingQuickTitle = $state(false);
@@ -50,8 +56,15 @@
 		}
 	}
 
-	function handleApplyGeneratedScript(newScript) {
+	function handleApplyGeneratedScript(newScript, lang = 'id') {
 		script = newScript;
+		const isEn = lang === 'en' || /\[chapter\b/i.test(newScript) || /\b(the|this|that|with|from|your|what|when|because|brain|spiral)\b/i.test(newScript);
+		if (isEn) {
+			presetLangFilter = 'en';
+			if (selectedVoiceId.startsWith('id-ID') || selectedVoiceId.startsWith('f5-')) {
+				selectedVoiceId = 'en-US-ChristopherNeural';
+			}
+		}
 	}
 
 	async function generateQuickAiTitle(chosenCategory = 'wealth_finance') {
@@ -240,8 +253,10 @@
 	const QUICK_VOICES = [
 		{ id: 'id-ID-ArdiNeural', name: 'Ardi', gender: 'Pria', lang: 'ID', emoji: '👨', sampleUrl: '/voice-samples/id-ID-ArdiNeural.mp3' },
 		{ id: 'id-ID-GadisNeural', name: 'Gadis', gender: 'Wanita', lang: 'ID', emoji: '👩', sampleUrl: '/voice-samples/id-ID-GadisNeural.mp3' },
-		{ id: 'en-US-GuyNeural', name: 'Guy', gender: 'Pria', lang: 'US', emoji: '🌐', sampleUrl: '/voice-samples/en-US-GuyNeural.mp3' },
-		{ id: 'en-US-JennyNeural', name: 'Jenny', gender: 'Wanita', lang: 'US', emoji: '🌐', sampleUrl: '/voice-samples/en-US-JennyNeural.mp3' }
+		{ id: 'en-US-ChristopherNeural', name: 'Christopher', gender: 'Pria (Deep/Docu)', lang: 'US', emoji: '🎙️', sampleUrl: '/voice-samples/en-US-ChristopherNeural.mp3' },
+		{ id: 'en-US-GuyNeural', name: 'Guy', gender: 'Pria (Casual)', lang: 'US', emoji: '🌐', sampleUrl: '/voice-samples/en-US-GuyNeural.mp3' },
+		{ id: 'en-US-JennyNeural', name: 'Jenny', gender: 'Wanita (Warm)', lang: 'US', emoji: '👩', sampleUrl: '/voice-samples/en-US-JennyNeural.mp3' },
+		{ id: 'en-US-AriaNeural', name: 'Aria', gender: 'Wanita (Clear)', lang: 'US', emoji: '✨', sampleUrl: '/voice-samples/en-US-AriaNeural.mp3' }
 	];
 	let selectedVoiceId = $state(DEFAULT_EDGE_VOICE_ID);
 	let selectedAudioEffect = $state(DEFAULT_AUDIO_EFFECT_ID);
@@ -335,10 +350,11 @@
 	// Canvas Background & Paper Style Themes
 	let stickmanBgTheme = $state('white');
 	const BG_THEME_OPTIONS = [
-		{ id: 'white', label: '📄 Putih', desc: 'Putih bersih klasik bawaan stickman' },
+		{ id: 'white', label: '📄 Putih', desc: 'Putih bersih klasik whiteboard' },
 		{ id: 'sketchbook', label: '📜 Sketsa', desc: 'Kertas krem Moleskine hangat (#F5EEDB)' },
-		{ id: 'kraft', label: '📦 Kraft', desc: 'Kertas cokelat vintage daur ulang (#EADEC6)' },
+		{ id: 'kraft', label: '📦 Kraft', desc: 'Kertas cokelat vintage daur ulang bertekstur' },
 		{ id: 'grid', label: '📓 Grid', desc: 'Buku catatan berpetak / jurnal ide' },
+		{ id: 'doodle', label: '🎨 Doodle', desc: 'Background coretan sketsa ide & rumus tangan (Dan Koe style)' },
 		{ id: 'chalkboard', label: '⬛ Kapur', desc: 'Dark mode chalkboard papan tulis hitam (#121212)' }
 	];
 
@@ -351,10 +367,9 @@
 
 	function getCanvasContainerStyle(theme) {
 		if (theme === 'sketchbook') return 'background-color: #F5EEDB;';
-		if (theme === 'kraft') return 'background-color: #EADEC6;';
-		if (theme === 'grid') {
-			return 'background-color: #F5EEDB; background-image: linear-gradient(rgba(0,0,0,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.08) 1px, transparent 1px); background-size: 24px 24px;';
-		}
+		if (theme === 'kraft') return "background: url('/stickman/themes/kraft-bg.jpg') center / cover no-repeat, #D4BA88;";
+		if (theme === 'grid') return "background: url('/stickman/themes/grid-bg.png') center / cover no-repeat, #F5EEDB;";
+		if (theme === 'doodle') return "background: url('/stickman/themes/doodle-bg.jpg') center / cover no-repeat, #F5EEDB;";
 		if (theme === 'chalkboard') return 'background-color: #121212;';
 		return 'background-color: #ffffff;';
 	}
@@ -366,10 +381,13 @@
 			return `background-color: #F5EEDB; background-image: ${imgUrl}; background-size: cover; background-position: center; background-blend-mode: multiply;`;
 		}
 		if (theme === 'kraft') {
-			return `background-color: #EADEC6; background-image: ${imgUrl}; background-size: cover; background-position: center; background-blend-mode: multiply;`;
+			return `background-color: #D4BA88; background-image: ${imgUrl}, url('/stickman/themes/kraft-bg.jpg'); background-size: cover, cover; background-position: center, center; background-blend-mode: multiply;`;
 		}
 		if (theme === 'grid') {
-			return `background-color: #F5EEDB; background-image: linear-gradient(rgba(0,0,0,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.08) 1px, transparent 1px), ${imgUrl}; background-size: 24px 24px, 24px 24px, cover; background-position: center; background-blend-mode: multiply, multiply, multiply;`;
+			return `background-color: #F5EEDB; background-image: ${imgUrl}, url('/stickman/themes/grid-bg.png'); background-size: cover, cover; background-position: center, center; background-blend-mode: multiply;`;
+		}
+		if (theme === 'doodle') {
+			return `background-color: #F5EEDB; background-image: ${imgUrl}, url('/stickman/themes/doodle-bg.jpg'); background-size: cover, cover; background-position: center, center; background-blend-mode: multiply;`;
 		}
 		if (theme === 'chalkboard') {
 			return `background-color: #121212; background-image: ${imgUrl}; background-size: cover; background-position: center; filter: invert(1);`;
@@ -451,10 +469,13 @@
 
 	function fallbackExtractKeyPoint(text) {
 		if (!text) return '';
-		const stop = new Set(['yang','dan','di','ke','dari','ini','itu','adalah','untuk','dengan','pada','akan','juga','karena','sebagai','dalam','tidak','ada','saya','kita','mereka','kamu','bisa','harus','sudah','telah','agar','atau','tetapi','namun','jika','kalau','saat','ketika','oleh','tentang','sebuah','seorang','para','secara','lebih','paling','sangat','jadi','bahwa','hanya','saja','lagi','masih','belum','pernah','ingin','mau','perlu','dapat','boleh','oleh','kita','nya','lah','kah','pun','tersebut','seperti','yaitu','yakni','antara','hingga','sampai','setelah','sebelum','selama','tanpa','melalui','terhadap','menjadi','adalah','ialah','sering','banyak','besar','kecil','baru','lama','baik','buruk','salah','benar','penting','utama','sama','lain','setiap','semua','beberapa','tersebut']);
+		const stop = new Set([
+			'yang','dan','di','ke','dari','ini','itu','adalah','untuk','dengan','pada','akan','juga','karena','sebagai','dalam','tidak','ada','saya','kita','mereka','kamu','bisa','harus','sudah','telah','agar','atau','tetapi','namun','jika','kalau','saat','ketika','oleh','tentang','sebuah','seorang','para','secara','lebih','paling','sangat','jadi','bahwa','hanya','saja','lagi','masih','belum','pernah','ingin','mau','perlu','dapat','boleh','oleh','kita','nya','lah','kah','pun','tersebut','seperti','yaitu','yakni','antara','hingga','sampai','setelah','sebelum','selama','tanpa','melalui','terhadap','menjadi','adalah','ialah','sering','banyak','besar','kecil','baru','lama','baik','buruk','salah','benar','penting','utama','sama','lain','setiap','semua','beberapa','tersebut',
+			'the','and','to','of','a','in','that','have','it','for','not','on','with','he','as','you','do','at','this','but','his','by','from','they','we','say','her','she','or','an','will','my','one','all','would','there','their','what','so','up','out','if','about','who','get','which','go','me','when','make','can','like','time','no','just','him','know','take','people','into','year','your','good','some','could','them','see','other','than','then','now','look','only','come','its','over','think','also','back','after','use','two','how','our','work','first','well','way','even','new','want','because','any','these','give','day','most','us','very','much','here'
+		]);
 		let words = text.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
 		let filtered = words.filter(w => w.length >= 4 && !stop.has(w.toLowerCase()));
-		if (filtered.length < 2) filtered = words.filter(w => w.length >= 3).slice(0, 4);
+		if (filtered.length < 2) filtered = words.filter(w => w.length >= 3 && !stop.has(w.toLowerCase())).slice(0, 4);
 		let pick = filtered.slice(0, 4);
 		if (pick.length < 2) pick = words.slice(0, 2);
 		const cap = pick.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
@@ -847,11 +868,16 @@
 							if (asset.title?.toLowerCase().includes(qw)) score += 8;
 							else if (asset.keywords?.some(k => k.includes(qw) || qw.includes(k))) score += 5;
 						}
-						// Indonesian keyPoint & narration tags match (Medium weight)
+						// KeyPoint match: checks asset.title & keywords (English) + asset.tagsId (Indonesian)
 						for (const kw of keyWords) {
+							if (asset.title?.toLowerCase().includes(kw)) score += 7;
+							else if (asset.keywords?.some(k => k.includes(kw) || kw.includes(k))) score += 5;
 							if (asset.tagsId?.some(t => t.includes(kw) || kw.includes(t))) score += 6;
 						}
+						// Narration words match: checks asset.title & keywords (English) + asset.tagsId (Indonesian)
 						for (const nw of narWords) {
+							if (asset.title?.toLowerCase().includes(nw)) score += 4;
+							else if (asset.keywords?.some(k => k.includes(nw) || nw.includes(k))) score += 3;
 							if (asset.tagsId?.some(t => t === nw)) score += 3;
 							else if (asset.tagsId?.some(t => t.includes(nw) || nw.includes(t))) score += 2;
 						}
@@ -1415,16 +1441,45 @@
 
 				<!-- Quick Viral Preset Templates -->
 				<div class="quick-preset-bar">
-					<span class="preset-label">⚡ Topik Viral Cepat:</span>
+					<div class="preset-header-row">
+						<span class="preset-label">⚡ Topik Viral Cepat:</span>
+						<div class="preset-lang-tabs">
+							<button
+								type="button"
+								class="lang-tab-btn"
+								class:active={presetLangFilter === 'all'}
+								onclick={() => presetLangFilter = 'all'}
+							>Semua</button>
+							<button
+								type="button"
+								class="lang-tab-btn"
+								class:active={presetLangFilter === 'id'}
+								onclick={() => presetLangFilter = 'id'}
+							>🇮🇩 ID</button>
+							<button
+								type="button"
+								class="lang-tab-btn"
+								class:active={presetLangFilter === 'en'}
+								onclick={() => presetLangFilter = 'en'}
+							>🇺🇸 EN</button>
+						</div>
+					</div>
 					<div class="preset-pills">
-						{#each SCRIPT_PRESETS as p}
+						{#each filteredPresets as p}
 							<button
 								type="button"
 								class="preset-pill"
 								class:active={script === p.text}
-								onclick={() => { script = p.text; videoTitle = p.title; }}
+								onclick={() => {
+									script = p.text;
+									videoTitle = p.title;
+									if (p.lang === 'en' && selectedVoiceId.startsWith('id-ID')) {
+										selectedVoiceId = 'en-US-ChristopherNeural';
+									}
+								}}
 								title="{p.title}"
 							>
+								{#if p.lang === 'en'}<span class="lang-flag-mini">EN</span>{/if}
 								<span>{p.title.split(':')[0]}</span>
 							</button>
 						{/each}
@@ -1517,7 +1572,7 @@
 									<div class="voice-info">
 										<div class="voice-name-row">
 											<span class="voice-name">{v.name}</span>
-											<span class="voice-gender-pill">{v.gender === 'Wanita' ? '♀ Wanita' : '♂ Pria'}</span>
+											<span class="voice-gender-pill">{v.gender.includes('Wanita') ? '♀ ' + v.gender : '♂ ' + v.gender}</span>
 										</div>
 										<span class="voice-lang">{v.lang === 'ID' ? 'Bahasa Indonesia' : 'English (US)'}</span>
 									</div>
@@ -3076,9 +3131,14 @@
 
 	.quick-preset-bar {
 		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.preset-header-row {
+		display: flex;
 		align-items: center;
+		justify-content: space-between;
 		gap: 8px;
-		flex-wrap: wrap;
 	}
 	.preset-label {
 		font-size: 0.7rem;
@@ -3086,6 +3146,43 @@
 		color: var(--text-3);
 		text-transform: uppercase;
 		letter-spacing: 0.02em;
+	}
+	.preset-lang-tabs {
+		display: flex;
+		gap: 3px;
+		background: rgba(255, 255, 255, 0.04);
+		padding: 2px;
+		border-radius: var(--r-sm);
+		border: 1px solid var(--line);
+	}
+	.lang-tab-btn {
+		padding: 2px 8px;
+		background: transparent;
+		border: none;
+		border-radius: 4px;
+		font-size: 0.68rem;
+		font-weight: 600;
+		color: var(--text-3);
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+	.lang-tab-btn:hover {
+		color: var(--text);
+	}
+	.lang-tab-btn.active {
+		background: var(--primary);
+		color: #ffffff;
+	}
+	.lang-flag-mini {
+		display: inline-block;
+		font-size: 0.6rem;
+		font-weight: 700;
+		padding: 1px 4px;
+		background: rgba(99, 102, 241, 0.35);
+		color: #c7d2fe;
+		border-radius: 3px;
+		margin-right: 4px;
+		vertical-align: middle;
 	}
 	.preset-pills {
 		display: flex;
