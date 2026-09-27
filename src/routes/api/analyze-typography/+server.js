@@ -8,7 +8,9 @@ import {
 	splitSentenceIntoConsistentBeats
 } from '$lib/typography/dynamicDiagram.js';
 
-const DEFAULT_DEEPSEEK_KEY = env.DEEPSEEK_API_KEY || 'sk-0802f45e1d4e41c8ae8d46396c97b746';
+const DEFAULT_DEEPSEEK_KEY = env.DEEPSEEK_API_KEY || '';
+
+const isExpiredKey = (k) => !k || k === 'sk-0802f45e1d4e41c8ae8d46396c97b746';
 
 export async function POST({ request }) {
 	try {
@@ -19,7 +21,9 @@ export async function POST({ request }) {
 			apiKey = ''
 		} = await request.json();
 
-		const effectiveKey = (apiKey && apiKey.trim().length > 10) ? apiKey.trim() : DEFAULT_DEEPSEEK_KEY;
+		const userKey = (apiKey && !isExpiredKey(apiKey.trim())) ? apiKey.trim() : '';
+		const defaultKey = (!isExpiredKey(DEFAULT_DEEPSEEK_KEY)) ? DEFAULT_DEEPSEEK_KEY : '';
+		const effectiveKey = userKey || defaultKey;
 		const rawInput = (script || topic || '').trim();
 
 		if (!rawInput) {

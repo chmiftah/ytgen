@@ -120,6 +120,11 @@
 		generatedScript = '';
 
 		try {
+			const resolvedKey = (deepseekApiKey && deepseekApiKey !== 'sk-0802f45e1d4e41c8ae8d46396c97b746')
+				? deepseekApiKey.trim()
+				: (typeof window !== 'undefined' ? (localStorage.getItem('yt_deepseek_key') || '') : '');
+			const cleanKey = resolvedKey !== 'sk-0802f45e1d4e41c8ae8d46396c97b746' ? resolvedKey : '';
+
 			const res = await fetch('/api/generate-stickman-script', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -131,7 +136,7 @@
 					languageStyle,
 					language: scriptLanguage,
 					customNotes: customNotes.trim(),
-					apiKey: deepseekApiKey
+					apiKey: cleanKey
 				})
 			});
 

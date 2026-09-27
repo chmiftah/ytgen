@@ -16,7 +16,7 @@
 		isOpen = false,
 		pexelsApiKey = $bindable(''),
 		elevenLabsApiKey = $bindable(''),
-		deepseekApiKey = $bindable('sk-0802f45e1d4e41c8ae8d46396c97b746'),
+		deepseekApiKey = $bindable(''),
 		selectedVoiceId = $bindable('id-ID-ArdiNeural'),
 		voiceMode = $bindable('edge_tts'),
 		selectedAudioEffect = $bindable('studio_podcast'),
@@ -88,7 +88,12 @@
 		const savedProvider = localStorage.getItem('yt_voice_provider');
 		const savedEffect = localStorage.getItem('yt_audio_effect');
 
-		if (savedDeepseek) deepseekApiKey = savedDeepseek;
+		if (savedDeepseek === 'sk-0802f45e1d4e41c8ae8d46396c97b746') {
+			localStorage.removeItem('yt_deepseek_key');
+			deepseekApiKey = '';
+		} else if (savedDeepseek) {
+			deepseekApiKey = savedDeepseek;
+		}
 		if (savedPexels) pexelsApiKey = savedPexels;
 		if (savedEleven) {
 			elevenLabsApiKey = savedEleven;
@@ -215,7 +220,7 @@
 			await validatePexelsKey(pexelsApiKey);
 		}
 
-		localStorage.setItem('yt_deepseek_key', deepseekApiKey || 'sk-0802f45e1d4e41c8ae8d46396c97b746');
+		localStorage.setItem('yt_deepseek_key', deepseekApiKey ? deepseekApiKey.trim() : '');
 		localStorage.setItem('yt_pexels_key', pexelsApiKey || '');
 		localStorage.setItem('yt_eleven_key', elevenLabsApiKey || '');
 		localStorage.setItem('yt_voice_provider', selectedVoiceEngine);

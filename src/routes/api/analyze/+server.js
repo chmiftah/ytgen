@@ -2,7 +2,9 @@ import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { analyzeScript as localAnalyzeScript, splitSentenceIntoPacedSegments } from '$lib/services/scriptAnalyzer.js';
 
-const DEFAULT_DEEPSEEK_KEY = env.DEEPSEEK_API_KEY || 'sk-0802f45e1d4e41c8ae8d46396c97b746';
+const DEFAULT_DEEPSEEK_KEY = env.DEEPSEEK_API_KEY || '';
+
+const isExpiredKey = (k) => !k || k === 'sk-0802f45e1d4e41c8ae8d46396c97b746';
 
 export async function POST({ request }) {
 	try {
@@ -13,7 +15,9 @@ export async function POST({ request }) {
 		}
 
 		const cleanScript = script.trim();
-		const effectiveApiKey = (apiKey && apiKey.trim().length > 10) ? apiKey.trim() : DEFAULT_DEEPSEEK_KEY;
+		const userKey = (apiKey && !isExpiredKey(apiKey.trim())) ? apiKey.trim() : '';
+		const defaultKey = (!isExpiredKey(DEFAULT_DEEPSEEK_KEY)) ? DEFAULT_DEEPSEEK_KEY : '';
+		const effectiveApiKey = userKey || defaultKey;
 
 		// If we have a DeepSeek API key, query DeepSeek AI
 		if (effectiveApiKey) {

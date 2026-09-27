@@ -5,6 +5,8 @@
  * Safe for use in both frontend Svelte components and backend server endpoints.
  */
 
+import { applyEnglishPhonetics } from './phoneticEnglishNormalizer.js';
+
 const getEnv = (key, fallback) => {
 	try {
 		if (typeof process !== 'undefined' && process && process.env && process.env[key]) {
@@ -107,7 +109,7 @@ export function integerToIndonesianWords(num) {
 /**
  * Preprocess text for Indonesian Edge TTS without altering names or context
  */
-export function normalize_for_tts(text) {
+export function normalize_for_tts(text, voiceId = DEFAULT_EDGE_VOICE) {
 	if (!text || typeof text !== 'string') return '';
 
 	let t = text;
@@ -212,6 +214,9 @@ export function normalize_for_tts(text) {
 		if (isNaN(n)) return match;
 		return integerToIndonesianWords(n);
 	});
+
+	// 10. Smart English phonetic normalizer for Indonesian voices (mindset -> main-set, overthinking -> ouvertinking)
+	t = applyEnglishPhonetics(t, voiceId);
 
 	// Clean up spacing
 	t = t.replace(/[ \t]+/g, ' ').trim();
@@ -527,9 +532,8 @@ function createChunkObject(index, text, options = {}) {
 	const rate = VOICE_RATES[style] || VOICE_RATES.normal;
 	const pitch = options.pitch || '0Hz';
 	const pause_after = calculatePauseAfter(style, `${index}-${text}`);
-	const normalizedText = normalize_for_tts(text);
-
 	const voiceId = options.voiceId || DEFAULT_EDGE_VOICE;
+	const normalizedText = normalize_for_tts(text, voiceId);
 	const hashInput = `${normalizedText}::${voiceId}::${rate}::${pitch}`;
 	const audio_hash = options.hashFunction ? options.hashFunction(hashInput) : simpleHash(hashInput);
 

@@ -820,9 +820,11 @@
 		genProgress.logs = [];
 		addGenLog('SYSTEM', 'Mulai pipeline Stickman...', 'info');
 		try {
+			const storedKey = typeof window !== 'undefined' ? localStorage.getItem('yt_deepseek_key') : '';
+			const cleanApiKey = (storedKey && storedKey !== 'sk-0802f45e1d4e41c8ae8d46396c97b746') ? storedKey.trim() : '';
 			const res = await fetch('/api/analyze', {
 				method: 'POST', headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ script, apiKey: 'sk-0802f45e1d4e41c8ae8d46396c97b746' })
+				body: JSON.stringify({ script, apiKey: cleanApiKey })
 			});
 			const data = await res.json();
 			let parsed = data.scenes || [];

@@ -348,9 +348,11 @@ export async function POST({ request }) {
 	let controllerRef = null;
 
 	function sendEvent(data) {
-		if (controllerRef) {
-			controllerRef.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-		}
+		try {
+			if (controllerRef && controllerRef.desiredSize !== null) {
+				controllerRef.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+			}
+		} catch (_) {}
 	}
 
 	const stream = new ReadableStream({
@@ -367,7 +369,9 @@ export async function POST({ request }) {
 				subtitlePosition = 'bottom-center',
 				quoteDecoration = 'none',
 				karaokeEnabled = true,
+				subtitleAnimation = 'word_by_word',
 				fontSize = 34,
+				wordsPerLine = 2,
 				bgmUrl,
 				bgmVolume = 0.06,
 				renderQuality = '1080p',
@@ -482,7 +486,11 @@ export async function POST({ request }) {
 					const rawVideoUrl = scene.footage?.videoUrl;
 					let videoDownloaded = false;
 
-					if (rawVideoUrl && rawVideoUrl.startsWith('lavfi:')) {
+					const isBlackout = Boolean(scene.isBlackout || scene.quoteMode || (rawVideoUrl && rawVideoUrl.includes('color=c=black')));
+					if (isBlackout) {
+						await makeLavfiVideo('color=c=black:size=1920x1080:rate=30', videoDest, sceneDuration + 2);
+						videoDownloaded = true;
+					} else if (rawVideoUrl && rawVideoUrl.startsWith('lavfi:')) {
 						const lavfiFilter = rawVideoUrl.slice('lavfi:'.length);
 						await makeLavfiVideo(lavfiFilter, videoDest, sceneDuration + 2);
 						videoDownloaded = true;
@@ -624,7 +632,7 @@ export async function POST({ request }) {
 			// PHASE 4: Subtitle Generation
 			// =========================================================================
 			sendEvent({ progress: 80, step: 'Membuat subtitle ASS...' });
-			const assContent = exportToASS(scenes, subtitleStyle, { karaokeEnabled, fontSize, subtitlePosition, quoteDecoration });
+			const assContent = exportToASS(scenes, subtitleStyle, { karaokeEnabled, fontSize, subtitlePosition, quoteDecoration, subtitleAnimation, wordsPerLine });
 			const assPath = path.join(tempDir, 'subtitles.ass');
 			await fs.promises.writeFile(assPath, assContent);
 
@@ -775,7 +783,7 @@ export async function POST({ request }) {
 			fs.rm(tempDir, { recursive: true, force: true }, () => {});
 			sendEvent({ error: error.message });
 		} finally {
-			controllerRef?.close();
+			try { controllerRef?.close(); } catch (_) {}
 		}
 	})();
 

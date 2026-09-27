@@ -152,6 +152,15 @@ export async function synthesizeChunkWithRetry(chunk, options = {}, retries = 3)
 				};
 			}).filter((w) => w.word.trim().length > 0);
 
+			// Map word timings back to original chunk words so subtitles keep original English spelling
+			const originalWords = (chunk.text || '').trim().split(/\s+/).filter(Boolean);
+			if (wordTimings.length === originalWords.length && originalWords.length > 0) {
+				wordTimings = wordTimings.map((wt, idx) => ({
+					...wt,
+					word: originalWords[idx]
+				}));
+			}
+
 			// Write to cache atomically
 			const tempCache = `${cacheFilePath}.tmp-${Date.now()}`;
 			await fs.promises.writeFile(tempCache, buffer);
@@ -161,7 +170,7 @@ export async function synthesizeChunkWithRetry(chunk, options = {}, retries = 3)
 
 			// Fallback synthetic word timings if boundary missing
 			if (wordTimings.length === 0) {
-				const words = textToRead.split(/\s+/).filter(Boolean);
+				const words = (chunk.text || textToRead).split(/\s+/).filter(Boolean);
 				const step = duration / Math.max(1, words.length);
 				wordTimings = words.map((w, idx) => ({
 					word: w,

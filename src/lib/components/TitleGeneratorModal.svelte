@@ -192,6 +192,11 @@
 		}
 
 		try {
+			const resolvedKey = (deepseekApiKey && deepseekApiKey !== 'sk-0802f45e1d4e41c8ae8d46396c97b746')
+				? deepseekApiKey.trim()
+				: (typeof window !== 'undefined' ? (localStorage.getItem('yt_deepseek_key') || '') : '');
+			const cleanKey = resolvedKey !== 'sk-0802f45e1d4e41c8ae8d46396c97b746' ? resolvedKey : '';
+
 			const res = await fetch('/api/generate-title', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -199,7 +204,7 @@
 					category: selectedCategoryKey,
 					angle: selectedAngle,
 					topic: topicInput.trim(),
-					apiKey: deepseekApiKey
+					apiKey: cleanKey
 				})
 			});
 

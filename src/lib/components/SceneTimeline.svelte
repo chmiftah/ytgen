@@ -26,6 +26,7 @@
 		getAudioEffectById
 	} from '$lib/services/audioEffectService.js';
 	import { getSpokenVoiceoverText, getChapterSpokenIntro, getGlobalChapterConfig } from '$lib/services/scriptAnalyzer.js';
+	import { applyAutoRhythm } from '$lib/services/subtitleService.js';
 
 	let {
 		scenes = $bindable([]),
@@ -42,6 +43,7 @@
 		onAdjustTimingOffset
 	} = $props();
 
+	let autoRhythmAppliedToast = $state(false);
 	let batchFileInput = $state(null);
 	let activeEffectDropdownIndex = $state(-1);
 	let searchQuery = $state('');
@@ -61,9 +63,61 @@
 			if (filterMode === 'need_voice') return !scene.voiceAudioUrl;
 			if (filterMode === 'ready') return !!scene.voiceAudioUrl;
 			if (filterMode === 'chapters') return !!scene.chapter;
+			if (filterMode === 'blackout') return !!scene.isBlackout;
 			return true;
 		});
 	});
+
+	function toggleSceneSubtitle(idx) {
+		const sc = scenes[idx];
+		if (!sc) return;
+		sc.showSubtitle = sc.showSubtitle === false ? true : false;
+		scenes = [...scenes];
+	}
+
+	function cycleSceneSubtitlePos(idx) {
+		const sc = scenes[idx];
+		if (!sc) return;
+		const order = ['wolf-left', 'wolf-right'];
+		const current = sc.subtitlePos || 'wolf-left';
+		const nextIdx = (order.indexOf(current) + 1) % order.length;
+		sc.subtitlePos = order[nextIdx];
+		scenes = [...scenes];
+	}
+
+	function handleApplyAutoRhythm() {
+		scenes = applyAutoRhythm(scenes);
+		autoRhythmAppliedToast = true;
+		setTimeout(() => { autoRhythmAppliedToast = false; }, 4000);
+	}
+
+	function toggleSceneBlackout(idx) {
+		const sc = scenes[idx];
+		if (!sc) return;
+		if (sc.isBlackout) {
+			sc.isBlackout = false;
+			sc.quoteMode = false;
+			if (sc.prevFootage) {
+				sc.footage = sc.prevFootage;
+				delete sc.prevFootage;
+			}
+		} else {
+			sc.isBlackout = true;
+			sc.quoteMode = true;
+			sc.prevFootage = sc.footage ? { ...sc.footage } : null;
+			sc.footage = {
+				videoUrl: 'lavfi:color=c=black:size=1920x1080:rate=30',
+				title: 'Layar Hitam (Dramatic Quote)',
+				thumbnail: '',
+				isBlackout: true
+			};
+		}
+		scenes = [...scenes];
+	}
+
+	function setAllSubtitles(enabled) {
+		scenes = scenes.map(s => ({ ...s, showSubtitle: enabled }));
+	}
 
 	let displayedScenes = $derived.by(() => {
 		if (pageSize === 'all') return filteredScenes;
@@ -493,6 +547,27 @@
 		<div class="header-actions">
 			<button type="button" class="btn btn-secondary btn-sm" onclick={scrollToActive} disabled={scenes.length === 0} title="Loncat ke scene yang sedang preview">Loncat ke aktif</button>
 			<button type="button" class="btn btn-secondary btn-sm" onclick={scrollToTop} disabled={scenes.length === 0}>Ke atas</button>
+			
+			<button 
+				type="button" 
+				class="btn btn-sm btn-auto-rhythm" 
+				onclick={handleApplyAutoRhythm} 
+				disabled={scenes.length === 0} 
+				title="Otomatis acak ritme subtitle: kiri, kanan, & jeda hening tanpa teks tanpa perlu atur manual!"
+			>
+				<span>🎲 Auto-Rhythm Sub</span>
+			</button>
+
+			<button 
+				type="button" 
+				class="btn btn-secondary btn-sm" 
+				onclick={() => setAllSubtitles(true)} 
+				disabled={scenes.length === 0} 
+				title="Aktifkan subtitle di seluruh adegan"
+			>
+				<span>Semua Sub ON</span>
+			</button>
+
 			<button type="button" class="btn btn-secondary btn-sm" onclick={() => batchFileInput?.click()} title="Upload banyak file audio sekaligus">
 				<FolderUp size={14} /><span>Batch Audio</span>
 			</button>
@@ -500,6 +575,12 @@
 			<button class="btn btn-secondary btn-sm" onclick={onAddScene}><Plus size={14} /><span>Tambah</span></button>
 		</div>
 	</div>
+
+	{#if autoRhythmAppliedToast}
+		<div class="auto-rhythm-toast">
+			<span>✨ <strong>Ritme Dinamis Diterapkan!</strong> Subtitle dirotasi kiri, kanan, & jeda hening otomatis di {scenes.length} adegan.</span>
+		</div>
+	{/if}
 
 	<div class="storyboard-toolbar">
 		<div class="toolbar-left">
@@ -509,6 +590,7 @@
 			<div class="toolbar-filters">
 				<button type="button" class="filter-pill" class:active={filterMode === 'all'} onclick={() => filterMode = 'all'}>Semua</button>
 				<button type="button" class="filter-pill" class:active={filterMode === 'chapters'} onclick={() => filterMode = 'chapters'}>Bab</button>
+				<button type="button" class="filter-pill" class:active={filterMode === 'blackout'} onclick={() => filterMode = 'blackout'}>⬛ Blank Quote</button>
 				<button type="button" class="filter-pill" class:active={filterMode === 'need_voice'} onclick={() => filterMode = 'need_voice'}>Butuh suara</button>
 				<button type="button" class="filter-pill" class:active={filterMode === 'ready'} onclick={() => filterMode = 'ready'}>Siap</button>
 			</div>
@@ -834,12 +916,18 @@
 					class="scene-card" 
 					class:active={activeSceneIndex === index}
 					class:has-chapter={!!scene.chapter}
+					class:is-blackout-scene={scene.isBlackout}
 					data-scene-index={index}
 					onclick={() => selectScene(index)}
 				>
 					<!-- Left: Footage Thumbnail -->
 					<div class="card-thumbnail-wrap">
-						{#if scene.footage?.thumbnail}
+						{#if scene.isBlackout}
+							<div class="thumb-blackout" title="Layar Hitam (Dramatic Quote)">
+								<span class="thumb-blackout-icon">“ ”</span>
+								<span class="thumb-blackout-text">BLANK QUOTE</span>
+							</div>
+						{:else if scene.footage?.thumbnail}
 							<img src={scene.footage.thumbnail} alt={scene.visualQuery} class="thumbnail-img" />
 						{:else}
 							<div class="thumb-placeholder">
@@ -958,6 +1046,48 @@
 									<span>Voice Ready</span>
 								</span>
 							{/if}
+
+							<!-- Subtitle Toggle Pill -->
+							<button
+								type="button"
+								class="scene-sub-pill"
+								class:sub-off={scene.showSubtitle === false}
+								onclick={(e) => { e.stopPropagation(); toggleSceneSubtitle(index); }}
+								title={scene.showSubtitle === false ? "Subtitle DIMATIKAN di adegan ini (Klik untuk aktifkan)" : "Subtitle AKTIF di adegan ini (Klik untuk matikan)"}
+							>
+								<span class="sub-pill-dot" class:off={scene.showSubtitle === false}></span>
+								<span>{scene.showSubtitle === false ? 'Sub: OFF' : 'Sub: ON'}</span>
+							</button>
+
+							<!-- Scene Subtitle Position Pill (If subtitle is ON) -->
+							{#if scene.showSubtitle !== false && !scene.isBlackout}
+								<button
+									type="button"
+									class="scene-pos-pill"
+									onclick={(e) => { e.stopPropagation(); cycleSceneSubtitlePos(index); }}
+									title="Posisi Subtitle (Klik untuk ganti: Kiri / Kanan)"
+								>
+									<span>
+										{#if scene.subtitlePos === 'wolf-right' || scene.subtitlePos === 'cinema-right'}
+											👉 Kanan
+										{:else}
+											👈 Kiri
+										{/if}
+									</span>
+								</button>
+							{/if}
+
+							<!-- Blank Hitam / Quote Mode Pill -->
+							<button
+								type="button"
+								class="scene-blackout-pill"
+								class:active={scene.isBlackout}
+								onclick={(e) => { e.stopPropagation(); toggleSceneBlackout(index); }}
+								title={scene.isBlackout ? "Matikan mode Blank Hitam (Kembalikan footage video)" : "Jadikan Blank Hitam (Layar hitam pekat + teks quote rata tengah tanpa footage)"}
+							>
+								<span class="blackout-pill-icon">{scene.isBlackout ? '⬛' : '🔲'}</span>
+								<span>{scene.isBlackout ? 'Blank Quote' : 'Blank Hitam'}</span>
+							</button>
 							{#if !scene.chapter}
 								<button 
 									type="button" 
@@ -1424,6 +1554,132 @@
 	}
 	.apply-all-action-btn:hover { border-color: var(--line-strong); color: var(--text); }
 	.voice-ready-badge { display: flex; gap: 4px; align-items: center; font-size: 0.65rem; color: var(--success); font-weight: 600; }
+	.scene-sub-pill,
+	.scene-blackout-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 2px 8px;
+		border-radius: var(--r-full);
+		font-size: 0.68rem;
+		font-weight: 600;
+		background: var(--bg-surface);
+		border: 1px solid var(--line);
+		color: var(--text-2);
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.scene-sub-pill:hover,
+	.scene-blackout-pill:hover {
+		border-color: var(--line-strong);
+		color: var(--text);
+	}
+	.scene-sub-pill.sub-off {
+		opacity: 0.6;
+		background: rgba(255, 255, 255, 0.02);
+		border-style: dashed;
+		color: var(--text-3);
+	}
+	.sub-pill-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: #10b981;
+		box-shadow: 0 0 6px #10b981;
+	}
+	.sub-pill-dot.off {
+		background: var(--text-muted);
+		box-shadow: none;
+	}
+	.btn-auto-rhythm {
+		background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(245, 158, 11, 0.05));
+		border: 1px solid rgba(245, 158, 11, 0.4);
+		color: #fbbf24;
+		font-weight: 700;
+		transition: all 0.2s ease;
+	}
+	.btn-auto-rhythm:hover {
+		background: linear-gradient(135deg, rgba(245, 158, 11, 0.35), rgba(245, 158, 11, 0.15));
+		border-color: #fbbf24;
+		box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
+		color: #ffffff;
+	}
+	.auto-rhythm-toast {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+		padding: 8px 16px;
+		background: rgba(245, 158, 11, 0.12);
+		border: 1px solid rgba(245, 158, 11, 0.35);
+		border-radius: var(--r-md);
+		color: #fef3c7;
+		font-size: 0.8rem;
+		margin: 8px 12px;
+		animation: fadeInToast 0.3s ease;
+	}
+	@keyframes fadeInToast {
+		from { opacity: 0; transform: translateY(-4px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+	.scene-pos-pill {
+		display: inline-flex;
+		align-items: center;
+		padding: 2px 7px;
+		border-radius: var(--r-full);
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		color: var(--text-2);
+		font-size: 0.65rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.scene-pos-pill:hover {
+		background: rgba(255, 255, 255, 0.12);
+		color: #fff;
+		border-color: rgba(255, 255, 255, 0.3);
+	}
+	.scene-blackout-pill.active {
+		background: #000000;
+		border-color: rgba(255, 255, 255, 0.4);
+		color: #ffffff;
+		box-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
+	}
+	.blackout-pill-icon {
+		font-size: 0.65rem;
+	}
+	.thumb-blackout {
+		position: absolute;
+		inset: 0;
+		background: #000000;
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: var(--r-sm);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 2px;
+		z-index: 2;
+	}
+	.thumb-blackout-icon {
+		font-family: Georgia, serif;
+		font-size: 1.35rem;
+		font-weight: 700;
+		color: #ffffff;
+		line-height: 1;
+		opacity: 0.9;
+	}
+	.thumb-blackout-text {
+		font-size: 0.58rem;
+		font-weight: 800;
+		letter-spacing: 0.08em;
+		color: #94a3b8;
+	}
+	.scene-card.is-blackout-scene {
+		background: #06080e !important;
+		border-color: rgba(255, 255, 255, 0.16) !important;
+	}
 	.btn-add-chapter { display: inline-flex; gap: 4px; align-items: center; padding: 3px 7px; font-size: 0.65rem; color: var(--text-2); border: 1px solid var(--line); border-radius: var(--r-full); background: var(--bg-surface); }
 	.btn-add-chapter:hover { color: var(--text); border-color: var(--line-strong); }
 	.narration-input {

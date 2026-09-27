@@ -43,16 +43,18 @@
 	let videoTitle = $state('');
 
 	// Customization State
-	let subtitleStyleKey = $state('hormozi');
-	let subtitlePosition = $state('bottom-center');
+	let subtitleStyleKey = $state('cinema_essay');
+	let subtitleAnimation = $state('word_by_word');
+	let subtitlePosition = $state('cinema-split');
 	let quoteDecoration = $state('none');
 	let karaokeEnabled = $state(true);
 	let subtitleFontSize = $state(34);
+	let wordsPerLine = $state(2);
 	let selectedBgmId = $state('local-documentary');
 	let bgmVolume = $state(0.10);
 
 	// API Keys, Voices & Audio Effects
-	let deepseekApiKey = $state('sk-0802f45e1d4e41c8ae8d46396c97b746');
+	let deepseekApiKey = $state('');
 	let pexelsApiKey = $state('');
 	let elevenLabsApiKey = $state('');
 	let selectedVoiceId = $state(DEFAULT_EDGE_VOICE_ID); // Default to id-ID-ArdiNeural (Edge TTS)
@@ -234,7 +236,12 @@
 	onMount(() => {
 		if (typeof window !== 'undefined') {
 			const savedDeepseek = localStorage.getItem('yt_deepseek_key');
-			if (savedDeepseek) deepseekApiKey = savedDeepseek;
+			if (savedDeepseek === 'sk-0802f45e1d4e41c8ae8d46396c97b746') {
+				localStorage.removeItem('yt_deepseek_key');
+				deepseekApiKey = '';
+			} else if (savedDeepseek) {
+				deepseekApiKey = savedDeepseek;
+			}
 
 			pexelsApiKey = localStorage.getItem('yt_pexels_key') || '';
 			selectedVoiceId = localStorage.getItem('yt_voice_id') || DEFAULT_EDGE_VOICE_ID;
@@ -251,6 +258,12 @@
 			const savedKaraoke = localStorage.getItem('yt_karaoke_enabled');
 			if (savedKaraoke !== null) karaokeEnabled = savedKaraoke === 'true';
 
+			const savedStyle = localStorage.getItem('yt_subtitle_style');
+			if (savedStyle) subtitleStyleKey = savedStyle;
+
+			const savedAnimation = localStorage.getItem('yt_subtitle_animation');
+			if (savedAnimation) subtitleAnimation = savedAnimation;
+
 			const savedFontSize = localStorage.getItem('yt_subtitle_fontsize');
 			if (savedFontSize) subtitleFontSize = Number(savedFontSize);
 
@@ -260,6 +273,9 @@
 			const savedQuoteDec = localStorage.getItem('yt_quote_decoration');
 			if (savedQuoteDec) quoteDecoration = savedQuoteDec;
 
+			const savedWpl = localStorage.getItem('yt_words_per_line');
+			if (savedWpl) wordsPerLine = savedWpl === 'dynamic' ? 'dynamic' : Number(savedWpl);
+
 			const savedTitle = localStorage.getItem('yt_video_title');
 			if (savedTitle) videoTitle = savedTitle;
 		}
@@ -267,11 +283,14 @@
 
 	$effect(() => {
 		if (typeof window !== 'undefined') {
-			localStorage.setItem('yt_deepseek_key', deepseekApiKey || 'sk-0802f45e1d4e41c8ae8d46396c97b746');
+			localStorage.setItem('yt_deepseek_key', deepseekApiKey || '');
 			localStorage.setItem('yt_karaoke_enabled', String(karaokeEnabled));
+			localStorage.setItem('yt_subtitle_style', subtitleStyleKey);
+			localStorage.setItem('yt_subtitle_animation', subtitleAnimation);
 			localStorage.setItem('yt_subtitle_fontsize', String(subtitleFontSize));
 			localStorage.setItem('yt_subtitle_position', subtitlePosition);
 			localStorage.setItem('yt_quote_decoration', quoteDecoration);
+			localStorage.setItem('yt_words_per_line', String(wordsPerLine));
 			localStorage.setItem('yt_voice_mode', voiceMode);
 			localStorage.setItem('yt_audio_effect', selectedAudioEffect);
 			localStorage.setItem('yt_video_title', videoTitle || '');
@@ -1271,7 +1290,9 @@
 					subtitlePosition={subtitlePosition}
 					quoteDecoration={quoteDecoration}
 					karaokeEnabled={karaokeEnabled}
+					subtitleAnimation={subtitleAnimation}
 					subtitleFontSize={subtitleFontSize}
+					wordsPerLine={wordsPerLine}
 					bind:selectedBgmId={selectedBgmId}
 					bind:bgmVolume={bgmVolume}
 				/>
@@ -1338,7 +1359,9 @@
 		bind:subtitlePosition={subtitlePosition}
 		bind:quoteDecoration={quoteDecoration}
 		bind:karaokeEnabled={karaokeEnabled}
+		bind:subtitleAnimation={subtitleAnimation}
 		bind:subtitleFontSize={subtitleFontSize}
+		bind:wordsPerLine={wordsPerLine}
 		onClose={() => showSubtitleModal = false}
 	/>
 
@@ -1360,7 +1383,9 @@
 		subtitlePosition={subtitlePosition}
 		quoteDecoration={quoteDecoration}
 		karaokeEnabled={karaokeEnabled}
+		subtitleAnimation={subtitleAnimation}
 		subtitleFontSize={subtitleFontSize}
+		wordsPerLine={wordsPerLine}
 		selectedBgmId={selectedBgmId}
 		bgmVolume={bgmVolume}
 		selectedVoiceId={selectedVoiceId}

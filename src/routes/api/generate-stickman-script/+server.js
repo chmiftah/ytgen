@@ -1,7 +1,9 @@
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 
-const DEFAULT_DEEPSEEK_KEY = env.DEEPSEEK_API_KEY || 'sk-0802f45e1d4e41c8ae8d46396c97b746';
+const DEFAULT_DEEPSEEK_KEY = env.DEEPSEEK_API_KEY || '';
+
+const isExpiredKey = (k) => !k || k === 'sk-0802f45e1d4e41c8ae8d46396c97b746';
 
 export async function POST({ request }) {
 	try {
@@ -21,7 +23,13 @@ export async function POST({ request }) {
 		}
 
 		const isEn = language === 'en' || /\b(the|and|you|this|that|with|for|what|why|how|when|they|have|from|will|your|about)\b/i.test(topic);
-		const effectiveApiKey = apiKey && apiKey.trim().length > 10 ? apiKey.trim() : DEFAULT_DEEPSEEK_KEY;
+		const userKey = (apiKey && !isExpiredKey(apiKey.trim())) ? apiKey.trim() : '';
+		const defaultKey = (!isExpiredKey(DEFAULT_DEEPSEEK_KEY)) ? DEFAULT_DEEPSEEK_KEY : '';
+		const effectiveApiKey = userKey || defaultKey;
+
+		if (!effectiveApiKey) {
+			return json({ success: false, error: 'DeepSeek API Key tidak ditemukan atau belum valid. Silakan periksa file .env atau menu Settings.' }, { status: 400 });
+		}
 
 		// Duration & Word count targets (Pacing ~140-160 words/min)
 		let wordCountTarget = isEn ? '600–850 words (~4-6 minutes)' : '600–850 kata (~4-6 menit)';

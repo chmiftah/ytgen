@@ -1,7 +1,9 @@
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 
-const DEFAULT_DEEPSEEK_KEY = env.DEEPSEEK_API_KEY || 'sk-0802f45e1d4e41c8ae8d46396c97b746';
+const DEFAULT_DEEPSEEK_KEY = env.DEEPSEEK_API_KEY || '';
+
+const isExpiredKey = (k) => !k || k === 'sk-0802f45e1d4e41c8ae8d46396c97b746';
 
 /**
  * Rich category definitions with real viral angles
@@ -444,7 +446,9 @@ export async function POST({ request }) {
 		const selectedCatKey = CATEGORY_DEFINITIONS[category] ? category : 'wealth_finance';
 		const catMeta = CATEGORY_DEFINITIONS[selectedCatKey];
 		const effectiveTopic = (topic || '').trim();
-		const effectiveApiKey = apiKey && apiKey.trim().length > 10 ? apiKey.trim() : DEFAULT_DEEPSEEK_KEY;
+		const userKey = (apiKey && !isExpiredKey(apiKey.trim())) ? apiKey.trim() : '';
+		const defaultKey = (!isExpiredKey(DEFAULT_DEEPSEEK_KEY)) ? DEFAULT_DEEPSEEK_KEY : '';
+		const effectiveApiKey = userKey || defaultKey;
 
 		// If no DeepSeek key, return rich offline category titles immediately
 		if (!effectiveApiKey) {

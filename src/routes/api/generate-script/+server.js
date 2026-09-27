@@ -1,7 +1,9 @@
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 
-const DEFAULT_DEEPSEEK_KEY = env.DEEPSEEK_API_KEY || 'sk-0802f45e1d4e41c8ae8d46396c97b746';
+const DEFAULT_DEEPSEEK_KEY = env.DEEPSEEK_API_KEY || '';
+
+const isExpiredKey = (k) => !k || k === 'sk-0802f45e1d4e41c8ae8d46396c97b746';
 
 export async function POST({ request }) {
 	try {
@@ -18,7 +20,13 @@ export async function POST({ request }) {
 			return json({ success: false, error: 'Topik naskah wajib diisi' }, { status: 400 });
 		}
 
-		const effectiveApiKey = apiKey && apiKey.trim().length > 10 ? apiKey.trim() : DEFAULT_DEEPSEEK_KEY;
+		const userKey = (apiKey && !isExpiredKey(apiKey.trim())) ? apiKey.trim() : '';
+		const defaultKey = (!isExpiredKey(DEFAULT_DEEPSEEK_KEY)) ? DEFAULT_DEEPSEEK_KEY : '';
+		const effectiveApiKey = userKey || defaultKey;
+
+		if (!effectiveApiKey) {
+			return json({ success: false, error: 'DeepSeek API Key belum diatur. Silakan periksa file .env atau menu Settings.' }, { status: 400 });
+		}
 
 		// Duration configuration & token budgets (130-155 words per minute)
 		let durationText = '10–15 Menit';
