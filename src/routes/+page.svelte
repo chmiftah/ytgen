@@ -44,6 +44,10 @@
 						<Zap size={20} />
 						<span>Dan Koe Typography</span>
 					</a>
+					<a href="/video-editor" class="btn btn-editor btn-lg">
+						<Film size={20} />
+						<span>Video Editor (Image to Video)</span>
+					</a>
 				</div>
 			</div>
 			<div class="hero-visual">
@@ -99,6 +103,11 @@
 				<div class="feature-icon"><Zap size={24} /></div>
 				<h3>Motion Typography (Dan Koe)</h3>
 				<p>Tipografi kinetik filosofis dengan latar charcoal/matte black, accent glowing keywords, dan diagram mental model.</p>
+			</div>
+			<div class="feature-card glass-panel">
+				<div class="feature-icon"><Film size={24} /></div>
+				<h3>Image to Video Timeline Editor</h3>
+				<p>Gabungkan kumpulan foto/gambar menjadi video utuh. Auto-import berurutan nomor, atur durasi per gambar dengan drag timeline, dan sinkronkan audio musik latar.</p>
 			</div>
 		</div>
 	</section>
@@ -240,6 +249,19 @@
 		color: #fbbf24;
 		transform: translateY(-2px);
 		box-shadow: 0 8px 24px rgba(245, 158, 11, 0.25);
+	}
+
+	.btn-editor {
+		background: #0f172a;
+		color: #38bdf8;
+		border: 1px solid rgba(56, 189, 248, 0.4);
+	}
+	.btn-editor:hover {
+		background: #1e293b;
+		border-color: #38bdf8;
+		color: #7dd3fc;
+		transform: translateY(-2px);
+		box-shadow: 0 8px 24px rgba(56, 189, 248, 0.25);
 	}
 
 	.hero-visual {

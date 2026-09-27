@@ -26,6 +26,7 @@
 		<a href="/stickman-studio" class="studio-pill">🎨 Stickman</a>
 		<a href="/docu-studio" class="studio-pill">📰 Docu-Style</a>
 		<a href="/typography-studio" class="studio-pill">⚡ Dan Koe</a>
+		<a href="/video-editor" class="studio-pill">🎞️ Video Editor</a>
 	</div>
 
 	<div class="nav-right">

@@ -940,6 +940,7 @@
 				bind:script={script}
 				onGenerate={generateWorkflow}
 				isGenerating={isGenerating}
+				showGenerateButton={true}
 				onOpenScriptGenerator={() => showScriptGeneratorModal = true}
 				onOpenTopicGenerator={() => showTopicGeneratorModal = true}
 				onOpenTitleGenerator={() => showTitleGeneratorModal = true}
@@ -1463,7 +1464,7 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
 		gap: 18px;
-		padding: 16px 20px 0;
+		padding: 16px 20px 48px;
 		max-width: 1480px;
 		margin: 0 auto;
 		width: 100%;
