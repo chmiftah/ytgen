@@ -1,5 +1,5 @@
 <script>
-	import { Play, Sparkles, Wand2, Zap, Film, ArrowRight, Share2, FileText, Stamp } from 'lucide-svelte';
+	import { Play, Sparkles, Wand2, Zap, Film, ArrowRight, Share2, FileText, Stamp, Smartphone } from 'lucide-svelte';
 </script>
 
 <div class="landing-page">
@@ -22,10 +22,10 @@
 			<div class="hero-text">
 				<div class="badge">
 					<Sparkles size={14} />
-					<span>4 In 1 Video Engine</span>
+					<span>5 In 1 Video Engine</span>
 				</div>
 				<h1>Produksi Video YouTube <span class="gradient-text">Dalam Hitungan Menit</span></h1>
-				<p>Ubah naskah menjadi video YouTube Long (16:9) lengkap: footage sinematik, animasi stickman explainer, kolase dokumenter investigatif Vox, atau motion typography filosofis ala Dan Koe.</p>
+				<p>Ubah naskah menjadi video YouTube Long (16:9) atau Shorts (9:16) viral: footage sinematik, animasi stickman, kolase dokumenter Vox, motion typography ala Dan Koe, atau <strong>Shorts dari Giphy Clips</strong>.</p>
 				
 				<div class="hero-actions">
 					<a href="/studio" class="btn btn-primary btn-lg">
@@ -47,6 +47,10 @@
 					<a href="/video-editor" class="btn btn-editor btn-lg">
 						<Film size={20} />
 						<span>Video Editor (Image to Video)</span>
+					</a>
+					<a href="/shorts-studio" class="btn btn-shorts btn-lg">
+						<Smartphone size={20} />
+						<span>✨ Shorts Generator (Giphy)</span>
 					</a>
 				</div>
 			</div>
@@ -108,6 +112,11 @@
 				<div class="feature-icon"><Film size={24} /></div>
 				<h3>Image to Video Timeline Editor</h3>
 				<p>Gabungkan kumpulan foto/gambar menjadi video utuh. Auto-import berurutan nomor, atur durasi per gambar dengan drag timeline, dan sinkronkan audio musik latar.</p>
+			</div>
+			<div class="feature-card glass-panel feature-card-shorts">
+				<div class="feature-icon feature-icon-shorts"><Smartphone size={24} /></div>
+				<h3>✨ Shorts Generator (Giphy Clips)</h3>
+				<p>Buat YouTube Shorts/Reels viral 30–40 detik: pilih tema (Dark Psychology, Fakta Unik, Stoikisme), AI generate naskah per adegan + query Giphy otomatis, blurred backdrop 9:16, neural voiceover, subtitle bergaya TikTok viral pop.</p>
 			</div>
 		</div>
 	</section>
@@ -262,6 +271,39 @@
 		color: #7dd3fc;
 		transform: translateY(-2px);
 		box-shadow: 0 8px 24px rgba(56, 189, 248, 0.25);
+	}
+
+	.btn-shorts {
+		background: linear-gradient(135deg, #2d1b69, #4c1d95);
+		color: #c4b5fd;
+		border: 1px solid rgba(167, 139, 250, 0.5);
+		position: relative;
+		overflow: hidden;
+	}
+	.btn-shorts::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.15), transparent);
+		transform: translateX(-100%);
+		transition: transform 0.5s;
+	}
+	.btn-shorts:hover::before { transform: translateX(100%); }
+	.btn-shorts:hover {
+		background: linear-gradient(135deg, #3d2b79, #5b21b6);
+		border-color: #a78bfa;
+		color: #e9d5ff;
+		transform: translateY(-2px);
+		box-shadow: 0 8px 30px rgba(167, 139, 250, 0.4);
+	}
+
+	.feature-card-shorts {
+		background: linear-gradient(135deg, rgba(167, 139, 250, 0.06), rgba(236, 72, 153, 0.04));
+		border-color: rgba(167, 139, 250, 0.2) !important;
+	}
+	.feature-icon-shorts {
+		color: #a78bfa !important;
+		background: rgba(167, 139, 250, 0.1) !important;
 	}
 
 	.hero-visual {
