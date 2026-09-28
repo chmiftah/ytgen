@@ -156,11 +156,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 		const alignMode = (sc.textAlign || opts.defaultAlign || '').toLowerCase();
 		const side = (sc.textSide || sc.layoutSide || (i % 2 === 0 ? 'left' : 'right')).toLowerCase();
 
-		// Exact 1:1 proportional font size directly matching canvas preview
 		const scFontSize = Number(sc.fontSize) || baseFontSize || 60;
 		const displayFontSize = getDisplayFontSize(kpRaw, scFontSize);
 		// Scale from preview canvas height (canvasRefH) to video resolution height H (PlayResY)
-		const assFontSize = Math.round(displayFontSize * (H / canvasRefH));
+		// Di mode shorts portrait (H > W), skalakan font size ke 0.60 agar teks di samping kanan/kiri proporsional & rapi
+		const isShortsPortrait = H > W;
+		const shortsFontFactor = isShortsPortrait ? 0.60 : 1.0;
+		const assFontSize = Math.round(displayFontSize * (H / canvasRefH) * shortsFontFactor);
 		const offX = Number(sc.textOffsetX || 0);
 		const offY = Number(sc.textOffsetY || 0);
 		const rot = Number(sc.textRotate ?? 0);
@@ -174,7 +176,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 		let posX = Math.round(padX + innerW * 0.5);
 		let posY = Math.round(padY + innerH * (0.50 + offY / 100));
 
-		if (alignMode === 'middle') {
+		if (side === 'bottom') {
+			// Shorts mode: teks di 1/3 bawah frame, tengah horizontal
+			align = 2; // bottom center
+			posX = Math.round(W * 0.5);
+			posY = Math.round(H * 0.84 + (offY / 100) * innerH);
+		} else if (side === 'top') {
+			// Shorts mode: teks di bagian atas frame
+			align = 8; // top center
+			posX = Math.round(W * 0.5);
+			posY = Math.round(H * 0.10 + (offY / 100) * innerH);
+		} else if (alignMode === 'middle') {
 			align = 5; // Middle Center
 			posX = Math.round(padX + innerW * (0.50 + offX / 100));
 		} else if (side === 'left') {
@@ -388,32 +400,71 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 	const padW = Math.round(innerW * 1.05);
 	const padH = Math.round(innerH * 1.05);
 
+	const isPortraitMode = H > W; // true saat shorts
+
+	// Di mode shorts (portrait), gambar diperkecil ke 80% lebar dan diletakkan di tengah layar.
+	// Ruang kosong samping dan atas/bawah diisi warna background putih secara alami.
+	const portraitW = Math.round(innerW * 0.80);
+	function makeScaleCropFilter(targetW, targetH, isPortrait) {
+		if (isPortrait) {
+			// Fit lebar 80%, tinggi proporsional, tanpa crop sisi gambar
+			return `scale=${portraitW}:-1`;
+		} else {
+			// Fill landscape: paksa perkecil/perbesar ke WxH
+			return `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,crop=${targetW}:${targetH}`;
+		}
+	}
+
+	const posX = isPortraitMode ? '(W-w)/2' : `${padX}`;
+	const posY = isPortraitMode ? '(H-h)/2' : `${padY}`;
+
 	let animFilter = '';
 	if (effectiveAnim === 'static') {
-		animFilter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xIdle})':y='${padY}+(${yIdle})'[animFrame]`;
+		const scf = makeScaleCropFilter(padW, padH, isPortraitMode);
+		animFilter = `[0:v]${scf},format=yuv420p[fg];[1:v][fg]overlay=x='${posX}+(${xIdle})':y='${posY}+(${yIdle})'[animFrame]`;
 	} else if (effectiveAnim === 'slide-top') {
-		const yEntrance = `-${innerH}*(1-sin(t/0.55*1.5708))`;
+		const yEntrance = `-${H}*(1-sin(t/0.55*1.5708))`;
 		const yExpr = `if(lt(t,0.55), ${yEntrance}, ${yIdle})`;
 		const xExpr = `if(lt(t,0.55), 0, ${xIdle})`;
-		animFilter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xExpr})':y='${padY}+(${yExpr})'[animFrame]`;
+		const scf = makeScaleCropFilter(padW, padH, isPortraitMode);
+		animFilter = `[0:v]${scf},format=yuv420p[fg];[1:v][fg]overlay=x='${posX}+(${xExpr})':y='${posY}+(${yExpr})'[animFrame]`;
 	} else if (effectiveAnim === 'slide-side') {
 		const isFromLeft = textSide === 'right'; // If text is right, character is left
 		const xEntrance = isFromLeft ? `-${innerW}*(1-sin(t/0.55*1.5708))` : `${innerW}*(1-sin(t/0.55*1.5708))`;
 		const xExpr = `if(lt(t,0.55), ${xEntrance}, ${xIdle})`;
 		const yExpr = `if(lt(t,0.55), 0, ${yIdle})`;
-		animFilter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xExpr})':y='${padY}+(${yExpr})'[animFrame]`;
+		const scf = makeScaleCropFilter(padW, padH, isPortraitMode);
+		animFilter = `[0:v]${scf},format=yuv420p[fg];[1:v][fg]overlay=x='${posX}+(${xExpr})':y='${posY}+(${yExpr})'[animFrame]`;
 	} else if (effectiveAnim === 'zoom-in') {
-		const xShakeZ = idleMotion === 'shake' ? '+4*sin(it*4.2)' : idleMotion === 'breathe' ? '+5*sin(it*1.6)' : '';
-		const yShakeZ = idleMotion === 'shake' ? '+4*cos(it*3.5)' : idleMotion === 'breathe' ? '+4*cos(it*1.2)' : '';
-		animFilter = `[0:v]scale=${Math.round(innerW * 1.15)}:${Math.round(innerH * 1.15)},zoompan=z='min(zoom+0.0006,1.08)':x='iw/2-(iw/zoom/2)${xShakeZ}':y='ih/2-(ih/zoom/2)${yShakeZ}':d=1:s=${innerW}x${innerH}:fps=30,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}'[animFrame]`;
+		if (isPortraitMode) {
+			const scf = makeScaleCropFilter(padW, padH, isPortraitMode);
+			animFilter = `[0:v]${scf},format=yuv420p[fg];[1:v][fg]overlay=x='${posX}+(${xIdle})':y='${posY}+(${yIdle})'[animFrame]`;
+		} else {
+			const xShakeZ = idleMotion === 'shake' ? '+4*sin(it*4.2)' : idleMotion === 'breathe' ? '+5*sin(it*1.6)' : '';
+			const yShakeZ = idleMotion === 'shake' ? '+4*cos(it*3.5)' : idleMotion === 'breathe' ? '+4*cos(it*1.2)' : '';
+			const zoomW = Math.round(innerW * 1.15);
+			const zoomH = Math.round(innerH * 1.15);
+			const scfZoom = makeScaleCropFilter(zoomW, zoomH, isPortraitMode);
+			animFilter = `[0:v]${scfZoom},zoompan=z='min(zoom+0.0006,1.08)':x='iw/2-(iw/zoom/2)${xShakeZ}':y='ih/2-(ih/zoom/2)${yShakeZ}':d=1:s=${innerW}x${innerH}:fps=30,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}'[animFrame]`;
+		}
 	} else if (effectiveAnim === 'pop') {
-		const xShakeP = idleMotion === 'shake' ? '+4*sin(it*4.2)' : '';
-		const yShakeP = idleMotion === 'shake' ? '+4*cos(it*3.5)' : '';
-		animFilter = `[0:v]scale=${Math.round(innerW * 1.16)}:${Math.round(innerH * 1.16)},zoompan=z='if(lt(it,0.45), 0.84+0.16*sin(it/0.45*1.5708), min(1.0+(it-0.45)*0.002, 1.03))':x='iw/2-(iw/zoom/2)${xShakeP}':y='ih/2-(ih/zoom/2)${yShakeP}':d=1:s=${innerW}x${innerH}:fps=30,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}'[animFrame]`;
+		if (isPortraitMode) {
+			const scf = makeScaleCropFilter(padW, padH, isPortraitMode);
+			animFilter = `[0:v]${scf},format=yuv420p[fg];[1:v][fg]overlay=x='${posX}+(${xIdle})':y='${posY}+(${yIdle})'[animFrame]`;
+		} else {
+			const xShakeP = idleMotion === 'shake' ? '+4*sin(it*4.2)' : '';
+			const yShakeP = idleMotion === 'shake' ? '+4*cos(it*3.5)' : '';
+			const popW = Math.round(innerW * 1.16);
+			const popH = Math.round(innerH * 1.16);
+			const scfPop = makeScaleCropFilter(popW, popH, isPortraitMode);
+			animFilter = `[0:v]${scfPop},zoompan=z='if(lt(it,0.45), 0.84+0.16*sin(it/0.45*1.5708), min(1.0+(it-0.45)*0.002, 1.03))':x='iw/2-(iw/zoom/2)${xShakeP}':y='ih/2-(ih/zoom/2)${yShakeP}':d=1:s=${innerW}x${innerH}:fps=30,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}'[animFrame]`;
+		}
 	} else if (effectiveAnim === 'fade') {
-		animFilter = `[0:v]scale=${padW}:${padH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},fade=t=in:st=0:d=0.5,format=yuv420p[fg];[1:v][fg]overlay=x='${padX}+(${xIdle})':y='${padY}+(${yIdle})'[animFrame]`;
+		const scf = makeScaleCropFilter(padW, padH, isPortraitMode);
+		animFilter = `[0:v]${scf},fade=t=in:st=0:d=0.5,format=yuv420p[fg];[1:v][fg]overlay=x='${posX}+(${xIdle})':y='${posY}+(${yIdle})'[animFrame]`;
 	} else {
-		animFilter = `[0:v]scale=${innerW}:${innerH}:force_original_aspect_ratio=increase,crop=${innerW}:${innerH},format=yuv420p[fg];[1:v][fg]overlay=x='${padX}':y='${padY}'[animFrame]`;
+		const scf = makeScaleCropFilter(innerW, innerH, isPortraitMode);
+		animFilter = `[0:v]${scf},format=yuv420p[fg];[1:v][fg]overlay=x='${posX}':y='${posY}'[animFrame]`;
 	}
 
 	let fullFilter = '';
@@ -434,7 +485,7 @@ async function renderImageClip(imgPath, vDest, dur, W, H, animType, sceneIndex, 
 		ffmpegInputs.push('-f', 'lavfi', '-i', themeBgInput);
 		fullFilter = `${animFilter};[animFrame]negate,format=gbrp[animGbrp];[2:v]format=gbrp[bgGbrp];[bgGbrp][animGbrp]blend=all_mode=screen,fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=0x121212,format=yuv420p[v]`;
 	} else {
-		fullFilter = `${animFilter},fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white,format=yuv420p[v]`;
+		fullFilter = `${animFilter};[animFrame]fade=t=out:st=${Math.max(0.1, dur - 0.25)}:d=0.25:color=white,format=yuv420p[v]`;
 	}
 
 	await runFFmpeg([
@@ -583,13 +634,17 @@ export async function POST({ request }) {
 	const stream = new ReadableStream({ start(c){ ctrl=c; } });
 	(async()=>{
 		try{
-			const { scenes, renderQuality='1080p', bgmUrl=null, bgmVolume=0.06, videoTitle='', stickmanTextColor='#111827', stickmanTextColorTop='#DC2626', stickmanTextColorBottom='#111827', stickmanFontSize=60, stickmanFontFamily="'Shadows Into Light',cursive", stickmanAnim='pop', stickmanTextAlign='left', stickmanImageAnim='dynamic', stickmanIdleMotion='shake', stickmanTextIdleMotion='shake', stickmanDoodle='speech-bubble', stickmanSfx='pop', previewCanvasHeight=430, videoPadding=4, canvasTheme='white' } = await request.json();
+			const { scenes, renderQuality='1080p', isShorts=false, bgmUrl=null, bgmVolume=0.06, videoTitle='', stickmanTextColor='#111827', stickmanTextColorTop='#DC2626', stickmanTextColorBottom='#111827', stickmanFontSize=60, stickmanFontFamily="'Shadows Into Light',cursive", stickmanAnim='pop', stickmanTextAlign='left', stickmanImageAnim='dynamic', stickmanIdleMotion='shake', stickmanTextIdleMotion='shake', stickmanDoodle='speech-bubble', stickmanSfx='pop', previewCanvasHeight=430, videoPadding=4, canvasTheme='white' } = await request.json();
 			if(!scenes?.length){ send({error:'No scenes'}); ctrl?.close(); return; }
+			const is720 = renderQuality==='720p';
+			const W = isShorts ? (is720 ? 720 : 1080) : (is720 ? 1280 : 1920);
+			const H = isShorts ? (is720 ? 1280 : 1920) : (is720 ? 720 : 1080);
+			const shortsSuffix = isShorts ? '-shorts' : '';
+			const qualityLabel = isShorts ? (is720 ? '720p Shorts' : '1080p Shorts') : (is720 ? '720p' : '1080p');
 			const slug = String(videoTitle||'stickman-video').replace(/[^a-zA-Z0-9 _-]+/g,'').replace(/\s+/g,'-').slice(0,60).toLowerCase() || `stickman-${rid}`;
-			outName = `${slug}--${Date.now()}.mp4`; outPath = path.resolve(`./static/renders/${outName}`);
-			const is720 = renderQuality==='720p'; const W=is720?1280:1920; const H=is720?720:1080;
+			outName = `${slug}${shortsSuffix}--${Date.now()}.mp4`; outPath = path.resolve(`./static/renders/${outName}`);
 			let hasVT=false; try{ const {execFile}=await import('child_process'); const {promisify}=await import('util'); const ef=promisify(execFile); const {stdout}=await ef(ffmpegPath||'ffmpeg',['-encoders']); hasVT=stdout.includes('h264_videotoolbox'); }catch{}
-			send({progress:5, step:`Init ${hasVT?'M1':'CPU'} ${is720?'720p':'1080p'} — stickman chalk`});
+			send({progress:5, step:`Init ${hasVT?'M1':'CPU'} ${qualityLabel} — stickman chalk`});
 			await fs.promises.mkdir(tmp,{recursive:true}); await fs.promises.mkdir(path.resolve('./static/renders'),{recursive:true});
 			const normCodec = hasVT ? ['-c:v','h264_videotoolbox','-b:v',is720?'3500k':'6000k','-realtime','1'] : ['-c:v','libx264','-preset','ultrafast'];
 			const finalCodec = hasVT ? ['-c:v','h264_videotoolbox','-b:v',is720?'4500k':'8000k','-realtime','0'] : ['-c:v','libx264','-preset','fast','-crf','22'];

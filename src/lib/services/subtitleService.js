@@ -228,10 +228,10 @@ export const SUBTITLE_STYLES = {
 };
 
 export const SUBTITLE_POSITIONS = {
-	'smart-flow': { id: 'smart-flow', name: '🎲 Smart Flow (Otomatis Kiri, Kanan & Hening)', assAlignment: 7, assMarginV: 200, assMarginL: 150, css: 'top:18%;' },
-	'wolf-left': { id: 'wolf-left', name: '🐺 Wolf Mid-Left (Samping Karakter)', assAlignment: 7, assMarginV: 200, assMarginL: 150, css: 'top:18%;left:8%;right:auto;justify-content:flex-start;' },
-	'wolf-right': { id: 'wolf-right', name: '🐺 Wolf Mid-Right (Samping Karakter)', assAlignment: 9, assMarginV: 200, assMarginR: 150, css: 'top:18%;right:8%;left:auto;justify-content:flex-end;' },
-	'wolf-split': { id: 'wolf-split', name: '🐺 Wolf 2 Sisi (Kiri-Kanan Mid)', assAlignment: 7, assMarginV: 200, assMarginL: 150, assMarginR: 150, css: 'top:18%;' },
+	'smart-flow': { id: 'smart-flow', name: '🎲 Smart Flow (Otomatis Kiri, Kanan & Hening)', assAlignment: 7, assMarginV: 330, assMarginL: 150, css: 'top:30%;' },
+	'wolf-left': { id: 'wolf-left', name: '🐺 Wolf Mid-Left (Samping Karakter)', assAlignment: 7, assMarginV: 330, assMarginL: 150, css: 'top:30%;left:8%;right:auto;justify-content:flex-start;' },
+	'wolf-right': { id: 'wolf-right', name: '🐺 Wolf Mid-Right (Samping Karakter)', assAlignment: 9, assMarginV: 330, assMarginR: 150, css: 'top:30%;right:8%;left:auto;justify-content:flex-end;' },
+	'wolf-split': { id: 'wolf-split', name: '🐺 Wolf 2 Sisi (Kiri-Kanan Mid)', assAlignment: 7, assMarginV: 330, assMarginL: 150, assMarginR: 150, css: 'top:30%;' },
 	'bottom-center': { id: 'bottom-center', name: 'Bawah Tengah', assAlignment: 2, assMarginV: 90, css: 'bottom:10%;left:0;right:0;justify-content:center;' },
 	'cinema-split': { id: 'cinema-split', name: '🎬 Cinema 2 Sisi (Kiri-Kanan)', assAlignment: 1, assMarginV: 180, assMarginL: 140, assMarginR: 140, css: 'bottom:22%;' },
 	'cinema-left': { id: 'cinema-left', name: 'Kiri Cinema (Mid-Left)', assAlignment: 1, assMarginV: 180, assMarginL: 140, css: 'bottom:22%;left:10%;right:auto;justify-content:flex-start;' },
@@ -619,8 +619,8 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 Style: Default,${fontName},${assFontSize},&H00${primaryBgr},&H000000FF,${outlineColor},${backColor},${boldFlag},0,0,0,100,100,0,0,1,${outlinePx},${shadowPx},${alignment},40,40,${marginV},1
 Style: DefaultLeft,${fontName},${assFontSize},&H00${primaryBgr},&H000000FF,${outlineColor},${backColor},${boldFlag},0,0,0,100,100,0,0,1,${outlinePx},${shadowPx},1,160,40,${pos.assMarginV || 180},1
 Style: DefaultRight,${fontName},${assFontSize},&H00${primaryBgr},&H000000FF,${outlineColor},${backColor},${boldFlag},0,0,0,100,100,0,0,1,${outlinePx},${shadowPx},3,40,160,${pos.assMarginV || 180},1
-Style: DefaultTopLeft,${fontName},${assFontSize},&H00${primaryBgr},&H000000FF,${outlineColor},${backColor},${boldFlag},0,0,0,100,100,0,0,1,${outlinePx},${shadowPx},7,160,40,${pos.assMarginV || 200},1
-Style: DefaultTopRight,${fontName},${assFontSize},&H00${primaryBgr},&H000000FF,${outlineColor},${backColor},${boldFlag},0,0,0,100,100,0,0,1,${outlinePx},${shadowPx},9,40,160,${pos.assMarginV || 200},1
+Style: DefaultTopLeft,${fontName},${assFontSize},&H00${primaryBgr},&H000000FF,${outlineColor},${backColor},${boldFlag},0,0,0,100,100,0,0,1,${outlinePx},${shadowPx},7,160,40,${pos.assMarginV || 330},1
+Style: DefaultTopRight,${fontName},${assFontSize},&H00${primaryBgr},&H000000FF,${outlineColor},${backColor},${boldFlag},0,0,0,100,100,0,0,1,${outlinePx},${shadowPx},9,40,160,${pos.assMarginV || 330},1
 Style: CenterQuote,Playfair Display,36,&H00F8FAFC,&H000000FF,&H00000000,&H90000000,0,1,0,0,100,100,1,0,1,2,2,5,160,160,0,1
 Style: Highlight,${fontName},${Math.round(assFontSize * 1.06)},&H00${highlightBgr},&H000000FF,${outlineColor},${backColor},${boldFlag},0,0,0,105,105,0,0,1,${Math.max(outlinePx, 2)},${Math.max(shadowPx, 2)},${alignment},40,40,${marginV},1
 Style: ChapterTag,Outfit,28,&H0010B981,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,2,0,1,3,2,5,0,0,0,1

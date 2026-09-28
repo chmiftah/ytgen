@@ -362,9 +362,9 @@
 	.preview-stage.pos-cinema-split.split-right,
 	.preview-stage.pos-cinema-right { justify-content: flex-end; padding-right: 20px; }
 	.preview-stage.pos-wolf-split.split-left,
-	.preview-stage.pos-wolf-left { justify-content: flex-start; align-items: flex-start; padding-left: 24px; text-align: left; }
+	.preview-stage.pos-wolf-left { justify-content: flex-start; align-items: center; padding-left: 24px; text-align: left; }
 	.preview-stage.pos-wolf-split.split-right,
-	.preview-stage.pos-wolf-right { justify-content: flex-end; align-items: flex-end; padding-right: 24px; text-align: right; }
+	.preview-stage.pos-wolf-right { justify-content: flex-end; align-items: center; padding-right: 24px; text-align: right; }
 	.subtitle-pill { display: inline-flex; align-items: baseline; gap: 8px; padding: 8px 14px; border-radius: var(--radius-md); flex-wrap: wrap; }
 	.subtitle-pill.decor-side { border-radius: 0; padding-left: 12px; }
 	.preview-stage.wolf_stack .subtitle-pill,
@@ -397,9 +397,11 @@
 	.preview-stage.wolf_stack .preview-token,
 	.subtitle-pill.stacked .preview-token {
 		display: inline-block;
+		font-family: 'Outfit', 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif;
 		line-height: 0.88;
 		letter-spacing: -0.05em;
 		font-weight: 900;
+		text-transform: lowercase;
 	}
 	.preview-token.active { transform: scale(1.18); }
 	.preview-stage.wolf_stack .preview-token.active,
@@ -413,6 +415,7 @@
 		line-height: 1.05;
 		margin-top: 2px;
 		margin-bottom: 3px;
+		text-transform: lowercase !important;
 		color: #f59e0b !important;
 		text-shadow: 0 2px 14px rgba(245, 158, 11, 0.5), 0 2px 8px rgba(0, 0, 0, 0.95) !important;
 		opacity: 1;

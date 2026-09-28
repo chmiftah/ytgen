@@ -108,6 +108,24 @@
 	let downloadFilename = $state('');
 	let renderError = $state(null);
 	let renderQuality = $state('1080p');
+	let isShorts = $state(false);
+
+	function toggleShorts() {
+		isShorts = !isShorts;
+		if (scenes.length > 0) {
+			// Pastikan seluruh adegan tetap menggunakan posisi samping kiri/kanan
+			scenes = scenes.map((s) => {
+				let side = s.textSide || s.layoutSide || 'right';
+				if (side === 'bottom' || side === 'top') side = 'right';
+				return {
+					...s,
+					textSide: side,
+					layoutSide: side,
+					textAlign: side === 'right' ? 'right' : 'left'
+				};
+			});
+		}
+	}
 	let stickmanTextColor = $state('#111827');
 	let stickmanTextColorTop = $state('#DC2626');
 	let stickmanTextColorBottom = $state('#111827');
@@ -377,22 +395,26 @@
 	function getStickmanBgLayerStyle(image, theme) {
 		if (!image) return '';
 		const imgUrl = `url('${image}')`;
+		const bgSize = isShorts ? '88% auto' : 'cover';
+		const bgPos = 'center center';
+		const bgRepeat = 'no-repeat';
+
 		if (theme === 'sketchbook') {
-			return `background-color: #F5EEDB; background-image: ${imgUrl}; background-size: cover; background-position: center; background-blend-mode: multiply;`;
+			return `background-color: #F5EEDB; background-image: ${imgUrl}; background-size: ${bgSize}; background-position: ${bgPos}; background-repeat: ${bgRepeat}; background-blend-mode: multiply;`;
 		}
 		if (theme === 'kraft') {
-			return `background-color: #D4BA88; background-image: ${imgUrl}, url('/stickman/themes/kraft-bg.jpg'); background-size: cover, cover; background-position: center, center; background-blend-mode: multiply;`;
+			return `background-color: #D4BA88; background-image: ${imgUrl}, url('/stickman/themes/kraft-bg.jpg'); background-size: ${bgSize}, cover; background-position: ${bgPos}, center; background-repeat: ${bgRepeat}, no-repeat; background-blend-mode: multiply;`;
 		}
 		if (theme === 'grid') {
-			return `background-color: #F5EEDB; background-image: ${imgUrl}, url('/stickman/themes/grid-bg.png'); background-size: cover, cover; background-position: center, center; background-blend-mode: multiply;`;
+			return `background-color: #F5EEDB; background-image: ${imgUrl}, url('/stickman/themes/grid-bg.png'); background-size: ${bgSize}, cover; background-position: ${bgPos}, center; background-repeat: ${bgRepeat}, no-repeat; background-blend-mode: multiply;`;
 		}
 		if (theme === 'doodle') {
-			return `background-color: #F5EEDB; background-image: ${imgUrl}, url('/stickman/themes/doodle-bg.jpg'); background-size: cover, cover; background-position: center, center; background-blend-mode: multiply;`;
+			return `background-color: #F5EEDB; background-image: ${imgUrl}, url('/stickman/themes/doodle-bg.jpg'); background-size: ${bgSize}, cover; background-position: ${bgPos}, center; background-repeat: ${bgRepeat}, no-repeat; background-blend-mode: multiply;`;
 		}
 		if (theme === 'chalkboard') {
-			return `background-color: #121212; background-image: ${imgUrl}; background-size: cover; background-position: center; filter: invert(1);`;
+			return `background-color: #121212; background-image: ${imgUrl}; background-size: ${bgSize}; background-position: ${bgPos}; background-repeat: ${bgRepeat}; filter: invert(1);`;
 		}
-		return `background-color: #ffffff; background-image: ${imgUrl}; background-size: cover; background-position: center;`;
+		return `background-color: #ffffff; background-image: ${imgUrl}; background-size: ${bgSize}; background-position: ${bgPos}; background-repeat: ${bgRepeat};`;
 	}
 
 	async function regenerateVoiceoverForScene(sceneIndex) {
@@ -494,9 +516,10 @@
 		// Scale 1080p base font size to preview canvas height (~430px)
 		const canvasRefH = 1080;
 		const scaleFactor = (canvasHeight || 430) / canvasRefH;
-		// Directly reflects the user's chosen font size in real time
-		const previewPx = Math.round(base * scaleFactor * 1.12);
-		return Math.max(12, Math.min(85, previewPx));
+		// Di mode shorts, perkecil font size (faktor 0.60) agar teks di samping pas & rapi
+		const shortsFactor = isShorts ? 0.60 : 1.0;
+		const previewPx = Math.round(base * scaleFactor * 1.12 * shortsFactor);
+		return Math.max(10, Math.min(85, previewPx));
 	}
 
 	function getEditorLines(text) {
@@ -586,7 +609,8 @@
 
 	function flipCurrentTextSide() {
 		if (!currentScene) return;
-		const next = (currentScene.textSide || currentScene.layoutSide) === 'left' ? 'right' : 'left';
+		const cur = currentScene.textSide || currentScene.layoutSide;
+		const next = (cur === 'left') ? 'right' : 'left';
 		const nextAlign = next === 'right' ? 'right' : 'left';
 		scenes = scenes.map((s, i) => i === activeSceneIndex ? { ...s, textSide: next, layoutSide: next, textAlign: nextAlign, textOffsetX: 0, textOffsetY: 0 } : s);
 	}
@@ -644,15 +668,18 @@
 		const ty = Number(scene?.textOffsetY || 0);
 		const rot = Number(scene?.textRotate ?? 0);
 		const sc = Number(scene?.textScale ?? 1);
+		const rawSide = scene?.textSide || scene?.layoutSide;
+		const side = (rawSide === 'bottom' || rawSide === 'top' || !rawSide) ? 'right' : rawSide;
+
+		const mw = isShorts ? 'max-width: 44%; width: 44%;' : '';
 		if (align === 'middle') {
-			return `left: calc(50% + ${tx}%); top: calc(50% + ${ty}%); transform: translate(-50%, -50%) rotate(${rot}deg) scale(${sc}); text-align:center; transform-origin: center center;`;
+			return `left: calc(50% + ${tx}%); top: calc(50% + ${ty}%); transform: translate(-50%, -50%) rotate(${rot}deg) scale(${sc}); text-align:center; transform-origin: center center; ${mw}`;
 		}
-		const side = scene?.textSide || scene?.layoutSide || 'right';
 		const ta = align === 'right' ? 'right' : align === 'center' ? 'center' : 'left';
 		if (side === 'left') {
-			return `left: calc(4% + ${tx}%); top: calc(50% + ${ty}%); transform: translateY(-50%) rotate(${rot}deg) scale(${sc}); text-align:${ta}; transform-origin: left center;`;
+			return `left: calc(4% + ${tx}%); top: calc(50% + ${ty}%); transform: translateY(-50%) rotate(${rot}deg) scale(${sc}); text-align:${ta}; transform-origin: left center; ${mw}`;
 		} else {
-			return `right: calc(4% - ${tx}%); top: calc(50% + ${ty}%); transform: translateY(-50%) rotate(${rot}deg) scale(${sc}); text-align:${ta}; transform-origin: right center;`;
+			return `right: calc(4% - ${tx}%); top: calc(50% + ${ty}%); transform: translateY(-50%) rotate(${rot}deg) scale(${sc}); text-align:${ta}; transform-origin: right center; ${mw}`;
 		}
 	}
 
@@ -1284,6 +1311,7 @@
 				body: JSON.stringify({
 					scenes,
 					renderQuality,
+					isShorts,
 					videoTitle: videoTitle || script.slice(0, 80),
 					stickmanTextColor: stickmanTextColorBottom,
 					stickmanTextColorTop,
@@ -1332,6 +1360,31 @@
 		<div class="title-wrap">
 			<h2>🎨 Stickman Explainer Studio</h2>
 			<p>Background gambar stickman full — teks hanya poin penting di area kosong.</p>
+		</div>
+
+		<!-- Main Toolbar Aspect Ratio Mode Switcher -->
+		<div class="header-aspect-switcher" role="radiogroup" aria-label="Format Video">
+			<button
+				type="button"
+				class="aspect-switch-pill"
+				class:active={!isShorts}
+				onclick={() => { if (isShorts) toggleShorts(); }}
+				title="Format Horizontal 16:9 (YouTube Reguler, PC, TV)"
+			>
+				<span class="icon">▬</span>
+				<span class="txt">16:9 Landscape</span>
+			</button>
+			<button
+				type="button"
+				class="aspect-switch-pill"
+				class:active={isShorts}
+				onclick={() => { if (!isShorts) toggleShorts(); }}
+				title="Format Vertikal 9:16 (YouTube Shorts, TikTok, Instagram Reels)"
+			>
+				<span class="icon">▮</span>
+				<span class="txt">9:16 Shorts</span>
+				<span class="pill-badge">VIRAL</span>
+			</button>
 		</div>
 	</header>
 
@@ -1721,14 +1774,27 @@
 
 		<section class="preview-panel glass-panel">
 			<!-- Studio Monitor Frame -->
-			<div class="canvas-wrapper" class:canvas-empty={!currentScene}>
+			<div class="canvas-wrapper" class:canvas-empty={!currentScene} class:is-shorts={isShorts}>
 				<!-- Monitor Top Status Header -->
 				<div class="monitor-top-bar">
 					<div class="monitor-status">
 						<span class="status-dot" class:live={!!currentScene}></span>
-						<span class="status-label">{currentScene ? 'LIVE PREVIEW • 1080p' : 'MONITOR STANDBY'}</span>
+						<span class="status-label">{currentScene ? (isShorts ? 'LIVE PREVIEW • 9:16' : 'LIVE PREVIEW • 1080p') : 'MONITOR STANDBY'}</span>
 					</div>
 					<div class="monitor-meta">
+						<button
+							type="button"
+							class="aspect-toggle-btn"
+							class:shorts-active={isShorts}
+							onclick={toggleShorts}
+							title={isShorts ? 'Beralih ke mode Landscape 16:9' : 'Beralih ke mode Shorts 9:16 (TikTok / YouTube Shorts)'}
+						>
+							{#if isShorts}
+								<span>▮ 9:16</span><span class="shorts-badge">SHORTS</span>
+							{:else}
+								<span>▬ 16:9</span>
+							{/if}
+						</button>
 						{#if currentScene}
 							<span class="scene-counter-badge">Adegan {activeSceneIndex + 1} / {scenes.length}</span>
 							<span class="pacing-badge" title="Transisi visual alami berdasarkan alur kalimat utuh">🌿 Natural Flow</span>
@@ -1738,7 +1804,7 @@
 								</span>
 							{/if}
 						{:else}
-							<span class="aspect-badge">16:9 Full HD • 30 FPS</span>
+							<span class="aspect-badge">{isShorts ? '9:16 Shorts • 30 FPS' : '16:9 Full HD • 30 FPS'}</span>
 							<span class="pacing-badge">🌿 Natural Flow</span>
 						{/if}
 					</div>
@@ -1776,7 +1842,7 @@
 									</div>
 								</div>
 							{/key}
-							<button class="flip-btn" onclick={flipCurrentTextSide} title="Pindah teks ke sisi lain">
+							<button class="flip-btn" onclick={flipCurrentTextSide} title="Pindah teks ke sisi lain (kiri/kanan)">
 								<span>↔</span> Flip teks
 							</button>
 							<button class="auto-align-btn" onclick={autoAlignCurrentScene} title="Deteksi otomatis posisi gambar agar teks tidak menumpuk">
@@ -1797,14 +1863,18 @@
 						<div class="empty-glow-circle">
 							<Film size={34} class="text-indigo" />
 						</div>
-						<h4 class="empty-monitor-title">Studio Canvas Monitor</h4>
+						<h4 class="empty-monitor-title">{isShorts ? '📱 Shorts 9:16 Monitor' : 'Studio Canvas Monitor'}</h4>
 						<p class="empty-monitor-desc">
-							Pilih topik di panel kiri atau buat naskah dengan AI, lalu klik <strong>"Generate Stickman Video"</strong> untuk melihat preview animasi adegan di sini.
+							{#if isShorts}
+								Mode <strong>Shorts 9:16 Vertikal</strong> aktif. Video akan diproduksi dalam format potret 1080×1920 (TikTok, Reels, YouTube Shorts).
+							{:else}
+								Pilih topik di panel kiri atau buat naskah dengan AI, lalu klik <strong>"Generate Stickman Video"</strong> untuk melihat preview animasi adegan di sini.
+							{/if}
 						</p>
 						<div class="empty-monitor-features">
-							<div class="feat-pill"><Sparkles size={12} /><span>Bab & Hook Retensi</span></div>
+							<div class="feat-pill"><Sparkles size={12} /><span>{isShorts ? '9:16 Portrait' : 'Bab & Hook Retensi'}</span></div>
 							<div class="feat-pill"><Mic size={12} /><span>Voiceover DSP + BGM</span></div>
-							<div class="feat-pill"><Layers size={12} /><span>Full Custom Visual</span></div>
+							<div class="feat-pill"><Layers size={12} /><span>{isShorts ? 'Auto Fill-Crop' : 'Full Custom Visual'}</span></div>
 						</div>
 					</div>
 				{/if}
@@ -2119,17 +2189,29 @@
 				<!-- Render MP4 Card -->
 				<div class="render-card">
 					<div class="render-head">
-						<div class="render-title"><Film size={15} /><span>Render Video Stickman 16:9 Full HD</span></div>
+						<div class="render-title">
+							<Film size={15} />
+							{#if isShorts}
+								<span>Render Shorts 9:16 (1080×1920)</span>
+							{:else}
+								<span>Render Video Stickman 16:9 Full HD</span>
+							{/if}
+						</div>
 						<div class="quality-row">
-							<button type="button" class="q-btn" class:on={renderQuality==='1080p'} onclick={() => renderQuality='1080p'} disabled={isRendering}>1080p (FHD)</button>
-							<button type="button" class="q-btn" class:on={renderQuality==='720p'} onclick={() => renderQuality='720p'} disabled={isRendering}>720p</button>
+							{#if isShorts}
+								<button type="button" class="q-btn" class:on={renderQuality==='1080p'} onclick={() => renderQuality='1080p'} disabled={isRendering}>1080p Shorts</button>
+								<button type="button" class="q-btn" class:on={renderQuality==='720p'} onclick={() => renderQuality='720p'} disabled={isRendering}>720p Shorts</button>
+							{:else}
+								<button type="button" class="q-btn" class:on={renderQuality==='1080p'} onclick={() => renderQuality='1080p'} disabled={isRendering}>1080p (FHD)</button>
+								<button type="button" class="q-btn" class:on={renderQuality==='720p'} onclick={() => renderQuality='720p'} disabled={isRendering}>720p</button>
+							{/if}
 						</div>
 					</div>
 					{#if downloadUrl}
 						<a href={downloadUrl} download={downloadFilename} class="btn btn-primary download-link" target="_blank"><Download size={14} /><span>Download Video MP4</span></a>
 					{:else}
 						<button class="btn btn-primary render-btn" onclick={startStickmanRender} disabled={isRendering}>
-							{#if isRendering}<RefreshCw size={14} class="spin" /><span>{renderStep || 'Rendering...'} {renderProgress}%</span>{:else}<Film size={14} /><span>Render Video Stickman</span>{/if}
+							{#if isRendering}<RefreshCw size={14} class="spin" /><span>{renderStep || 'Rendering...'} {renderProgress}%</span>{:else}<Film size={14} /><span>{isShorts ? '🎬 Export Shorts (9:16)' : 'Render Video Stickman'}</span>{/if}
 						</button>
 					{/if}
 					{#if isRendering || renderProgress>0}
@@ -3568,6 +3650,52 @@
 	}
 
 	/* Right Panel - Studio Monitor Frame */
+	.header-aspect-switcher {
+		margin-left: auto;
+		display: inline-flex;
+		align-items: center;
+		padding: 3px;
+		background: rgba(15, 23, 42, 0.85);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 10px;
+		gap: 3px;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+	}
+	.aspect-switch-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 14px;
+		border-radius: 7px;
+		border: 1px solid transparent;
+		background: transparent;
+		color: #94a3b8;
+		font-size: 0.78rem;
+		font-weight: 700;
+		cursor: pointer;
+		transition: all 0.18s ease;
+	}
+	.aspect-switch-pill:hover {
+		color: #f1f5f9;
+		background: rgba(255, 255, 255, 0.06);
+	}
+	.aspect-switch-pill.active {
+		background: linear-gradient(135deg, #4f46e5, #6366f1);
+		border-color: rgba(99, 102, 241, 0.5);
+		color: #ffffff;
+		box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+	}
+	.aspect-switch-pill .pill-badge {
+		font-size: 0.58rem;
+		font-weight: 800;
+		padding: 1px 5px;
+		border-radius: 4px;
+		background: #ef4444;
+		color: #ffffff;
+		letter-spacing: 0.04em;
+	}
+
+	/* Right Panel - Studio Monitor Frame */
 	.canvas-wrapper {
 		width: 100%;
 		max-width: 820px;
@@ -3582,6 +3710,149 @@
 		display: flex;
 		flex-direction: column;
 		box-sizing: border-box;
+		transition: aspect-ratio 0.35s cubic-bezier(0.4, 0, 0.2, 1), max-width 0.35s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s ease;
+	}
+	/* Shorts / Portrait phone frame mode */
+	.canvas-wrapper.is-shorts {
+		aspect-ratio: 9 / 16;
+		max-width: 290px;
+		border: 3px solid rgba(99,102,241,0.65);
+		border-radius: 20px;
+		box-shadow: 0 0 0 4px rgba(99,102,241,0.12), 0 16px 44px rgba(0,0,0,0.55), 0 0 24px rgba(99,102,241,0.2);
+	}
+	/* phone-frame notch decoration */
+	.canvas-wrapper.is-shorts::before {
+		content: '';
+		position: absolute;
+		top: 10px;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 48px;
+		height: 5px;
+		background: rgba(255,255,255,0.25);
+		border-radius: 999px;
+		z-index: 20;
+		pointer-events: none;
+	}
+	/* Di mode shorts: perkecil gambar stickman agar proporsional, tidak terpotong, & posisikan di tengah layar */
+	.canvas-wrapper.is-shorts .stickman-bg-layer {
+		background-size: 80% auto !important;
+		background-repeat: no-repeat !important;
+		background-position: center center !important;
+	}
+	/* Buttons & components adjustments inside shorts phone frame */
+	.canvas-wrapper.is-shorts .flip-btn {
+		bottom: 8px;
+		left: 8px;
+		font-size: 0.64rem;
+		padding: 3px 6px;
+	}
+	.canvas-wrapper.is-shorts .auto-align-btn {
+		display: inline-flex;
+		bottom: 8px;
+		left: 72px;
+		font-size: 0.64rem;
+		padding: 3px 6px;
+	}
+	.canvas-wrapper.is-shorts .change-img-btn {
+		bottom: 8px;
+		right: 8px;
+		font-size: 0.64rem;
+		padding: 3px 6px;
+	}
+	.canvas-wrapper.is-shorts .canvas-fs-pill {
+		bottom: auto;
+		top: 32px;
+		right: 6px;
+		left: auto;
+		padding: 2px 4px;
+		z-index: 15;
+		background: rgba(15, 23, 42, 0.92);
+	}
+	.canvas-wrapper.is-shorts .monitor-top-bar {
+		padding: 4px 6px;
+		gap: 4px;
+	}
+	.canvas-wrapper.is-shorts .status-label {
+		font-size: 0.54rem;
+		white-space: nowrap;
+	}
+	.canvas-wrapper.is-shorts .aspect-toggle-btn {
+		padding: 2px 5px;
+		font-size: 0.6rem;
+		gap: 3px;
+	}
+	.canvas-wrapper.is-shorts .pacing-badge {
+		display: none;
+	}
+	.canvas-wrapper.is-shorts .scene-counter-badge {
+		font-size: 0.54rem;
+		padding: 1px 4px;
+		white-space: nowrap;
+	}
+	.canvas-wrapper.is-shorts .audio-dur-badge {
+		font-size: 0.54rem;
+		padding: 1px 4px;
+	}
+	.canvas-wrapper.is-shorts .scene-chapter-badge {
+		display: none;
+	}
+	.canvas-wrapper.is-shorts .studio-empty-monitor {
+		padding: 16px;
+		gap: 8px;
+	}
+	.canvas-wrapper.is-shorts .empty-glow-circle {
+		width: 48px;
+		height: 48px;
+	}
+	.canvas-wrapper.is-shorts .empty-monitor-title {
+		font-size: 0.95rem;
+	}
+	.canvas-wrapper.is-shorts .empty-monitor-desc {
+		font-size: 0.72rem;
+		max-width: 240px;
+		line-height: 1.4;
+	}
+	.canvas-wrapper.is-shorts .feat-pill {
+		padding: 2px 6px;
+		font-size: 0.65rem;
+	}
+	/* Aspect toggle button */
+	.aspect-toggle-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 3px 8px;
+		border-radius: 6px;
+		border: 1px solid rgba(255,255,255,0.15);
+		background: rgba(15,23,42,0.7);
+		color: #94a3b8;
+		font-size: 0.68rem;
+		font-weight: 700;
+		cursor: pointer;
+		transition: all 0.18s ease;
+		letter-spacing: 0.03em;
+		pointer-events: auto;
+		z-index: 25;
+	}
+	.aspect-toggle-btn:hover {
+		border-color: rgba(99,102,241,0.5);
+		color: #c7d2fe;
+		background: rgba(99,102,241,0.12);
+	}
+	.aspect-toggle-btn.shorts-active {
+		background: rgba(99,102,241,0.22);
+		border-color: rgba(99,102,241,0.7);
+		color: #c7d2fe;
+	}
+	.shorts-badge {
+		background: linear-gradient(135deg, #6366f1, #8b5cf6);
+		color: #fff;
+		font-size: 0.55rem;
+		font-weight: 800;
+		letter-spacing: 0.06em;
+		padding: 1px 5px;
+		border-radius: 4px;
 	}
 	.monitor-top-bar {
 		position: absolute;
@@ -3595,6 +3866,9 @@
 		padding: 6px 12px;
 		background: linear-gradient(180deg, rgba(5,8,16,0.85) 0%, rgba(5,8,16,0.0) 100%);
 		pointer-events: none;
+	}
+	.monitor-top-bar > * {
+		pointer-events: auto;
 	}
 	.monitor-status {
 		display: flex;
@@ -4003,6 +4277,14 @@
 		.text-overlay.align-center { text-align: center; }
 		.text-overlay.align-right { text-align: right; }
 		.text-overlay.align-left { text-align: left; }
+		/* Shorts bottom/top text position */
+		.text-overlay.bottom,
+		.text-overlay.top {
+			width: 90%;
+			max-width: 90%;
+			text-align: center;
+			align-items: center;
+		}
 	/* Canvas Font Size Stepper Pill */
 	.canvas-fs-pill {
 		position: absolute;

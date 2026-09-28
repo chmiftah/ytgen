@@ -442,11 +442,11 @@
 	.subtitles-overlay.pos-cinema-left { bottom: 22%; left: 8%; right: auto; justify-content: flex-start; text-align: left; }
 	.subtitles-overlay.pos-cinema-split.split-right,
 	.subtitles-overlay.pos-cinema-right { bottom: 22%; right: 8%; left: auto; justify-content: flex-end; text-align: left; }
-	.subtitles-overlay.pos-wolf-split { top: 18%; width: auto; max-width: 44%; }
+	.subtitles-overlay.pos-wolf-split { top: 30%; width: auto; max-width: 44%; }
 	.subtitles-overlay.pos-wolf-split.split-left,
-	.subtitles-overlay.pos-wolf-left { top: 18%; bottom: auto; left: 8%; right: auto; justify-content: flex-start; text-align: left; }
+	.subtitles-overlay.pos-wolf-left { top: 30%; bottom: auto; left: 8%; right: auto; justify-content: flex-start; text-align: left; }
 	.subtitles-overlay.pos-wolf-split.split-right,
-	.subtitles-overlay.pos-wolf-right { top: 18%; bottom: auto; right: 8%; left: auto; justify-content: flex-end; text-align: right; }
+	.subtitles-overlay.pos-wolf-right { top: 30%; bottom: auto; right: 8%; left: auto; justify-content: flex-end; text-align: right; }
 	.subtitle-pill { display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: center; align-items: baseline; padding: 6px 12px; border-radius: var(--r-md); max-width: 84%; background: rgba(0,0,0,0.55); border: none; }
 	.subtitles-overlay.decor-side .subtitle-pill { border-radius: 0; }
 	.subtitles-overlay.pos-center .subtitle-pill { max-width: 78%; padding: 14px 20px; border-radius: var(--r-lg); }
@@ -491,6 +491,7 @@
 		line-height: 0.86;
 		letter-spacing: -0.05em;
 		font-weight: 900;
+		text-transform: lowercase;
 		margin: 0;
 		padding: 0;
 		color: #ffffff;
@@ -505,6 +506,7 @@
 		line-height: 1.05;
 		margin-top: 3px;
 		margin-bottom: 3px;
+		text-transform: lowercase !important;
 		color: #f59e0b !important;
 		text-shadow: 0 2px 14px rgba(245, 158, 11, 0.5), 0 2px 8px rgba(0, 0, 0, 0.95) !important;
 		opacity: 1;
