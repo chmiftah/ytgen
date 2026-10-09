@@ -367,14 +367,23 @@ async function renderSceneClip(scene, idx, sessionDir, vtbAvail) {
 		}
 	}
 
-	// 2. Determine audio source (TTS or silence)
+	// 2. Determine audio source (TTS, uploaded audio, or silence)
 	const ttsPath = path.join(sessionDir, `tts-scene-${idx}.mp3`);
 	let audioFile = ttsPath;
 	if (!fs.existsSync(ttsPath) || fs.statSync(ttsPath).size < 500) {
-		const silentPath = path.join(sessionDir, `silent-${idx}.aac`);
-		await generateSilence(duration, silentPath);
-		audioFile = silentPath;
-		console.warn(`[Clip] Scene ${idx}: using silence (no valid TTS)`);
+		let directAudio = scene.audioPath;
+		if (!directAudio && scene.voiceAudioUrl) {
+			const rel = scene.voiceAudioUrl.startsWith('/static') ? scene.voiceAudioUrl.slice(7) : scene.voiceAudioUrl;
+			directAudio = path.resolve('./static', rel.replace(/^\//, ''));
+		}
+		if (directAudio && fs.existsSync(directAudio) && fs.statSync(directAudio).size > 500) {
+			audioFile = directAudio;
+		} else {
+			const silentPath = path.join(sessionDir, `silent-${idx}.aac`);
+			await generateSilence(duration, silentPath);
+			audioFile = silentPath;
+			console.warn(`[Clip] Scene ${idx}: using silence (no valid TTS or uploaded audio)`);
+		}
 	}
 
 	const encoder = getEncoder(vtbAvail);
@@ -563,7 +572,16 @@ function buildShortsASS(scenes, style = 'viral-yellow') {
 		const words = text.split(/\s+/).filter(Boolean);
 		if (words.length === 0) { cursor += dur; continue; }
 
-		const timings = calculateAudioSyncedWordTimings(words, dur);
+		let timings = [];
+		if (Array.isArray(scene.wordTimings) && scene.wordTimings.length > 0) {
+			timings = scene.wordTimings.map((w) => ({
+				word: (w.word || '').trim(),
+				start: typeof w.start === 'number' ? Math.max(0, w.start) : 0,
+				end: typeof w.end === 'number' ? Math.max(0.05, w.end) : 0.3
+			}));
+		} else {
+			timings = calculateAudioSyncedWordTimings(words, dur);
+		}
 		const chunks  = chunkWordsForShorts(timings, 3, 24);
 
 		for (let j = 0; j < chunks.length; j++) {
@@ -660,41 +678,72 @@ export async function POST({ request }) {
 				sendProgress(1, `🚀 Mulai render... ${scenes.length} adegan | VideoToolbox: ${vtbAvail}`, 2);
 
 				// -----------------------------------------------------------
-				// STEP 1: Generate Voiceover (ElevenLabs or Edge TTS)
+				// STEP 1: Voiceover (Upload, ElevenLabs, or Edge TTS)
 				// -----------------------------------------------------------
-				const isEleven = voiceEngine === 'elevenlabs' || (!voiceId?.includes('Neural') && !voiceId?.startsWith('id-ID-'));
-				const engineLabel = isEleven ? `ElevenLabs (${elevenModel === 'eleven_turbo_v2_5' ? 'Turbo v2.5' : 'Multilingual v2'})` : 'Edge TTS';
-				sendProgress(1, `🎤 Membuat voiceover (${engineLabel})...`, 5);
+				const isUploadedVoice = voiceEngine === 'upload' || Boolean(scenesWork.some(s => s.voiceAudioUrl || s.audioPath));
+				const isEleven = !isUploadedVoice && (voiceEngine === 'elevenlabs' || (!voiceId?.includes('Neural') && !voiceId?.startsWith('id-ID-')));
+				const engineLabel = isUploadedVoice
+					? 'Audio Narasi Upload'
+					: (isEleven ? `ElevenLabs (${elevenModel === 'eleven_turbo_v2_5' ? 'Turbo v2.5' : 'Multilingual v2'})` : 'Edge TTS');
+
+				sendProgress(1, `🎤 Menyiapkan voiceover (${engineLabel})...`, 5);
 				const scenesWork = scenes.map(s => ({ ...s }));
 
 				for (let i = 0; i < scenesWork.length; i++) {
 					const scene = scenesWork[i];
 					const pct = Math.round(5 + (i / scenesWork.length) * 25);
-					sendProgress(1, `🎤 Voiceover scene ${i + 1}/${scenesWork.length} (${engineLabel}): "${scene.spokenText.slice(0, 32)}..."`, pct);
-					try {
-						const voiceRes = await generateSceneVoiceover(scene.spokenText, voiceId, voiceRate, i, sessionDir, {
-							voiceEngine: isEleven ? 'elevenlabs' : 'edge_tts',
-							elevenLabsApiKey,
-							elevenModel,
-							stability: elevenSettings?.stability,
-							similarityBoost: elevenSettings?.similarityBoost,
-							onProgress: (warn) => sendProgress(1, warn, pct)
-						});
 
-						if (voiceRes && voiceRes.path) {
-							const dur = await getAudioDuration(voiceRes.path);
-							scene.ttsMp3        = voiceRes.path;
-							scene.audioDuration = dur ? Math.round((dur + 0.3) * 100) / 100 : scene.duration;
-							scene.voiceProvider = voiceRes.provider;
-						} else {
+					if (isUploadedVoice || scene.voiceAudioUrl || scene.audioPath) {
+						sendProgress(1, `🎤 Memproses audio upload scene ${i + 1}/${scenesWork.length}...`, pct);
+						try {
+							let srcAudio = scene.audioPath;
+							if (!srcAudio && scene.voiceAudioUrl) {
+								const rel = scene.voiceAudioUrl.startsWith('/static') ? scene.voiceAudioUrl.slice(7) : scene.voiceAudioUrl;
+								srcAudio = path.resolve('./static', rel.replace(/^\//, ''));
+							}
+
+							const destMp3 = path.join(sessionDir, `tts-scene-${i}.mp3`);
+							if (srcAudio && fs.existsSync(srcAudio)) {
+								fs.copyFileSync(srcAudio, destMp3);
+								const dur = await getAudioDuration(destMp3);
+								scene.ttsMp3        = destMp3;
+								scene.audioDuration = dur ? Math.round((dur + 0.1) * 100) / 100 : (scene.audioDuration || scene.duration || 4);
+								scene.voiceProvider = 'upload';
+							} else {
+								console.warn(`[Voiceover] Scene ${i}: audio upload not found at ${srcAudio}`);
+								scene.audioDuration = scene.duration || 4;
+							}
+						} catch (e) {
+							console.warn(`[Voiceover] Scene ${i} upload copy error: ${e.message}`);
+							scene.audioDuration = scene.duration || 4;
+						}
+					} else {
+						sendProgress(1, `🎤 Voiceover scene ${i + 1}/${scenesWork.length} (${engineLabel}): "${(scene.spokenText || '').slice(0, 32)}..."`, pct);
+						try {
+							const voiceRes = await generateSceneVoiceover(scene.spokenText, voiceId, voiceRate, i, sessionDir, {
+								voiceEngine: isEleven ? 'elevenlabs' : 'edge_tts',
+								elevenLabsApiKey,
+								elevenModel,
+								stability: elevenSettings?.stability,
+								similarityBoost: elevenSettings?.similarityBoost,
+								onProgress: (warn) => sendProgress(1, warn, pct)
+							});
+
+							if (voiceRes && voiceRes.path) {
+								const dur = await getAudioDuration(voiceRes.path);
+								scene.ttsMp3        = voiceRes.path;
+								scene.audioDuration = dur ? Math.round((dur + 0.3) * 100) / 100 : scene.duration;
+								scene.voiceProvider = voiceRes.provider;
+							} else {
+								scene.audioDuration = scene.duration;
+							}
+						} catch (e) {
+							console.warn(`[Voiceover] Scene ${i} error: ${e.message}`);
 							scene.audioDuration = scene.duration;
 						}
-					} catch (e) {
-						console.warn(`[Voiceover] Scene ${i} error: ${e.message}`);
-						scene.audioDuration = scene.duration;
 					}
 				}
-				sendProgress(1, '✅ Voiceover selesai!', 32);
+				sendProgress(1, '✅ Audio narasi siap!', 32);
 
 				// -----------------------------------------------------------
 				// STEP 2: Render scene clips (download Giphy + backdrop filter)

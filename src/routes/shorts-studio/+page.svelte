@@ -1,6 +1,7 @@
 <script>
-	import { Zap, Play, Pause, Wand2, RefreshCw, Download, ChevronRight, ChevronLeft, Search, Film, Music, Type, Settings, Check, X, Sparkles, Clock, Mic, Volume2, RotateCcw, Eye, EyeOff, Key, Sliders, AlertCircle } from 'lucide-svelte';
+	import { Zap, Play, Pause, Wand2, RefreshCw, Download, ChevronRight, ChevronLeft, Search, Film, Music, Type, Settings, Check, X, Sparkles, Clock, Mic, Volume2, RotateCcw, Eye, EyeOff, Key, Sliders, AlertCircle, Upload } from 'lucide-svelte';
 	import { POPULAR_VOICES } from '$lib/services/voiceService.js';
+	import ShortsVoiceUploadModal from '$lib/components/ShortsVoiceUploadModal.svelte';
 
 	// ------------------------------------------------------------------
 	// Constants
@@ -226,6 +227,50 @@
 	let errorMsg = $state('');
 	let previewingScene = $state(null);
 
+	// Voice Upload Modal & Scene Audio Playback
+	let showVoiceUploadModal = $state(false);
+	let playingSceneAudioIdx = $state(null);
+	let sceneAudioPlayer = $state(null);
+
+	function toggleSceneAudio(idx, url) {
+		if (!url) return;
+		if (playingSceneAudioIdx === idx && sceneAudioPlayer) {
+			sceneAudioPlayer.pause();
+			playingSceneAudioIdx = null;
+			return;
+		}
+		if (sceneAudioPlayer) {
+			sceneAudioPlayer.pause();
+		}
+		sceneAudioPlayer = new Audio(url);
+		playingSceneAudioIdx = idx;
+		sceneAudioPlayer.play().catch(() => {
+			playingSceneAudioIdx = null;
+		});
+		sceneAudioPlayer.onended = () => {
+			playingSceneAudioIdx = null;
+		};
+	}
+
+	function handleVoiceUploadSuccess(data) {
+		if (data.scenes && data.scenes.length > 0) {
+			selectedVoiceEngine = 'upload';
+			selectedTitle = { title: data.title || 'Shorts Voiceover' };
+			scenes = data.scenes;
+			totalDuration = data.totalDuration || Number(totalScenesDuration());
+
+			// Pre-populate giphyResults for each scene
+			for (let i = 0; i < scenes.length; i++) {
+				if (scenes[i].clips && scenes[i].clips.length > 0) {
+					giphyResults[i] = scenes[i].clips;
+				}
+			}
+
+			// Go directly to Step 3 (Footage) so user can see and refine all matching Giphy clips!
+			step = 3;
+		}
+	}
+
 	// ------------------------------------------------------------------
 	// Helpers
 	// ------------------------------------------------------------------
@@ -314,6 +359,9 @@
 	}
 
 	function getVoiceDisplayName(voiceId) {
+		if (selectedVoiceEngine === 'upload') {
+			return '🎙️ Audio Upload Sendiri (Whisper & Giphy Synced)';
+		}
 		if (selectedVoiceEngine === 'elevenlabs') {
 			const v = availableElevenVoices.find(x => x.id === voiceId) || INDONESIAN_ELEVEN_VOICES.find(x => x.id === voiceId) || POPULAR_VOICES.find(x => x.id === voiceId);
 			const m = ELEVEN_MODELS.find(x => x.id === selectedElevenModel);
@@ -577,6 +625,15 @@
 				</div>
 			</div>
 			<div class="header-right">
+				<button
+					type="button"
+					class="btn-header-voice"
+					onclick={() => showVoiceUploadModal = true}
+					title="Upload rekaman suara sendiri untuk dianalisis AI & dicocokkan footage GIPHY"
+				>
+					<Mic size={15} />
+					<span>Upload Voice</span>
+				</button>
 				<div class="step-indicator">
 					{#each [1,2,3,4,5] as s}
 						<button
@@ -635,6 +692,26 @@
 							<h2>Pilih Tema & Topik</h2>
 							<p>AI akan otomatis menyesuaikan gaya naskah, hook, dan query Giphy berdasarkan tema.</p>
 						</div>
+					</div>
+
+					<!-- Voice Upload Quick Action Banner -->
+					<div class="voice-upload-hero-card">
+						<div class="vuh-left">
+							<div class="vuh-icon-badge">
+								<Mic size={24} />
+							</div>
+							<div class="vuh-text">
+								<div class="vuh-badge">🎙️ FITUR BARU: VOICE TO SHORTS</div>
+								<div class="vuh-title">Punya Rekaman Suara Narasi Sendiri?</div>
+								<div class="vuh-desc">
+									Upload audio voiceover Anda (.mp3, .wav, .m4a). AI Whisper mentranskrip ucapan, memotong adegan presisi, dan otomatis mencari footage animasi GIPHY yang relevan untuk setiap kalimat!
+								</div>
+							</div>
+						</div>
+						<button type="button" class="btn-vuh-upload" onclick={() => showVoiceUploadModal = true}>
+							<Upload size={17} />
+							<span>Upload Voice & Cari Footage →</span>
+						</button>
 					</div>
 
 					<div class="lang-section" style="margin-bottom: 24px;">
@@ -1091,10 +1168,74 @@
 									>
 										<Sparkles size={13} /> ElevenLabs AI
 									</button>
+									<button
+										type="button"
+										class="engine-tab upload-tab"
+										class:active={selectedVoiceEngine === 'upload'}
+										onclick={() => {
+											selectedVoiceEngine = 'upload';
+											if (scenes.length === 0 || !scenes.some(s => s.voiceAudioUrl)) {
+												showVoiceUploadModal = true;
+											}
+										}}
+									>
+										<Upload size={13} /> Voice Narasi Upload
+									</button>
 								</div>
 							</div>
 
-							{#if selectedVoiceEngine === 'edge_tts'}
+							{#if selectedVoiceEngine === 'upload'}
+								<div class="upload-voice-panel">
+									<div class="uvp-header">
+										<div class="uvp-info">
+											<div class="uvp-title">🎙️ Audio Narasi dari File Upload</div>
+											<div class="uvp-sub">Audio dipotong presisi per adegan & disinkronkan otomatis dengan timing subtitle dan video.</div>
+										</div>
+										<button type="button" class="btn-reupload-voice" onclick={() => showVoiceUploadModal = true}>
+											<Upload size={14} /> Ganti File Suara
+										</button>
+									</div>
+
+									{#if scenes.length > 0}
+										<div class="scenes-audio-list">
+											{#each scenes as sc, idx}
+												<div class="scene-audio-item">
+													<button
+														type="button"
+														class="btn-scene-play"
+														class:playing={playingSceneAudioIdx === idx}
+														onclick={() => toggleSceneAudio(idx, sc.voiceAudioUrl)}
+														title="Dengarkan audio adegan ini"
+														disabled={!sc.voiceAudioUrl}
+													>
+														{#if playingSceneAudioIdx === idx}
+															<Pause size={14} />
+														{:else}
+															<Play size={14} />
+														{/if}
+													</button>
+													<div class="scene-audio-meta">
+														<div class="scene-audio-title">Adegan {idx + 1} ({sc.audioDuration || sc.duration || 4}s)</div>
+														<div class="scene-audio-text">"{sc.spokenText || ''}"</div>
+													</div>
+													{#if sc.giphyQuery}
+														<div class="scene-clip-tag">
+															<Film size={12} /> {sc.giphyQuery}
+														</div>
+													{/if}
+												</div>
+											{/each}
+										</div>
+									{:else}
+										<div class="upload-empty-notice">
+											<p>Belum ada audio narasi yang diupload.</p>
+											<button type="button" class="btn-primary" onclick={() => showVoiceUploadModal = true}>
+												<Upload size={16} /> Upload Audio Sekarang
+											</button>
+										</div>
+									{/if}
+								</div>
+							{:else if selectedVoiceEngine === 'edge_tts'}
 								<div class="option-row">
 									{#each VOICE_OPTIONS.filter(v => v.lang === contentLang) as voice}
 										<button
@@ -1543,6 +1684,13 @@
 			</div>
 		</aside>
 	</div>
+
+	<ShortsVoiceUploadModal
+		isOpen={showVoiceUploadModal}
+		initialTheme={selectedTheme}
+		onSuccess={handleVoiceUploadSuccess}
+		onClose={() => showVoiceUploadModal = false}
+	/>
 </div>
 
 <style>
@@ -3323,6 +3471,238 @@
 
 	/* Spin animation */
 	:global(.spin) { animation: spin 0.8s linear infinite; }
+
+	/* Voice Upload Hero Card & Header Button */
+	.btn-header-voice {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.2));
+		border: 1px solid rgba(168, 85, 247, 0.45);
+		color: #e0e7ff;
+		padding: 6px 14px;
+		border-radius: 20px;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s;
+		box-shadow: 0 0 12px rgba(99, 102, 241, 0.2);
+	}
+	.btn-header-voice:hover {
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(168, 85, 247, 0.35));
+		border-color: #c084fc;
+		transform: translateY(-1px);
+		box-shadow: 0 0 18px rgba(168, 85, 247, 0.35);
+	}
+
+	.voice-upload-hero-card {
+		margin-bottom: 24px;
+		border-radius: 16px;
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(168, 85, 247, 0.08) 100%);
+		border: 1px solid rgba(168, 85, 247, 0.3);
+		padding: 18px 22px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 20px;
+		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+		transition: all 0.2s;
+	}
+	.voice-upload-hero-card:hover {
+		border-color: rgba(168, 85, 247, 0.5);
+		box-shadow: 0 8px 32px rgba(99, 102, 241, 0.2);
+	}
+	.vuh-left {
+		display: flex;
+		align-items: center;
+		gap: 16px;
+	}
+	.vuh-icon-badge {
+		width: 48px;
+		height: 48px;
+		border-radius: 14px;
+		background: linear-gradient(135deg, #6366f1, #a855f7);
+		color: #fff;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		box-shadow: 0 4px 18px rgba(99, 102, 241, 0.45);
+	}
+	.vuh-badge {
+		font-size: 0.68rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		color: #c084fc;
+		text-transform: uppercase;
+		margin-bottom: 2px;
+	}
+	.vuh-title {
+		font-size: 1.05rem;
+		font-weight: 700;
+		color: #fff;
+		letter-spacing: -0.01em;
+	}
+	.vuh-desc {
+		font-size: 0.8rem;
+		color: rgba(255, 255, 255, 0.65);
+		line-height: 1.4;
+		margin-top: 3px;
+		max-width: 580px;
+	}
+	.btn-vuh-upload {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		background: linear-gradient(135deg, #6366f1, #a855f7);
+		border: none;
+		color: #fff;
+		padding: 11px 20px;
+		border-radius: 12px;
+		font-size: 0.88rem;
+		font-weight: 600;
+		cursor: pointer;
+		white-space: nowrap;
+		flex-shrink: 0;
+		transition: all 0.2s;
+		box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
+	}
+	.btn-vuh-upload:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 6px 22px rgba(168, 85, 247, 0.5);
+	}
+
+	/* Upload Voice Engine Panel in Step 4 */
+	.upload-tab {
+		border-color: rgba(168, 85, 247, 0.3) !important;
+	}
+	.upload-tab.active {
+		background: rgba(168, 85, 247, 0.2) !important;
+		border-color: #c084fc !important;
+		color: #c084fc !important;
+	}
+	.upload-voice-panel {
+		background: rgba(255, 255, 255, 0.02);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 14px;
+		padding: 18px;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+	}
+	.uvp-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+		padding-bottom: 12px;
+	}
+	.uvp-title {
+		font-size: 0.95rem;
+		font-weight: 700;
+		color: #fff;
+	}
+	.uvp-sub {
+		font-size: 0.78rem;
+		color: rgba(255, 255, 255, 0.6);
+		margin-top: 2px;
+	}
+	.btn-reupload-voice {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		background: rgba(255, 255, 255, 0.06);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		color: #e0e7ff;
+		padding: 7px 14px;
+		border-radius: 8px;
+		font-size: 0.78rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s;
+		white-space: nowrap;
+	}
+	.btn-reupload-voice:hover {
+		background: rgba(255, 255, 255, 0.12);
+		color: #fff;
+	}
+	.scenes-audio-list {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		max-height: 280px;
+		overflow-y: auto;
+	}
+	.scene-audio-item {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.05);
+		border-radius: 10px;
+		padding: 10px 14px;
+		transition: all 0.15s;
+	}
+	.scene-audio-item:hover {
+		background: rgba(255, 255, 255, 0.05);
+		border-color: rgba(255, 255, 255, 0.1);
+	}
+	.btn-scene-play {
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		background: #6366f1;
+		color: #fff;
+		border: none;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: all 0.15s;
+	}
+	.btn-scene-play:hover {
+		background: #4f46e5;
+		transform: scale(1.06);
+	}
+	.btn-scene-play.playing {
+		background: #10b981;
+	}
+	.scene-audio-meta {
+		flex: 1;
+		overflow: hidden;
+	}
+	.scene-audio-title {
+		font-size: 0.78rem;
+		font-weight: 700;
+		color: #c084fc;
+	}
+	.scene-audio-text {
+		font-size: 0.78rem;
+		color: rgba(255, 255, 255, 0.8);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		margin-top: 2px;
+	}
+	.scene-clip-tag {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 0.72rem;
+		color: #818cf8;
+		background: rgba(99, 102, 241, 0.12);
+		border: 1px solid rgba(99, 102, 241, 0.25);
+		border-radius: 6px;
+		padding: 3px 8px;
+		white-space: nowrap;
+	}
+	.upload-empty-notice {
+		text-align: center;
+		padding: 24px;
+		color: rgba(255, 255, 255, 0.6);
+	}
 
 	/* Scrollbar */
 	::-webkit-scrollbar { width: 5px; height: 5px; }
