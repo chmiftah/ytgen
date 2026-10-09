@@ -215,6 +215,24 @@
 	let bgmVolume = $state(0.12);
 	let selectedSubtitle = $state('viral-yellow');
 	let subtitlesEnabled = $state(true);
+	let subtitlePosition = $state('bottom'); // 'bottom' | 'center' | 'top'
+	let subtitleYPercent = $state(78); // 15% - 88%
+	let subtitleFontScale = $state(1.0); // 0.85 | 1.0 | 1.2
+	let subtitleAlign = $state('center'); // 'left' | 'center' | 'right'
+
+	function setSubtitlePositionPreset(pos) {
+		subtitlePosition = pos;
+		if (pos === 'top') subtitleYPercent = 20;
+		else if (pos === 'center') subtitleYPercent = 50;
+		else subtitleYPercent = 78;
+	}
+
+	function handleYPercentChange(val) {
+		subtitleYPercent = val;
+		if (val <= 35) subtitlePosition = 'top';
+		else if (val >= 65) subtitlePosition = 'bottom';
+		else subtitlePosition = 'center';
+	}
 
 	// Step 5 - Render
 	let isRendering = $state(false);
@@ -592,7 +610,11 @@
 					bgmId: selectedBgm,
 					bgmVolume,
 					subtitleStyle: selectedSubtitle,
-					subtitlesEnabled
+					subtitlesEnabled,
+					subtitlePosition,
+					subtitleYPercent,
+					subtitleFontScale,
+					subtitleAlign
 				})
 			});
 
@@ -1591,6 +1613,144 @@
 										</button>
 									{/each}
 								</div>
+
+								<!-- Tata Letak & Posisi Subtitle dengan Live Preview -->
+								<div class="subtitle-layout-box">
+									<div class="layout-box-header">
+										<div class="layout-box-title-group">
+											<Sliders size={16} />
+											<span class="box-title">Tata Letak & Posisi Subtitle</span>
+										</div>
+										<span class="live-badge">
+											<span class="pulse-dot"></span> Live Preview
+										</span>
+									</div>
+
+									<!-- Preset Posisi -->
+									<div class="layout-field-group">
+										<label class="field-label">Posisi Teks (Preset)</label>
+										<div class="preset-pills">
+											<button
+												type="button"
+												class="preset-pill"
+												class:active={subtitlePosition === 'bottom'}
+												onclick={() => setSubtitlePositionPreset('bottom')}
+											>
+												<span class="pill-icon">⬇️</span>
+												<span>Bawah</span>
+											</button>
+											<button
+												type="button"
+												class="preset-pill"
+												class:active={subtitlePosition === 'center'}
+												onclick={() => setSubtitlePositionPreset('center')}
+											>
+												<span class="pill-icon">⏺️</span>
+												<span>Tengah</span>
+											</button>
+											<button
+												type="button"
+												class="preset-pill"
+												class:active={subtitlePosition === 'top'}
+												onclick={() => setSubtitlePositionPreset('top')}
+											>
+												<span class="pill-icon">⬆️</span>
+												<span>Atas</span>
+											</button>
+										</div>
+									</div>
+
+									<!-- Slider Vertikal Y -->
+									<div class="layout-field-group">
+										<div class="slider-header-row">
+											<label class="field-label" for="subtitle-y-slider">Jarak Vertikal (Y)</label>
+											<span class="slider-val-badge">{subtitleYPercent}%</span>
+										</div>
+										<div class="slider-container">
+											<span class="slider-edge-label">Atas</span>
+											<input
+												id="subtitle-y-slider"
+												type="range"
+												min="15"
+												max="88"
+												step="1"
+												bind:value={subtitleYPercent}
+												oninput={(e) => handleYPercentChange(Number(e.currentTarget.value))}
+												class="sub-range-input"
+											/>
+											<span class="slider-edge-label">Bawah</span>
+										</div>
+									</div>
+
+									<!-- Grid: Ukuran Font & Perataan Teks -->
+									<div class="layout-grid-row">
+										<!-- Ukuran Font -->
+										<div class="layout-field-group">
+											<label class="field-label">Ukuran Font</label>
+											<div class="option-pill-group">
+												<button
+													type="button"
+													class="option-pill"
+													class:active={subtitleFontScale === 0.85}
+													onclick={() => subtitleFontScale = 0.85}
+												>
+													Kecil
+												</button>
+												<button
+													type="button"
+													class="option-pill"
+													class:active={subtitleFontScale === 1.0}
+													onclick={() => subtitleFontScale = 1.0}
+												>
+													Normal
+												</button>
+												<button
+													type="button"
+													class="option-pill"
+													class:active={subtitleFontScale === 1.2}
+													onclick={() => subtitleFontScale = 1.2}
+												>
+													Besar
+												</button>
+											</div>
+										</div>
+
+										<!-- Perataan Teks -->
+										<div class="layout-field-group">
+											<label class="field-label">Perataan Teks</label>
+											<div class="option-pill-group">
+												<button
+													type="button"
+													class="option-pill"
+													class:active={subtitleAlign === 'left'}
+													onclick={() => subtitleAlign = 'left'}
+												>
+													Kiri
+												</button>
+												<button
+													type="button"
+													class="option-pill"
+													class:active={subtitleAlign === 'center'}
+													onclick={() => subtitleAlign = 'center'}
+												>
+													Tengah
+												</button>
+												<button
+													type="button"
+													class="option-pill"
+													class:active={subtitleAlign === 'right'}
+													onclick={() => subtitleAlign = 'right'}
+												>
+													Kanan
+												</button>
+											</div>
+										</div>
+									</div>
+
+									<div class="layout-footer-hint">
+										💡 Perubahan posisi & tata letak langsung diperbarui di layar smartphone sebelah kanan.
+									</div>
+								</div>
 							{/if}
 						</div>
 					</div>
@@ -1642,7 +1802,11 @@
 						</div>
 						<div class="summary-item">
 							<span class="summary-label">Subtitle</span>
-							<span class="summary-value">{subtitlesEnabled ? SUBTITLE_STYLES.find(s => s.id === selectedSubtitle)?.label : 'Tanpa Subtitle'}</span>
+							<span class="summary-value">
+								{subtitlesEnabled 
+									? `${SUBTITLE_STYLES.find(s => s.id === selectedSubtitle)?.label} · ${subtitlePosition.toUpperCase()} (${subtitleYPercent}%) · ${subtitleAlign}`
+									: 'Tanpa Subtitle'}
+							</span>
 						</div>
 						<div class="summary-item">
 							<span class="summary-label">Output</span>
@@ -1767,10 +1931,19 @@
 							</div>
 						{/if}
 
-						<!-- Subtitle overlay preview -->
-						{#if previewingScene !== null && scenes[previewingScene]?.spokenText}
-							<div class="phone-subtitle" class:viral-yellow={selectedSubtitle === 'viral-yellow'} class:mrbeast={selectedSubtitle === 'mrbeast-bold'}>
-								{getPreviewSubtitle(scenes[previewingScene].spokenText, selectedSubtitle)}
+						<!-- Subtitle overlay preview (live preview with dynamic placement, font size & alignment) -->
+						{#if subtitlesEnabled}
+							{@const currentPreviewText = (previewingScene !== null && scenes[previewingScene]?.spokenText)
+								? scenes[previewingScene].spokenText
+								: (scenes[0]?.spokenText || 'CONTOH SUBTITLE VIRAL 🔥')}
+							<div
+								class="phone-subtitle"
+								class:viral-yellow={selectedSubtitle === 'viral-yellow'}
+								class:mrbeast={selectedSubtitle === 'mrbeast-bold'}
+								class:minimal={selectedSubtitle === 'minimal'}
+								style="top: {subtitleYPercent}%; bottom: auto; transform: translateY(-50%); left: {subtitleAlign === 'left' ? '12px' : subtitleAlign === 'right' ? 'auto' : '10px'}; right: {subtitleAlign === 'right' ? '12px' : subtitleAlign === 'left' ? 'auto' : '10px'}; text-align: {subtitleAlign}; font-size: calc(0.76rem * {subtitleFontScale});"
+							>
+								{getPreviewSubtitle(currentPreviewText, selectedSubtitle)}
 							</div>
 						{/if}
 
@@ -3112,6 +3285,171 @@
 	.subtitle-style-card strong { font-size: 0.9rem; flex: 0 0 auto; min-width: 120px; }
 	.subtitle-style-card span { font-size: 0.8rem; color: rgba(232, 232, 240, 0.5); flex: 1; }
 
+	/* Tata Letak & Posisi Subtitle Box */
+	.subtitle-layout-box {
+		margin-top: 0.85rem;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(167, 139, 250, 0.18);
+		border-radius: 12px;
+		padding: 1.1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.95rem;
+	}
+	.layout-box-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding-bottom: 0.4rem;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+	}
+	.layout-box-title-group {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		color: #f1f1f8;
+		font-size: 0.88rem;
+		font-weight: 700;
+	}
+	.live-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: #34d399;
+		background: rgba(52, 211, 153, 0.12);
+		border: 1px solid rgba(52, 211, 153, 0.25);
+		padding: 2px 8px;
+		border-radius: 999px;
+	}
+	.pulse-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: #34d399;
+		box-shadow: 0 0 6px #34d399;
+		animation: pulseDot 1.6s infinite ease-in-out;
+	}
+	@keyframes pulseDot {
+		0%, 100% { opacity: 1; transform: scale(1); }
+		50% { opacity: 0.4; transform: scale(0.75); }
+	}
+	.layout-field-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.field-label {
+		font-size: 0.78rem;
+		color: rgba(232, 232, 240, 0.7);
+		font-weight: 600;
+	}
+	.preset-pills {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.5rem;
+	}
+	.preset-pill {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.4rem;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid rgba(167, 139, 250, 0.15);
+		border-radius: 8px;
+		padding: 0.55rem 0.6rem;
+		color: #e2e8f0;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+	.preset-pill:hover {
+		border-color: rgba(167, 139, 250, 0.35);
+		background: rgba(167, 139, 250, 0.08);
+	}
+	.preset-pill.active {
+		border-color: #a78bfa;
+		background: rgba(167, 139, 250, 0.2);
+		color: #ffffff;
+		box-shadow: 0 0 12px rgba(167, 139, 250, 0.25);
+	}
+	.pill-icon {
+		font-size: 0.85rem;
+	}
+	.slider-header-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.slider-val-badge {
+		font-size: 0.75rem;
+		font-weight: 700;
+		color: #a78bfa;
+		background: rgba(167, 139, 250, 0.15);
+		padding: 1px 7px;
+		border-radius: 6px;
+	}
+	.slider-container {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+	.slider-edge-label {
+		font-size: 0.7rem;
+		color: rgba(232, 232, 240, 0.45);
+		white-space: nowrap;
+	}
+	.sub-range-input {
+		flex: 1;
+		accent-color: #a78bfa;
+		height: 6px;
+		cursor: pointer;
+	}
+	.layout-grid-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.75rem;
+	}
+	.option-pill-group {
+		display: flex;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(167, 139, 250, 0.15);
+		border-radius: 8px;
+		padding: 3px;
+		gap: 2px;
+	}
+	.option-pill {
+		flex: 1;
+		background: transparent;
+		border: none;
+		border-radius: 6px;
+		padding: 0.45rem 0.3rem;
+		color: rgba(232, 232, 240, 0.7);
+		font-size: 0.76rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		text-align: center;
+	}
+	.option-pill:hover {
+		color: #ffffff;
+		background: rgba(255, 255, 255, 0.05);
+	}
+	.option-pill.active {
+		background: #a78bfa;
+		color: #0f0d19;
+		font-weight: 700;
+		box-shadow: 0 2px 8px rgba(167, 139, 250, 0.35);
+	}
+	.layout-footer-hint {
+		font-size: 0.72rem;
+		color: rgba(232, 232, 240, 0.5);
+		line-height: 1.4;
+		margin-top: 0.1rem;
+	}
+
 	/* ================================================================ */
 	/* STEP 5 – RENDER */
 	/* ================================================================ */
@@ -3487,18 +3825,15 @@
 
 	.phone-subtitle {
 		position: absolute;
-		bottom: 75px;
-		left: 12px;
-		right: 12px;
-		text-align: center;
-		font-size: 0.76rem;
 		font-weight: 900;
-		line-height: 1.2;
+		line-height: 1.25;
 		padding: 4px 6px;
 		z-index: 5;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
+		white-space: normal;
+		word-break: break-word;
+		max-width: 92%;
+		transition: top 0.12s ease-out, font-size 0.12s ease-out;
+		pointer-events: none;
 	}
 	.phone-subtitle.viral-yellow {
 		color: #FFE800;
@@ -3511,6 +3846,12 @@
 		text-transform: uppercase;
 		letter-spacing: 0.6px;
 		text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 2px 6px rgba(180, 0, 0, 0.85);
+	}
+	.phone-subtitle.minimal {
+		color: #FFFFFF;
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+		letter-spacing: 0.3px;
+		text-shadow: -1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 1.5px 0 #000, 0 2px 5px rgba(0, 0, 0, 0.85);
 	}
 
 	.phone-ui-overlay {

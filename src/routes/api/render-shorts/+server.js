@@ -524,17 +524,39 @@ function chunkWordsForShorts(wordTimings, maxWords = 3, maxChars = 24) {
 	return chunks;
 }
 
-function buildShortsASS(scenes, style = 'viral-yellow', W = 1080, H = 1920, aspectRatio = '9:16') {
+function buildShortsASS(scenes, style = 'viral-yellow', W = 1080, H = 1920, aspectRatio = '9:16', options = {}) {
 	const st = SUBTITLE_STYLES[style] || SUBTITLE_STYLES['viral-yellow'];
-	let effectiveFontSize = st.fontSize;
-	let effectiveMarginV = st.marginV;
+	const {
+		subtitlePosition = 'bottom',
+		subtitleYPercent = 78,
+		subtitleFontScale = 1.0,
+		subtitleAlign = 'center'
+	} = options;
+
+	let effectiveFontSize = Math.round(st.fontSize * (Number(subtitleFontScale) || 1.0));
 
 	if (aspectRatio === '16:9') {
-		effectiveFontSize = Math.round(st.fontSize * 0.72);
-		effectiveMarginV = 100;
+		effectiveFontSize = Math.round(effectiveFontSize * 0.72);
 	} else if (aspectRatio === '1:1') {
-		effectiveFontSize = Math.round(st.fontSize * 0.85);
-		effectiveMarginV = 160;
+		effectiveFontSize = Math.round(effectiveFontSize * 0.85);
+	}
+
+	const yNum = Number(subtitleYPercent) || 78;
+	let assAlignment = 2; // Default: Bottom Center
+	let effectiveMarginV = 280;
+
+	if (subtitlePosition === 'center' && Math.abs(yNum - 50) <= 8) {
+		// Middle keypad alignment (4, 5, 6)
+		assAlignment = subtitleAlign === 'left' ? 4 : (subtitleAlign === 'right' ? 6 : 5);
+		effectiveMarginV = 0;
+	} else if (yNum <= 50) {
+		// Top zone (7, 8, 9)
+		assAlignment = subtitleAlign === 'left' ? 7 : (subtitleAlign === 'right' ? 9 : 8);
+		effectiveMarginV = Math.max(30, Math.round(H * (yNum / 100)));
+	} else {
+		// Bottom zone (1, 2, 3)
+		assAlignment = subtitleAlign === 'left' ? 1 : (subtitleAlign === 'right' ? 3 : 2);
+		effectiveMarginV = Math.max(30, Math.round(H * ((100 - yNum) / 100)));
 	}
 
 	function hexBgr(hex) {
@@ -566,7 +588,7 @@ function buildShortsASS(scenes, style = 'viral-yellow', W = 1080, H = 1920, aspe
 		'',
 		'[V4+ Styles]',
 		'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-		`Style: Default,${st.fontName},${effectiveFontSize},${primary},${primary},${outline},${boxBg},${st.bold ? -1 : 0},0,0,0,100,100,1.2,0,1,${st.outlineSize},${st.shadow},${st.alignment},80,80,${effectiveMarginV},1`,
+		`Style: Default,${st.fontName},${effectiveFontSize},${primary},${primary},${outline},${boxBg},${st.bold ? -1 : 0},0,0,0,100,100,1.2,0,1,${st.outlineSize},${st.shadow},${assAlignment},80,80,${effectiveMarginV},1`,
 		'',
 		'[Events]',
 		'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text'
@@ -663,6 +685,10 @@ export async function POST({ request }) {
 		bgmVolume      = 0.12,
 		subtitleStyle  = 'viral-yellow',
 		subtitlesEnabled = true,
+		subtitlePosition = 'bottom',
+		subtitleYPercent = 78,
+		subtitleFontScale = 1.0,
+		subtitleAlign = 'center',
 	} = body;
 
 	let targetW = 1080;
@@ -789,7 +815,12 @@ export async function POST({ request }) {
 				let assPath = null;
 				if (subtitlesEnabled) {
 					sendProgress(3, '📝 Membuat file subtitle...', 68);
-					const assContent = buildShortsASS(scenesWork, subtitleStyle, targetW, targetH, aspectRatio);
+					const assContent = buildShortsASS(scenesWork, subtitleStyle, targetW, targetH, aspectRatio, {
+						subtitlePosition,
+						subtitleYPercent,
+						subtitleFontScale,
+						subtitleAlign
+					});
 					assPath = path.join(sessionDir, 'subtitles.ass');
 					await fs.promises.writeFile(assPath, assContent, 'utf8');
 				}
