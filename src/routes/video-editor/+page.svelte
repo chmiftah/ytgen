@@ -217,11 +217,65 @@
 
 	// Derived: Dynamic ruler interval to avoid text overlap (e.g. 0s 1s 2s 3s overlapping)
 	let rulerInterval = $derived.by(() => {
+		if (pxPerSec <= 2) return 120; // 2 min step
+		if (pxPerSec <= 5) return 60;  // 1 min step
 		if (pxPerSec <= 15) return 30; // 30s step
 		if (pxPerSec <= 30) return 15; // 15s step
 		if (pxPerSec <= 50) return 10; // 10s step
 		if (pxPerSec <= 80) return 5;  // 5s step
 		return 2;                      // 2s step
+	});
+
+	// Derived: Minimap minute ticks for overview bar
+	let minimapMinuteTicks = $derived.by(() => {
+		if (totalDuration <= 0) return [];
+		const ticks = [];
+		let stepSec = 60;
+		if (totalDuration > 1200) stepSec = 300; // 5 min
+		else if (totalDuration > 600) stepSec = 120; // 2 min
+		else if (totalDuration > 180) stepSec = 60;  // 1 min
+		else stepSec = 30; // 30 sec
+
+		for (let s = 0; s <= totalDuration; s += stepSec) {
+			ticks.push({
+				sec: s,
+				pct: (s / totalDuration) * 100,
+				label: `${Math.floor(s / 60)}m`
+			});
+		}
+		return ticks;
+	});
+
+	// Derived: Minimap viewport window width and position
+	let minimapViewportWidth = $derived.by(() => {
+		if (!timelineScrollEl || totalDuration <= 0) return 100;
+		const contentW = totalDuration * pxPerSec;
+		const viewW = timelineScrollEl.clientWidth - 120;
+		if (contentW <= 0) return 100;
+		const ratio = viewW / contentW;
+		return Math.min(100, Math.max(4, ratio * 100));
+	});
+
+	let minimapViewportLeft = $derived.by(() => {
+		if (!timelineScrollEl || totalDuration <= 0) return 0;
+		const contentW = totalDuration * pxPerSec;
+		if (contentW <= 0) return 0;
+		const leftPct = (scrollLeft / contentW) * 100;
+		return Math.max(0, Math.min(100 - minimapViewportWidth, leftPct));
+	});
+
+	// Derived: Quick jump minute buttons for long timelines
+	let quickJumpMinutes = $derived.by(() => {
+		if (totalDuration < 90) return [];
+		const list = [0];
+		if (totalDuration >= 120) list.push(60);   // 1m
+		if (totalDuration >= 240) list.push(180);  // 3m
+		if (totalDuration >= 360) list.push(300);  // 5m
+		if (totalDuration >= 600) list.push(480);  // 8m
+		if (totalDuration >= 660) list.push(600);  // 10m
+		if (totalDuration >= 900) list.push(720);  // 12m
+		if (totalDuration >= 1000) list.push(900); // 15m
+		return list.filter((s) => s <= totalDuration);
 	});
 
 	// Derived: Placeholder Stats on active / main visual track
@@ -982,7 +1036,7 @@
 		}
 	}
 
-	function seekTo(time) {
+	function seekTo(time, autoScroll = false) {
 		currentTime = Math.max(0, Math.min(totalDuration, Number(time)));
 		// Seek all audio elements
 		for (const track of audioTracks) {
@@ -991,6 +1045,76 @@
 				el.currentTime = currentTime;
 			}
 		}
+		if (autoScroll) {
+			scrollToTime(currentTime, true);
+		}
+	}
+
+	function scrollToTime(time, center = true) {
+		if (!timelineScrollEl) return;
+		const targetPx = Number(time) * pxPerSec;
+		const viewWidth = Math.max(200, timelineScrollEl.clientWidth - 120);
+		if (center) {
+			timelineScrollEl.scrollLeft = Math.max(0, targetPx - viewWidth / 2);
+		} else {
+			if (targetPx < timelineScrollEl.scrollLeft) {
+				timelineScrollEl.scrollLeft = Math.max(0, targetPx - 40);
+			} else if (targetPx > timelineScrollEl.scrollLeft + viewWidth) {
+				timelineScrollEl.scrollLeft = targetPx - viewWidth + 40;
+			}
+		}
+	}
+
+	function zoomToFit() {
+		if (!timelineScrollEl || totalDuration <= 0) return;
+		const availableWidth = Math.max(300, timelineScrollEl.clientWidth - 160);
+		const fitScale = Math.max(1, Math.min(120, Math.floor(availableWidth / Math.max(5, totalDuration))));
+		pxPerSec = fitScale;
+		timelineScrollEl.scrollLeft = 0;
+	}
+
+	function getClipStartTime(trackIdx, clipIdx) {
+		const track = visualTracks[trackIdx];
+		if (!track || !track.clips) return 0;
+		let t = 0;
+		for (let i = 0; i < clipIdx && i < track.clips.length; i++) {
+			t += Number(track.clips[i].duration || defaultDuration);
+		}
+		return t;
+	}
+
+	// Minimap Navigator Drag & Click Scrubbing
+	let minimapTrackEl = $state(/** @type {HTMLDivElement|undefined} */ (undefined));
+	let isDraggingMinimap = $state(false);
+
+	function handleMinimapMouseDown(/** @type {MouseEvent} */ e) {
+		if (e.button !== 0 || !minimapTrackEl || !timelineScrollEl || totalDuration <= 0) return;
+		const rect = minimapTrackEl.getBoundingClientRect();
+		const clickPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+		const targetTime = clickPct * totalDuration;
+
+		seekTo(targetTime);
+		scrollToTime(targetTime, true);
+
+		isDraggingMinimap = true;
+
+		const onMouseMove = (/** @type {MouseEvent} */ moveEvent) => {
+			if (!isDraggingMinimap || !minimapTrackEl || !timelineScrollEl) return;
+			const r = minimapTrackEl.getBoundingClientRect();
+			const movePct = Math.max(0, Math.min(1, (moveEvent.clientX - r.left) / r.width));
+			const time = movePct * totalDuration;
+			seekTo(time);
+			scrollToTime(time, true);
+		};
+
+		const onMouseUp = () => {
+			isDraggingMinimap = false;
+			window.removeEventListener('mousemove', onMouseMove);
+			window.removeEventListener('mouseup', onMouseUp);
+		};
+
+		window.addEventListener('mousemove', onMouseMove);
+		window.addEventListener('mouseup', onMouseUp);
 	}
 
 	// Timeline scrubbing, dragging & seeking
@@ -2165,18 +2289,141 @@
 			</div>
 
 			<div class="timeline-right-actions">
+				<!-- Quick Jump Minute Navigator -->
+				<div class="quick-jump-group">
+					<span class="qj-label">Lompat:</span>
+					<button
+						type="button"
+						class="btn btn-xs btn-jump-pill"
+						onclick={() => seekTo(Math.max(0, currentTime - 60), true)}
+						title="Lompat mundur 1 menit (-60s)"
+					>
+						⏪ -1m
+					</button>
+					<button
+						type="button"
+						class="btn btn-xs btn-jump-pill"
+						onclick={() => seekTo(Math.min(totalDuration, currentTime + 60), true)}
+						title="Lompat maju 1 menit (+60s)"
+					>
+						⏩ +1m
+					</button>
+					{#if quickJumpMinutes.length > 2}
+						<div class="minute-chips-wrap">
+							{#each quickJumpMinutes as sec}
+								<button
+									type="button"
+									class="btn btn-xs chip-jump {Math.abs(currentTime - sec) < 25 ? 'active' : ''}"
+									onclick={() => seekTo(sec, true)}
+									title="Lompat langsung ke menit {Math.floor(sec / 60)} ({formatTime(sec)})"
+								>
+									{Math.floor(sec / 60)}m
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
+				<!-- Zoom to Fit Button -->
+				<button
+					type="button"
+					class="btn btn-xs btn-fit-screen"
+					onclick={zoomToFit}
+					title="Fit Timeline: Skalakan durasi agar seluruh timeline (0m..{Math.ceil(totalDuration/60)}m) pas 100% di layar"
+				>
+					<Maximize2 size={13} />
+					<span>Fit Layar</span>
+				</button>
+
 				<div class="zoom-controller">
 					<ZoomOut size={14} opacity={0.6} />
 					<input
 						type="range"
-						min="15"
+						min="1"
 						max="120"
-						step="5"
+						step="1"
 						bind:value={pxPerSec}
 						class="zoom-slider"
-						title="Zoom skala timeline"
+						title="Zoom skala timeline (1px - 120px per detik)"
 					/>
 					<ZoomIn size={14} opacity={0.6} />
+					<span class="zoom-px-label">{pxPerSec}px/s</span>
+				</div>
+			</div>
+		</div>
+
+		<!-- TIMELINE OVERVIEW MINIMAP / PAN NAVIGATOR BAR -->
+		<div class="timeline-minimap-bar">
+			<div class="minimap-header-col">
+				<span class="minimap-tag">NAVIGATOR</span>
+				<span class="minimap-total-time">{formatTime(totalDuration)}</span>
+			</div>
+			<div
+				class="minimap-track-area"
+				bind:this={minimapTrackEl}
+				onmousedown={handleMinimapMouseDown}
+				role="slider"
+				tabindex="0"
+				aria-label="Timeline Minimap Navigator"
+				aria-valuenow={currentTime}
+				aria-valuemin={0}
+				aria-valuemax={totalDuration}
+			>
+				<!-- Minute Ticks & Timecode Grid -->
+				<div class="minimap-marks">
+					{#each minimapMinuteTicks as tick}
+						<div class="minimap-tick" style="left: {tick.pct}%;">
+							<div class="minimap-tick-line"></div>
+							<span class="minimap-tick-label">{tick.label}</span>
+						</div>
+					{/each}
+				</div>
+
+				<!-- Layers Mini Overview Preview -->
+				<div class="minimap-layers-preview">
+					<!-- Visual Track 0 Blocks -->
+					<div class="minimap-visual-strip">
+						{#each visualTracks[0]?.clips || [] as clip, cIdx}
+							{@const clipStart = getClipStartTime(0, cIdx)}
+							{@const leftPct = totalDuration > 0 ? (clipStart / totalDuration) * 100 : 0}
+							{@const widthPct = totalDuration > 0 ? (clip.duration / totalDuration) * 100 : 0}
+							<div
+								class="minimap-clip-block"
+								style="left: {leftPct}%; width: {widthPct}%;"
+								title="Scene #{clip.sceneNumber || cIdx + 1}: {clip.name} ({clip.duration}s)"
+							></div>
+						{/each}
+					</div>
+
+					<!-- Audio Track 0 Waveform Strip -->
+					{#if audioTracks[0]?.audioUrl}
+						{@const audioDur = Number(audioTracks[0].audioDuration || totalDuration)}
+						<div
+							class="minimap-audio-strip"
+							style="width: {totalDuration > 0 ? (audioDur / totalDuration) * 100 : 100}%;"
+							title="Audio Narasi ({formatTime(audioDur)})"
+						></div>
+					{/if}
+				</div>
+
+				<!-- Viewport Window (Draggable Zoom & Pan Window) -->
+				<div
+					class="minimap-viewport-window"
+					style="left: {minimapViewportLeft}%; width: {minimapViewportWidth}%;"
+				>
+					<div class="viewport-handle left-handle"></div>
+					<span class="viewport-label">
+						{formatTime(scrollLeft / pxPerSec)} - {formatTime((scrollLeft + (timelineScrollEl?.clientWidth || 800) - 120) / pxPerSec)}
+					</span>
+					<div class="viewport-handle right-handle"></div>
+				</div>
+
+				<!-- Playhead indicator line in Minimap -->
+				<div
+					class="minimap-playhead"
+					style="left: {totalDuration > 0 ? (currentTime / totalDuration) * 100 : 0}%;"
+				>
+					<div class="minimap-playhead-head"></div>
 				</div>
 			</div>
 		</div>
@@ -4030,25 +4277,296 @@
 		gap: 10px;
 	}
 
+	.quick-jump-group {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		background: rgba(14, 20, 34, 0.7);
+		padding: 2px 6px;
+		border-radius: 6px;
+		border: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.qj-label {
+		font-size: 0.68rem;
+		font-weight: 600;
+		color: #94a3b8;
+		margin-right: 2px;
+	}
+	.btn-jump-pill {
+		padding: 2px 6px;
+		font-size: 0.68rem;
+		font-weight: 700;
+		color: #cbd5e1;
+		background: rgba(255, 255, 255, 0.06);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 4px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.btn-jump-pill:hover {
+		color: #ffffff;
+		background: rgba(99, 102, 241, 0.25);
+		border-color: #6366f1;
+	}
+	.minute-chips-wrap {
+		display: flex;
+		align-items: center;
+		gap: 3px;
+		margin-left: 4px;
+		padding-left: 4px;
+		border-left: 1px solid rgba(255, 255, 255, 0.1);
+	}
+	.chip-jump {
+		padding: 2px 5px;
+		font-size: 0.66rem;
+		font-weight: 700;
+		color: #94a3b8;
+		background: transparent;
+		border: 1px solid transparent;
+		border-radius: 4px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.chip-jump:hover {
+		color: #ffffff;
+		background: rgba(255, 255, 255, 0.08);
+	}
+	.chip-jump.active {
+		color: #ffffff;
+		background: #4f46e5;
+		border-color: #6366f1;
+		box-shadow: 0 0 6px rgba(99, 102, 241, 0.4);
+	}
+
+	.btn-fit-screen {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 3px 8px;
+		font-size: 0.7rem;
+		font-weight: 600;
+		color: #e0e7ff;
+		background: rgba(99, 102, 241, 0.16);
+		border: 1px solid rgba(99, 102, 241, 0.35);
+		border-radius: 6px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.btn-fit-screen:hover {
+		background: rgba(99, 102, 241, 0.3);
+		border-color: #818cf8;
+		box-shadow: 0 0 8px rgba(99, 102, 241, 0.3);
+	}
+
 	.zoom-controller {
 		display: flex;
 		align-items: center;
 		gap: 6px;
+		background: rgba(14, 20, 34, 0.7);
+		padding: 2px 8px;
+		border-radius: 6px;
+		border: 1px solid rgba(255, 255, 255, 0.08);
 	}
 
 	.zoom-slider {
-		width: 80px;
+		width: 75px;
 		accent-color: #6366f1;
 		cursor: pointer;
 	}
 
-	/* Scrollable Tracks Area */
+	.zoom-px-label {
+		font-size: 0.66rem;
+		font-weight: 700;
+		color: #818cf8;
+		min-width: 44px;
+		text-align: right;
+		font-family: var(--font-mono, monospace);
+	}
+
+	/* TIMELINE MINIMAP OVERVIEW NAVIGATOR BAR */
+	.timeline-minimap-bar {
+		height: 32px;
+		background: #090d18;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+		display: flex;
+		position: relative;
+		z-index: 26;
+		user-select: none;
+	}
+	.minimap-header-col {
+		width: 120px;
+		background: #0d1222;
+		border-right: 1px solid rgba(255, 255, 255, 0.08);
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0 8px;
+		z-index: 28;
+	}
+	.minimap-tag {
+		font-size: 0.62rem;
+		font-weight: 800;
+		letter-spacing: 0.06em;
+		color: #818cf8;
+	}
+	.minimap-total-time {
+		font-size: 0.65rem;
+		font-family: var(--font-mono, monospace);
+		color: #94a3b8;
+		font-weight: 600;
+	}
+	.minimap-track-area {
+		flex: 1;
+		height: 100%;
+		position: relative;
+		cursor: pointer;
+		overflow: hidden;
+		background: rgba(0, 0, 0, 0.35);
+	}
+	.minimap-marks {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+	}
+	.minimap-tick {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
+		transform: translateX(-50%);
+	}
+	.minimap-tick-line {
+		width: 1px;
+		height: 100%;
+		background: rgba(255, 255, 255, 0.06);
+	}
+	.minimap-tick-label {
+		position: absolute;
+		top: 2px;
+		left: 3px;
+		font-size: 0.58rem;
+		color: rgba(232, 232, 240, 0.4);
+		font-weight: 600;
+		pointer-events: none;
+		white-space: nowrap;
+	}
+	.minimap-layers-preview {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+	}
+	.minimap-visual-strip {
+		position: absolute;
+		top: 4px;
+		left: 0;
+		right: 0;
+		height: 11px;
+	}
+	.minimap-clip-block {
+		position: absolute;
+		top: 0;
+		height: 100%;
+		background: rgba(99, 102, 241, 0.4);
+		border-right: 1px solid rgba(0, 0, 0, 0.4);
+		border-radius: 2px;
+	}
+	.minimap-audio-strip {
+		position: absolute;
+		bottom: 3px;
+		left: 0;
+		height: 7px;
+		background: rgba(16, 185, 129, 0.45);
+		border-radius: 2px;
+	}
+	.minimap-viewport-window {
+		position: absolute;
+		top: 0;
+		height: 100%;
+		background: rgba(99, 102, 241, 0.22);
+		border: 1px solid #818cf8;
+		border-radius: 4px;
+		z-index: 10;
+		pointer-events: none;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 0 10px rgba(99, 102, 241, 0.3);
+		min-width: 18px;
+	}
+	.viewport-handle {
+		width: 4px;
+		height: 16px;
+		background: #818cf8;
+		border-radius: 2px;
+		position: absolute;
+	}
+	.viewport-handle.left-handle { left: 2px; }
+	.viewport-handle.right-handle { right: 2px; }
+	.viewport-label {
+		font-size: 0.58rem;
+		font-weight: 700;
+		color: #e0e7ff;
+		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		padding: 0 8px;
+		opacity: 0.85;
+	}
+	.minimap-playhead {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 2px;
+		background: #ef4444;
+		z-index: 15;
+		pointer-events: none;
+		transform: translateX(-50%);
+	}
+	.minimap-playhead-head {
+		position: absolute;
+		top: 0;
+		left: -3px;
+		width: 8px;
+		height: 8px;
+		background: #ef4444;
+		border-radius: 50%;
+		box-shadow: 0 0 4px #ef4444;
+	}
+
+	/* Scrollable Tracks Area & Tebal Scrollbar Bawah */
 	.timeline-scrollable {
 		flex: 1;
 		overflow-x: auto;
 		overflow-y: auto;
 		position: relative;
 		background: #090c14;
+	}
+	.timeline-scrollable::-webkit-scrollbar {
+		height: 14px;
+		width: 10px;
+	}
+	.timeline-scrollable::-webkit-scrollbar-track {
+		background: #0a0e1a;
+		border-top: 1px solid rgba(255, 255, 255, 0.1);
+	}
+	.timeline-scrollable::-webkit-scrollbar-thumb {
+		background: linear-gradient(90deg, #4338ca, #6366f1, #4338ca);
+		border-radius: 7px;
+		border: 2px solid #0a0e1a;
+		cursor: grab;
+		box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.2);
+	}
+	.timeline-scrollable::-webkit-scrollbar-thumb:hover {
+		background: linear-gradient(90deg, #6366f1, #818cf8, #6366f1);
+		box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
+	}
+	.timeline-scrollable::-webkit-scrollbar-thumb:active {
+		cursor: grabbing;
+		background: #818cf8;
 	}
 
 	.tracks-inner {
