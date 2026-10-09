@@ -788,6 +788,7 @@ export async function POST({ request }) {
 				// -----------------------------------------------------------
 				// STEP 1: Voiceover (Upload, ElevenLabs, or Edge TTS)
 				// -----------------------------------------------------------
+				const scenesWork = scenes.map(s => ({ ...s }));
 				const isUploadedVoice = voiceEngine === 'upload' || Boolean(scenesWork.some(s => s.voiceAudioUrl || s.audioPath));
 				const isEleven = !isUploadedVoice && (voiceEngine === 'elevenlabs' || (!voiceId?.includes('Neural') && !voiceId?.startsWith('id-ID-')));
 				const engineLabel = isUploadedVoice
@@ -795,7 +796,6 @@ export async function POST({ request }) {
 					: (isEleven ? `ElevenLabs (${elevenModel === 'eleven_turbo_v2_5' ? 'Turbo v2.5' : 'Multilingual v2'})` : 'Edge TTS');
 
 				sendProgress(1, `🎤 Menyiapkan voiceover (${engineLabel})...`, 5);
-				const scenesWork = scenes.map(s => ({ ...s }));
 
 				for (let i = 0; i < scenesWork.length; i++) {
 					const scene = scenesWork[i];
