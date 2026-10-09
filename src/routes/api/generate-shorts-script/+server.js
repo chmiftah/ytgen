@@ -158,7 +158,8 @@ You MUST return a valid JSON object with this structure:
       "duration": 3.5,
       "spokenText": "...",
       "visualDescription": "...",
-      "giphyQuery": "..."
+      "giphyQuery": "...",
+      "keywords": ["query 1", "query 2", "query 3"]
     }
   ],
   "totalEstimatedDuration": 35
@@ -196,7 +197,8 @@ Kamu HARUS mengembalikan objek JSON yang valid dengan struktur berikut:
       "duration": 3.5,
       "spokenText": "...",
       "visualDescription": "...",
-      "giphyQuery": "..."
+      "giphyQuery": "...",
+      "keywords": ["query 1", "query 2", "query 3"]
     }
   ],
   "totalEstimatedDuration": 35
@@ -532,15 +534,23 @@ export async function POST({ request }) {
 				return json({ success: false, error: 'Struktur naskah AI tidak valid (scenes tidak ditemukan).' }, { status: 500 });
 			}
 
-			const scenes = scriptData.scenes.map((s, i) => ({
-				id: s.id || i + 1,
-				duration: parseFloat(s.duration) || 4,
-				spokenText: s.spokenText || s.spoken_text || '',
-				visualDescription: s.visualDescription || s.visual_description || s.visual_concept || '',
-				giphyQuery: s.giphyQuery || s.giphy_query || 'reaction',
-				selectedClip: null,
-				giphyResults: []
-			}));
+			const scenes = scriptData.scenes.map((s, i) => {
+				const mainQuery = (s.giphyQuery || s.giphy_query || 'reaction').trim();
+				let kwList = Array.isArray(s.keywords) ? s.keywords.map(k => String(k).trim()).filter(Boolean) : [];
+				if (kwList.length === 0) {
+					kwList = [mainQuery, 'thinking', 'shocked', 'reveal'].filter((v, idx, arr) => arr.indexOf(v) === idx);
+				}
+				return {
+					id: s.id || i + 1,
+					duration: parseFloat(s.duration) || 4,
+					spokenText: s.spokenText || s.spoken_text || '',
+					visualDescription: s.visualDescription || s.visual_description || s.visual_concept || '',
+					giphyQuery: mainQuery,
+					keywords: kwList,
+					selectedClip: null,
+					giphyResults: []
+				};
+			});
 
 			const totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
 

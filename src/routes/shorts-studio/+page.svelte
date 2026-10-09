@@ -179,6 +179,7 @@
 	let selectedTheme = $state('dark-psychology');
 	let customTopic = $state('');
 	let targetDuration = $state(35);
+	let aspectRatio = $state('9:16'); // '9:16' | '16:9' | '1:1'
 
 	// Step 2 - Titles & Script
 	let titleOptions = $state([]);
@@ -256,6 +257,7 @@
 		if (data.scenes && data.scenes.length > 0) {
 			selectedVoiceEngine = 'upload';
 			selectedTitle = { title: data.title || 'Shorts Voiceover' };
+			if (data.aspectRatio) aspectRatio = data.aspectRatio;
 			scenes = data.scenes;
 			totalDuration = data.totalDuration || Number(totalScenesDuration());
 
@@ -269,6 +271,53 @@
 			// Go directly to Step 3 (Footage) so user can see and refine all matching Giphy clips!
 			step = 3;
 		}
+	}
+
+	// ------------------------------------------------------------------
+	// Keyword Suggestions per Scene
+	// ------------------------------------------------------------------
+	function getSceneKeywordSuggestions(scene, idx) {
+		const existing = Array.isArray(scene.keywords) ? scene.keywords.filter(Boolean) : [];
+		const currentQuery = (scene.giphyQuery || '').trim();
+
+		// Theme base fallbacks
+		const themeFallbacks = [
+			'shocked', 'mind blown', 'thinking', 'whisper', 'reveal',
+			'mystery', 'money', 'success', 'warning', 'shadow', 'panic', 'matrix', 'focus'
+		];
+
+		// Candidate words from narration
+		const rawWords = (scene.spokenText || '')
+			.replace(/[^a-zA-Z0-9\s]/g, '')
+			.split(/\s+/)
+			.filter((w) => w.length > 3 && !['yang', 'kamu', 'bisa', 'akan', 'atau', 'pada', 'dari', 'kita', 'oleh', 'juga', 'saat', 'tapi', 'adalah', 'karena', 'dengan', 'untuk', 'this', 'that', 'with', 'from', 'have', 'were', 'been'].includes(w.toLowerCase()));
+
+		const combined = [
+			...existing,
+			...rawWords.slice(0, 3),
+			themeFallbacks[idx % themeFallbacks.length],
+			themeFallbacks[(idx + 2) % themeFallbacks.length]
+		].filter(Boolean);
+
+		const seen = new Set();
+		if (currentQuery) seen.add(currentQuery.toLowerCase());
+		const result = [];
+
+		for (const item of combined) {
+			const norm = item.trim().toLowerCase();
+			if (norm && !seen.has(norm) && norm.length <= 25) {
+				seen.add(norm);
+				result.push(item.trim());
+			}
+			if (result.length >= 6) break;
+		}
+		return result;
+	}
+
+	async function handleSelectKeywordSuggestion(sceneIdx, kw) {
+		if (!scenes[sceneIdx]) return;
+		scenes[sceneIdx].giphyQuery = kw;
+		await searchGiphyForScene(sceneIdx, kw);
 	}
 
 	// ------------------------------------------------------------------
@@ -457,34 +506,37 @@
 	}
 
 	// ------------------------------------------------------------------
-	// Step 3: Search Footage (Giphy / Pexels) for a scene
+	// Step 3: Search Footage (Giphy / Pexels) for a scene with Orientation Support
 	// ------------------------------------------------------------------
-	async function searchGiphyForScene(idx) {
+	async function searchGiphyForScene(idx, overrideQuery = null) {
 		const scene = scenes[idx];
 		if (!scene) return;
 		searchingSceneIdx = idx;
 		giphyResults[idx] = [];
+		const activeQuery = overrideQuery || scene.giphyQuery;
 
 		try {
 			const res = await fetch('/api/giphy-search', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					query: scene.giphyQuery,
+					query: activeQuery,
 					theme: selectedTheme,
 					limit: 8,
 					apiKey: giphyApiKey || undefined,
 					sceneIndex: idx,
-					footageSource
+					footageSource,
+					aspectRatio,
+					orientation: aspectRatio === '16:9' ? 'landscape' : (aspectRatio === '1:1' ? 'square' : 'portrait')
 				})
 			});
 			const data = await res.json();
 			if (data.success) {
 				giphyResults[idx] = data.clips || [];
-				// Auto-select diverse clip per scene
-				if (!scene.selectedClip && data.clips.length > 0) {
+				// Auto-select first/diverse clip per scene
+				if (data.clips.length > 0) {
 					const pickIdx = idx % data.clips.length;
-					scenes[idx] = { ...scenes[idx], selectedClip: data.clips[pickIdx] };
+					scenes[idx] = { ...scenes[idx], giphyQuery: activeQuery, selectedClip: data.clips[pickIdx] };
 				}
 			} else {
 				errorMsg = data.error || 'Gagal mengambil klip footage.';
@@ -527,6 +579,7 @@
 				body: JSON.stringify({
 					title: selectedTitle?.title || 'Shorts Video',
 					scenes,
+					aspectRatio,
 					voiceEngine: selectedVoiceEngine,
 					voiceId: selectedVoice,
 					voiceRate: selectedVoiceEngine === 'edge_tts' ? voiceRate : '+0%',
@@ -760,6 +813,57 @@
 						/>
 					</div>
 
+					<!-- Aspect Ratio Selection -->
+					<div class="aspect-ratio-section">
+						<label>📐 Orientasi & Rasio Video (Aspect Ratio)</label>
+						<div class="aspect-ratio-options">
+							<button
+								type="button"
+								class="aspect-btn"
+								class:selected={aspectRatio === '9:16'}
+								onclick={() => aspectRatio = '9:16'}
+							>
+								<div class="aspect-icon-box portrait">
+									<div class="aspect-rect portrait"></div>
+								</div>
+								<div class="aspect-info">
+									<span class="aspect-title">📱 9:16 Vertikal</span>
+									<span class="aspect-sub">Shorts, Reels, TikTok (1080×1920)</span>
+								</div>
+							</button>
+
+							<button
+								type="button"
+								class="aspect-btn"
+								class:selected={aspectRatio === '16:9'}
+								onclick={() => aspectRatio = '16:9'}
+							>
+								<div class="aspect-icon-box landscape">
+									<div class="aspect-rect landscape"></div>
+								</div>
+								<div class="aspect-info">
+									<span class="aspect-title">🖥️ 16:9 Horizontal</span>
+									<span class="aspect-sub">YouTube Standard / TV (1920×1080)</span>
+								</div>
+							</button>
+
+							<button
+								type="button"
+								class="aspect-btn"
+								class:selected={aspectRatio === '1:1'}
+								onclick={() => aspectRatio = '1:1'}
+							>
+								<div class="aspect-icon-box square">
+									<div class="aspect-rect square"></div>
+								</div>
+								<div class="aspect-info">
+									<span class="aspect-title">⏹️ 1:1 Persegi</span>
+									<span class="aspect-sub">Instagram Feed / Post (1080×1080)</span>
+								</div>
+							</button>
+						</div>
+					</div>
+
 					<div class="duration-section">
 						<label>🎬 Target Durasi</label>
 						<div class="duration-options">
@@ -973,7 +1077,20 @@
 								class:active={footageSource === 'pexels'}
 								onclick={() => footageSource = 'pexels'}
 							>
-								📹 Pexels 9:16 Video
+								📹 Pexels Video
+							</button>
+						</div>
+
+						<div class="ratio-pills">
+							<span class="source-pills-label">Rasio:</span>
+							<button class="source-pill" class:active={aspectRatio === '9:16'} onclick={() => { aspectRatio = '9:16'; searchAllScenes(); }} title="Pari video orientasi 9:16">
+								📱 9:16
+							</button>
+							<button class="source-pill" class:active={aspectRatio === '16:9'} onclick={() => { aspectRatio = '16:9'; searchAllScenes(); }} title="Pari video orientasi 16:9">
+								🖥️ 16:9
+							</button>
+							<button class="source-pill" class:active={aspectRatio === '1:1'} onclick={() => { aspectRatio = '1:1'; searchAllScenes(); }} title="Pari video orientasi 1:1">
+								⏹️ 1:1
 							</button>
 						</div>
 
@@ -1039,6 +1156,27 @@
 
 									<div class="footage-scene-text" title={scene.spokenText}>{scene.spokenText.slice(0, 50)}...</div>
 								</div>
+
+								<!-- Keyword Suggestions / Opsi Keyword Lain -->
+								{#if getSceneKeywordSuggestions(scene, i).length > 0}
+									<div class="keyword-suggestions-row">
+										<span class="kw-label">💡 Opsi Keyword Lain:</span>
+										<div class="kw-chips">
+											{#each getSceneKeywordSuggestions(scene, i) as kw}
+												<button
+													type="button"
+													class="kw-chip"
+													class:active={scene.giphyQuery?.toLowerCase() === kw.toLowerCase()}
+													onclick={() => handleSelectKeywordSuggestion(i, kw)}
+													title={`Klik untuk mencari footage: "${kw}"`}
+												>
+													<Sparkles size={11} />
+													<span>{kw}</span>
+												</button>
+											{/each}
+										</div>
+									</div>
+								{/if}
 
 								<!-- Current selected clip -->
 								{#if scene.selectedClip}
@@ -1508,7 +1646,15 @@
 						</div>
 						<div class="summary-item">
 							<span class="summary-label">Output</span>
-							<span class="summary-value highlight">1080 × 1920 px (9:16) · 30fps</span>
+							<span class="summary-value highlight">
+								{#if aspectRatio === '16:9'}
+									1920 × 1080 px (16:9 Horizontal) · 30fps
+								{:else if aspectRatio === '1:1'}
+									1080 × 1080 px (1:1 Persegi) · 30fps
+								{:else}
+									1080 × 1920 px (9:16 Vertikal) · 30fps
+								{/if}
+							</span>
 						</div>
 					</div>
 
@@ -1603,7 +1749,7 @@
 		<!-- ============================================================ -->
 		<aside class="preview-panel">
 			<div class="phone-container">
-				<div class="phone-frame">
+				<div class="phone-frame" class:ratio-landscape={aspectRatio === '16:9'} class:ratio-square={aspectRatio === '1:1'}>
 					<div class="phone-notch"></div>
 					<div class="phone-screen">
 						<!-- Vertical canvas preview -->
@@ -1671,11 +1817,11 @@
 			<div class="preview-info">
 				<div class="preview-spec">
 					<span>📐</span>
-					<span>1080 × 1920</span>
+					<span>{aspectRatio === '16:9' ? '1920 × 1080' : (aspectRatio === '1:1' ? '1080 × 1080' : '1080 × 1920')}</span>
 				</div>
 				<div class="preview-spec">
 					<span>🎬</span>
-					<span>9:16 Vertical</span>
+					<span>{aspectRatio === '16:9' ? '16:9 Horizontal' : (aspectRatio === '1:1' ? '1:1 Persegi' : '9:16 Vertikal')}</span>
 				</div>
 				<div class="preview-spec">
 					<span>⏱</span>
@@ -3702,6 +3848,164 @@
 		text-align: center;
 		padding: 24px;
 		color: rgba(255, 255, 255, 0.6);
+	}
+
+	/* Aspect Ratio Selection (Step 1) */
+	.aspect-ratio-section {
+		margin-bottom: 24px;
+	}
+	.aspect-ratio-section label {
+		display: block;
+		font-size: 0.86rem;
+		font-weight: 600;
+		color: rgba(255, 255, 255, 0.85);
+		margin-bottom: 10px;
+	}
+	.aspect-ratio-options {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 12px;
+	}
+	.aspect-btn {
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 14px;
+		padding: 14px;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		cursor: pointer;
+		text-align: left;
+		transition: all 0.2s;
+	}
+	.aspect-btn:hover {
+		background: rgba(255, 255, 255, 0.06);
+		border-color: rgba(255, 255, 255, 0.2);
+		transform: translateY(-1px);
+	}
+	.aspect-btn.selected {
+		background: rgba(99, 102, 241, 0.15);
+		border-color: #6366f1;
+		box-shadow: 0 0 16px rgba(99, 102, 241, 0.25);
+	}
+	.aspect-icon-box {
+		width: 38px;
+		height: 38px;
+		border-radius: 8px;
+		background: rgba(255, 255, 255, 0.06);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+	.aspect-rect {
+		border: 2px solid #a855f7;
+		border-radius: 3px;
+		background: rgba(168, 85, 247, 0.2);
+	}
+	.aspect-rect.portrait { width: 14px; height: 24px; }
+	.aspect-rect.landscape { width: 24px; height: 14px; }
+	.aspect-rect.square { width: 18px; height: 18px; }
+
+	.aspect-info {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.aspect-title {
+		font-size: 0.88rem;
+		font-weight: 700;
+		color: #fff;
+	}
+	.aspect-sub {
+		font-size: 0.72rem;
+		color: rgba(255, 255, 255, 0.55);
+		line-height: 1.25;
+	}
+
+	/* Ratio Pills in Footage Toolbar */
+	.ratio-pills {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	/* Keyword Suggestions Row per Scene */
+	.keyword-suggestions-row {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 10px;
+		padding: 8px 12px;
+		border-radius: 10px;
+		background: rgba(99, 102, 241, 0.06);
+		border: 1px dashed rgba(99, 102, 241, 0.25);
+	}
+	.kw-label {
+		font-size: 0.74rem;
+		font-weight: 700;
+		color: #c084fc;
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.kw-chips {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.kw-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		color: #e0e7ff;
+		padding: 4px 10px;
+		border-radius: 14px;
+		font-size: 0.74rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+	.kw-chip:hover {
+		background: rgba(99, 102, 241, 0.2);
+		border-color: #818cf8;
+		color: #fff;
+		transform: translateY(-1px);
+	}
+	.kw-chip.active {
+		background: #6366f1;
+		border-color: #818cf8;
+		color: #fff;
+		box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+	}
+
+	/* Phone Frame Ratio Modifiers */
+	.phone-frame.ratio-landscape {
+		width: 300px;
+		height: 172px;
+		border-radius: 16px;
+	}
+	.phone-frame.ratio-landscape .phone-notch {
+		display: none;
+	}
+	.phone-frame.ratio-landscape .phone-screen {
+		border-radius: 14px;
+	}
+
+	.phone-frame.ratio-square {
+		width: 230px;
+		height: 230px;
+		border-radius: 16px;
+	}
+	.phone-frame.ratio-square .phone-notch {
+		display: none;
+	}
+	.phone-frame.ratio-square .phone-screen {
+		border-radius: 14px;
 	}
 
 	/* Scrollbar */

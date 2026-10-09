@@ -203,19 +203,27 @@ export async function searchGiphy(query, apiKey, limit = 8, offset = 0) {
 }
 
 // ------------------------------------------------------------------
-// Pexels Portrait Video Search
+// Pexels Video Search (Supports Portrait 9:16, Landscape 16:9, Square 1:1)
 // ------------------------------------------------------------------
-export async function searchPexelsClips(query, pexelsKey, limit = 8, offset = 0) {
+export async function searchPexelsClips(query, pexelsKey, limit = 8, offset = 0, orientation = 'portrait') {
 	if (!pexelsKey) return { success: false, clips: [] };
 
 	const cleanQuery = (query || 'cinematic').trim();
 	const page = Math.floor(offset / limit) + 1;
-	const cacheKey = `pexels:${cleanQuery}:${limit}:${page}`;
+
+	// Normalize orientation
+	const effectiveOrient = (orientation === 'landscape' || orientation === '16:9')
+		? 'landscape'
+		: (orientation === 'square' || orientation === '1:1')
+			? 'square'
+			: 'portrait';
+
+	const cacheKey = `pexels:${cleanQuery}:${limit}:${page}:${effectiveOrient}`;
 	const cached = getCached(cacheKey);
 	if (cached) return cached;
 
 	try {
-		const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(cleanQuery)}&orientation=portrait&per_page=${limit}&page=${page}`;
+		const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(cleanQuery)}&orientation=${effectiveOrient}&per_page=${limit}&page=${page}`;
 		const res = await fetch(url, {
 			headers: { Authorization: pexelsKey.trim() }
 		});
@@ -230,23 +238,37 @@ export async function searchPexelsClips(query, pexelsKey, limit = 8, offset = 0)
 		const clips = videos
 			.map((vid) => {
 				const files = vid.video_files || [];
-				// Prioritize portrait 9:16 files with HD/SD quality
-				const portraitFile =
-					files.find((f) => f.width < f.height && (f.quality === 'hd' || f.quality === 'sd')) ||
-					files.find((f) => f.width < f.height) ||
-					files.find((f) => f.quality === 'hd') ||
-					files[0];
+				// Prioritize files matching the selected aspect ratio
+				let matchingFile = null;
+				if (effectiveOrient === 'landscape') {
+					matchingFile =
+						files.find((f) => f.width > f.height && (f.quality === 'hd' || f.quality === 'sd')) ||
+						files.find((f) => f.width > f.height) ||
+						files.find((f) => f.quality === 'hd') ||
+						files[0];
+				} else if (effectiveOrient === 'square') {
+					matchingFile =
+						files.find((f) => Math.abs(f.width - f.height) / Math.max(f.width, 1) < 0.25) ||
+						files.find((f) => f.quality === 'hd') ||
+						files[0];
+				} else {
+					matchingFile =
+						files.find((f) => f.width < f.height && (f.quality === 'hd' || f.quality === 'sd')) ||
+						files.find((f) => f.width < f.height) ||
+						files.find((f) => f.quality === 'hd') ||
+						files[0];
+				}
 
-				if (!portraitFile?.link) return null;
+				if (!matchingFile?.link) return null;
 
 				return {
 					id: `pexels-${vid.id}`,
 					title: `Pexels: ${cleanQuery} (${vid.duration}s)`,
-					mp4Url: portraitFile.link,
+					mp4Url: matchingFile.link,
 					previewUrl: vid.image,
 					thumbnailUrl: vid.image,
-					width: vid.width,
-					height: vid.height,
+					width: matchingFile.width || vid.width,
+					height: matchingFile.height || vid.height,
 					duration: vid.duration || 5,
 					source: 'pexels',
 					pexelsUrl: vid.url
@@ -281,15 +303,18 @@ export async function searchClipsWithFallback({
 	pexelsKey = '',
 	limit = 8,
 	sceneIndex = 0,
-	sourcePreference = 'auto' // 'auto' | 'giphy' | 'pexels'
+	sourcePreference = 'auto', // 'auto' | 'giphy' | 'pexels'
+	orientation = 'portrait', // 'portrait' (9:16) | 'landscape' (16:9) | 'square' (1:1)
+	aspectRatio = '9:16'
 }) {
 	const candidates = buildQueryCandidates(query);
 	const offset = (Math.max(0, sceneIndex) * 2) % 12;
+	const effectiveOrient = orientation || (aspectRatio === '16:9' ? 'landscape' : (aspectRatio === '1:1' ? 'square' : 'portrait'));
 
 	// 1. If user explicitly requests Pexels video
 	if (sourcePreference === 'pexels' && pexelsKey) {
 		for (const cand of candidates) {
-			const res = await searchPexelsClips(cand, pexelsKey, limit, offset);
+			const res = await searchPexelsClips(cand, pexelsKey, limit, offset, effectiveOrient);
 			if (res.success && res.clips.length > 0) {
 				return { ...res, source: 'pexels', usedQuery: cand, originalQuery: query };
 			}
@@ -301,16 +326,25 @@ export async function searchClipsWithFallback({
 		for (const cand of candidates) {
 			const res = await searchGiphy(cand, giphyKey, limit, offset);
 			if (res.success && res.clips.length >= 2) {
-				return { ...res, source: 'giphy', usedQuery: cand, originalQuery: query };
+				// If landscape or square requested, sort clips that match ratio closer to front
+				let sortedClips = res.clips;
+				if (effectiveOrient === 'landscape') {
+					sortedClips = [...res.clips].sort((a, b) => (b.width / (b.height || 1)) - (a.width / (a.height || 1)));
+				} else if (effectiveOrient === 'square') {
+					sortedClips = [...res.clips].sort((a, b) => Math.abs(1 - (a.width / (a.height || 1))) - Math.abs(1 - (b.width / (b.height || 1))));
+				} else {
+					sortedClips = [...res.clips].sort((a, b) => (b.height / (b.width || 1)) - (a.height / (a.width || 1)));
+				}
+				return { ...res, clips: sortedClips, source: 'giphy', usedQuery: cand, originalQuery: query };
 			}
-			if (res.rateLimited) break; // Don't try other candidates if 429 triggered
+			if (res.rateLimited) break;
 		}
 	}
 
 	// 3. Fallback to Pexels video if Giphy failed / had 0 clips / was rate-limited
 	if (pexelsKey) {
 		for (const cand of candidates) {
-			const res = await searchPexelsClips(cand, pexelsKey, limit, offset);
+			const res = await searchPexelsClips(cand, pexelsKey, limit, offset, effectiveOrient);
 			if (res.success && res.clips.length > 0) {
 				return {
 					...res,

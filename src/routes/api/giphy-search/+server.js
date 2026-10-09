@@ -14,7 +14,9 @@ export async function POST({ request }) {
 			offset = 0,
 			apiKey,
 			sceneIndex = 0,
-			footageSource = 'auto'
+			footageSource = 'auto',
+			orientation = 'portrait',
+			aspectRatio = '9:16'
 		} = await request.json();
 
 		if (!query || !query.trim()) {
@@ -37,7 +39,9 @@ export async function POST({ request }) {
 			pexelsKey: DEFAULT_PEXELS_KEY,
 			limit: Number(limit) || 8,
 			sceneIndex: Number(sceneIndex) || 0,
-			sourcePreference: footageSource
+			sourcePreference: footageSource,
+			orientation: orientation || (aspectRatio === '16:9' ? 'landscape' : (aspectRatio === '1:1' ? 'square' : 'portrait')),
+			aspectRatio
 		});
 
 		return json(result);

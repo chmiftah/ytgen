@@ -160,6 +160,8 @@ export async function POST({ request }) {
 		const theme = formData.get('theme') || 'dark-psychology';
 		const pacing = formData.get('pacing') || 'balanced'; // 'fast' | 'balanced' | 'relaxed'
 		const footageSource = formData.get('footageSource') || 'auto';
+		const aspectRatio = formData.get('aspectRatio') || '9:16';
+		const orientation = formData.get('orientation') || (aspectRatio === '16:9' ? 'landscape' : (aspectRatio === '1:1' ? 'square' : 'portrait'));
 		const userGiphyKey = (formData.get('giphyApiKey') || '').trim();
 		const effectiveGiphyKey = userGiphyKey.length > 10 ? userGiphyKey : DEFAULT_GIPHY_KEY;
 
@@ -299,6 +301,7 @@ Your mission:
      CRITICAL: 1 OR 2 WORDS ONLY! Never use sentences or long phrases.
      Examples: "mind blown", "shocked", "dark smile", "money rain", "panicking", "whisper", "running", "brain glow", "coffee break", "evil plan", "detective".
      Every scene MUST use a DIFFERENT query to ensure visual variety.
+   - "keywords": Array of 3 to 4 ALTERNATIVE punchy English search terms (1-2 words each) for this scene, so the user can easily click alternative visual footage options.
 
 Return ONLY valid JSON:
 {
@@ -308,7 +311,8 @@ Return ONLY valid JSON:
       "id": 1,
       "spokenText": "...",
       "visualDescription": "...",
-      "giphyQuery": "..."
+      "giphyQuery": "...",
+      "keywords": ["keyword 1", "keyword 2", "keyword 3", "keyword 4"]
     }
   ]
 }`;
@@ -437,7 +441,9 @@ Return ONLY valid JSON:
 					pexelsKey: DEFAULT_PEXELS_KEY,
 					limit: 6,
 					sceneIndex: i,
-					sourcePreference: footageSource
+					sourcePreference: footageSource,
+					orientation,
+					aspectRatio
 				});
 
 				if (clipRes && clipRes.clips && clipRes.clips.length > 0) {
@@ -448,6 +454,12 @@ Return ONLY valid JSON:
 				console.warn(`[Shorts Clip Search] Error for scene ${sceneIdx}:`, clipErr.message);
 			}
 
+			// Assemble alternative keywords
+			let keywords = Array.isArray(aiScene.keywords) ? aiScene.keywords.filter(Boolean) : [];
+			if (keywords.length === 0) {
+				keywords = [giphyQuery, 'shocked', 'thinking', 'reveal'].filter((v, idx, arr) => arr.indexOf(v) === idx);
+			}
+
 			finalScenes.push({
 				id: sceneIdx,
 				duration: exactDuration,
@@ -455,6 +467,7 @@ Return ONLY valid JSON:
 				spokenText,
 				visualDescription,
 				giphyQuery,
+				keywords,
 				voiceAudioUrl: `/renders/audio-cache/${outFileName}`,
 				audioPath: outFilePath,
 				wordTimings: grp.wordTimings,
@@ -471,6 +484,7 @@ Return ONLY valid JSON:
 		return json({
 			success: true,
 			title: aiTitle || 'Shorts Video',
+			aspectRatio,
 			fullTranscript: whisperData.text,
 			totalDuration: Number(totalEstDuration.toFixed(1)),
 			language: whisperData.language || 'id',

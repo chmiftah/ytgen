@@ -14,6 +14,7 @@
 	let audioPreviewUrl = $state('');
 	let pacing = $state('balanced'); // 'fast' | 'balanced' | 'relaxed'
 	let footageSource = $state('auto'); // 'auto' | 'giphy' | 'pexels'
+	let aspectRatio = $state('9:16'); // '9:16' | '16:9' | '1:1'
 	let selectedTheme = $state('dark-psychology');
 
 	let isProcessing = $state(false);
@@ -108,6 +109,7 @@
 			formData.append('audio', audioFile);
 			formData.append('pacing', pacing);
 			formData.append('footageSource', footageSource);
+			formData.append('aspectRatio', aspectRatio);
 			formData.append('theme', selectedTheme);
 
 			const res = await fetch('/api/shorts-audio-whisper', {
@@ -227,6 +229,43 @@
 
 				<!-- Configuration Options -->
 				<div class="options-grid">
+					<!-- Aspect Ratio / Orientasi -->
+					<div class="option-group">
+						<label class="group-label">📐 Orientasi Video</label>
+						<div class="pill-group">
+							<button
+								type="button"
+								class="pill-btn"
+								class:active={aspectRatio === '9:16'}
+								onclick={() => aspectRatio = '9:16'}
+								disabled={isProcessing}
+							>
+								<span class="p-title">📱 9:16 Vertikal</span>
+								<span class="p-sub">Shorts, Reels, TikTok</span>
+							</button>
+							<button
+								type="button"
+								class="pill-btn"
+								class:active={aspectRatio === '16:9'}
+								onclick={() => aspectRatio = '16:9'}
+								disabled={isProcessing}
+							>
+								<span class="p-title">🖥️ 16:9 Horizontal</span>
+								<span class="p-sub">YouTube Standard / TV</span>
+							</button>
+							<button
+								type="button"
+								class="pill-btn"
+								class:active={aspectRatio === '1:1'}
+								onclick={() => aspectRatio = '1:1'}
+								disabled={isProcessing}
+							>
+								<span class="p-title">⏹️ 1:1 Persegi</span>
+								<span class="p-sub">Instagram Feed / Post</span>
+							</button>
+						</div>
+					</div>
+
 					<!-- Pacing -->
 					<div class="option-group">
 						<label class="group-label">⏱️ Pacing & Ritme Potongan Adegan</label>

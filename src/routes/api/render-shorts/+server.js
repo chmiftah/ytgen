@@ -345,20 +345,21 @@ async function generateSilence(durationSec, destPath) {
 }
 
 // ------------------------------------------------------------------
-// Build 9:16 scene clip: Giphy MP4 → Blurred Backdrop + Audio
+// Build scene clip: Giphy MP4 → Blurred Backdrop + Audio
+// Adapts to 9:16, 16:9, and 1:1 resolutions
 // ------------------------------------------------------------------
-async function renderSceneClip(scene, idx, sessionDir, vtbAvail) {
+async function renderSceneClip(scene, idx, sessionDir, vtbAvail, W = 1080, H = 1920) {
 	const duration = scene.audioDuration || scene.duration || 4;
 	const outputPath = path.join(sessionDir, `scene-${idx}.mp4`);
 
-	// 1. Download Giphy clip (if any)
+	// 1. Download Giphy / Pexels clip (if any)
 	let mediaFile = null;
 	const clipUrl = scene.selectedClip?.mp4Url || scene.mp4Url || null;
 	if (clipUrl) {
 		try {
 			const dlPath = path.join(sessionDir, `media-${idx}.mp4`);
 			await downloadFile(clipUrl, dlPath);
-			// Verify the file has actual content
+			// Verify file has actual content
 			const stat = fs.statSync(dlPath);
 			if (stat.size > 5000) mediaFile = dlPath;
 			else { fs.unlinkSync(dlPath); console.warn(`[Clip] Scene ${idx}: downloaded file too small, ignoring`); }
@@ -389,11 +390,11 @@ async function renderSceneClip(scene, idx, sessionDir, vtbAvail) {
 	const encoder = getEncoder(vtbAvail);
 
 	if (mediaFile) {
-		// 9:16 Blurred Backdrop: split → bg (blurred fill) + fg (centered clear)
+		// Blurred Backdrop adapted to target resolution
 		const filterComplex = [
 			`[0:v]loop=loop=-1:size=999:start=0,trim=duration=${duration},setpts=PTS-STARTPTS,fps=${FPS},split=2[rawbg][rawfg]`,
 			`[rawbg]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},gblur=sigma=25,colorchannelmixer=rr=0.6:gg=0.6:bb=0.6[bg]`,
-			`[rawfg]scale=${W}:-2:force_original_aspect_ratio=decrease[fg]`,
+			`[rawfg]scale=${W}:${H}:force_original_aspect_ratio=decrease[fg]`,
 			`[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=0[outv]`,
 			`[1:a]apad=whole_dur=${duration},aformat=sample_rates=44100:channel_layouts=stereo[outa]`
 		].join(';');
@@ -523,8 +524,18 @@ function chunkWordsForShorts(wordTimings, maxWords = 3, maxChars = 24) {
 	return chunks;
 }
 
-function buildShortsASS(scenes, style = 'viral-yellow') {
+function buildShortsASS(scenes, style = 'viral-yellow', W = 1080, H = 1920, aspectRatio = '9:16') {
 	const st = SUBTITLE_STYLES[style] || SUBTITLE_STYLES['viral-yellow'];
+	let effectiveFontSize = st.fontSize;
+	let effectiveMarginV = st.marginV;
+
+	if (aspectRatio === '16:9') {
+		effectiveFontSize = Math.round(st.fontSize * 0.72);
+		effectiveMarginV = 100;
+	} else if (aspectRatio === '1:1') {
+		effectiveFontSize = Math.round(st.fontSize * 0.85);
+		effectiveMarginV = 160;
+	}
 
 	function hexBgr(hex) {
 		const c = hex.replace('#', '');
@@ -555,7 +566,7 @@ function buildShortsASS(scenes, style = 'viral-yellow') {
 		'',
 		'[V4+ Styles]',
 		'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-		`Style: Default,${st.fontName},${st.fontSize},${primary},${primary},${outline},${boxBg},${st.bold ? -1 : 0},0,0,0,100,100,1.2,0,1,${st.outlineSize},${st.shadow},${st.alignment},80,80,${st.marginV},1`,
+		`Style: Default,${st.fontName},${effectiveFontSize},${primary},${primary},${outline},${boxBg},${st.bold ? -1 : 0},0,0,0,100,100,1.2,0,1,${st.outlineSize},${st.shadow},${st.alignment},80,80,${effectiveMarginV},1`,
 		'',
 		'[Events]',
 		'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text'
@@ -641,7 +652,8 @@ export async function POST({ request }) {
 	const {
 		title,
 		scenes,
-		voiceEngine    = 'edge_tts', // 'edge_tts' | 'elevenlabs'
+		aspectRatio    = '9:16', // '9:16' | '16:9' | '1:1'
+		voiceEngine    = 'edge_tts', // 'edge_tts' | 'elevenlabs' | 'upload'
 		voiceId        = 'id-ID-ArdiNeural',
 		voiceRate      = '+10%',
 		elevenLabsApiKey = '',
@@ -652,6 +664,19 @@ export async function POST({ request }) {
 		subtitleStyle  = 'viral-yellow',
 		subtitlesEnabled = true,
 	} = body;
+
+	let targetW = 1080;
+	let targetH = 1920;
+	if (aspectRatio === '16:9') {
+		targetW = 1920;
+		targetH = 1080;
+	} else if (aspectRatio === '1:1') {
+		targetW = 1080;
+		targetH = 1080;
+	} else {
+		targetW = 1080;
+		targetH = 1920;
+	}
 
 	if (!scenes || !Array.isArray(scenes) || scenes.length === 0) {
 		return json({ success: false, error: 'Scenes tidak boleh kosong.' }, { status: 400 });
@@ -748,12 +773,12 @@ export async function POST({ request }) {
 				// -----------------------------------------------------------
 				// STEP 2: Render scene clips (download Giphy + backdrop filter)
 				// -----------------------------------------------------------
-				sendProgress(2, '🎬 Render adegan...', 34);
+				sendProgress(2, `🎬 Render adegan (${aspectRatio})...`, 34);
 				const sceneClipPaths = [];
 				for (let i = 0; i < scenesWork.length; i++) {
 					const pct = Math.round(34 + (i / scenesWork.length) * 30);
-					sendProgress(2, `🎬 Render scene ${i + 1}/${scenesWork.length} (Giphy + backdrop)`, pct);
-					const clipPath = await renderSceneClip(scenesWork[i], i, sessionDir, vtbAvail);
+					sendProgress(2, `🎬 Render scene ${i + 1}/${scenesWork.length} (${aspectRatio} footage)`, pct);
+					const clipPath = await renderSceneClip(scenesWork[i], i, sessionDir, vtbAvail, targetW, targetH);
 					sceneClipPaths.push(clipPath);
 				}
 				sendProgress(2, '✅ Scene clips selesai!', 66);
@@ -764,7 +789,7 @@ export async function POST({ request }) {
 				let assPath = null;
 				if (subtitlesEnabled) {
 					sendProgress(3, '📝 Membuat file subtitle...', 68);
-					const assContent = buildShortsASS(scenesWork, subtitleStyle);
+					const assContent = buildShortsASS(scenesWork, subtitleStyle, targetW, targetH, aspectRatio);
 					assPath = path.join(sessionDir, 'subtitles.ass');
 					await fs.promises.writeFile(assPath, assContent, 'utf8');
 				}
