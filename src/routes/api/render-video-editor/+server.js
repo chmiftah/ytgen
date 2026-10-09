@@ -19,6 +19,24 @@ async function checkVideoToolboxSupport() {
 	return isVideoToolboxAvailable;
 }
 
+function getAudioDurationFromFile(filePath) {
+	return new Promise((resolve) => {
+		const proc = spawn(ffmpegPath || 'ffmpeg', ['-i', filePath]);
+		let stderr = '';
+		proc.stderr.on('data', (d) => { stderr += d.toString(); });
+		proc.on('close', () => {
+			const match = stderr.match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/);
+			if (match) {
+				const sec = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseFloat(match[3]);
+				resolve(Number(sec.toFixed(2)));
+			} else {
+				resolve(0);
+			}
+		});
+		proc.on('error', () => resolve(0));
+	});
+}
+
 // Concurrency pool limiter
 async function asyncPool(limit, items, iteratorFn) {
 	const results = [];
@@ -148,29 +166,128 @@ export async function POST({ request }) {
 				? ['-c:v', 'h264_videotoolbox', '-b:v', renderQuality === '720p' ? '5000k' : '9000k', '-realtime', '0']
 				: ['-c:v', 'libx264', '-preset', 'medium', '-crf', '20'];
 
-			// Helper to render image clips for a track
-			async function renderTrackClips(trackClips, trackPrefix = 'v1') {
+			// -------------------------------------------------------------
+			// Step 1: Pre-process Audio Tracks & Exact Duration Auto-Sync
+			// -------------------------------------------------------------
+			send({ progress: 8, step: 'Menganalisis audio dan menghitung sinkronisasi timeline...' });
+			const rawAudioList = audioTracks && audioTracks.length
+				? audioTracks
+				: (audio?.audioUrl ? [audio] : []);
+
+			const activeAudioItems = [];
+			for (let aIdx = 0; aIdx < rawAudioList.length; aIdx++) {
+				const track = rawAudioList[aIdx];
+				const aUrl = track.audioUrl || track.url;
+				if (!aUrl || track.isMuted) continue;
+
+				const aFile = path.join(tmp, `audio-track-${aIdx}.mp3`);
+				let ok = false;
+
+				if (aUrl.startsWith('data:audio/')) {
+					const base64Data = aUrl.replace(/^data:audio\/[^;]+;base64,/, '');
+					await fs.promises.writeFile(aFile, Buffer.from(base64Data, 'base64'));
+					ok = true;
+				} else if (fs.existsSync(aUrl)) {
+					await fs.promises.copyFile(aUrl, aFile);
+					ok = true;
+				} else if (aUrl.startsWith('/')) {
+					const localA = path.resolve('./static' + aUrl);
+					if (fs.existsSync(localA)) {
+						await fs.promises.copyFile(localA, aFile);
+						ok = true;
+					}
+				}
+
+				if (ok) {
+					const fileDuration = await getAudioDurationFromFile(aFile);
+					activeAudioItems.push({
+						filePath: aFile,
+						volume: Math.min(2.0, Math.max(0.0, Number(track.volume ?? 1.0))),
+						loop: Boolean(track.loop === true),
+						duration: fileDuration,
+						name: track.name || `Audio Track #${aIdx + 1}`
+					});
+				}
+			}
+
+			// Safeguard: Check if voice narration audio is longer than visual clips
+			// If so, automatically extend the last visual clip so visual never cuts out early!
+			let initialVisualSum = mainClips.reduce((acc, c) => acc + Math.max(0.5, Number(c.duration || 3.0)), 0);
+			const maxSpeechAudioDur = activeAudioItems
+				.filter((a) => !a.loop && a.duration > 0)
+				.reduce((max, a) => Math.max(max, a.duration), 0);
+
+			if (maxSpeechAudioDur > 0 && maxSpeechAudioDur > initialVisualSum + 0.1) {
+				const gap = Number((maxSpeechAudioDur - initialVisualSum).toFixed(2));
+				const lastClip = mainClips[mainClips.length - 1];
+				lastClip.duration = Number((Number(lastClip.duration || 3.0) + gap).toFixed(2));
+				send({
+					progress: 10,
+					step: `Klip terakhir disinkronkan (+${gap}s) agar visual tepat mengiringi audio hingga selesai (${maxSpeechAudioDur.toFixed(1)}s).`
+				});
+			}
+
+			const totalVideoDuration = Number(
+				mainClips.reduce((acc, c) => acc + Math.max(0.5, Number(c.duration || 3.0)), 0).toFixed(2)
+			);
+
+			// Check if any transitions are enabled between clips
+			const hasTransitions = mainClips.length > 1 && mainClips.slice(0, -1).some(
+				(c) => c.transitionType && c.transitionType !== 'none'
+			);
+
+			// Helper to render image clips for a track with transition padding
+			async function renderTrackClips(trackClips, trackPrefix = 'v1', useTransitions = false) {
 				let count = 0;
 				const paths = new Array(trackClips.length);
 
 				await asyncPool(3, trackClips.map((clip, index) => ({ clip, index })), async ({ clip, index }) => {
-					const duration = Math.max(0.5, Number(clip.duration || 3.0));
+					const baseDur = Math.max(0.5, Number(clip.duration || 3.0));
+
+					// MATHEMATICAL FIX FOR XFADE SHRINKAGE:
+					// In FFmpeg xfade, overlapping two clips by tDur reduces the combined timeline length by tDur.
+					// To maintain exact timeline duration and prevent audio desync, any clip receiving an incoming
+					// transition must be rendered with extra duration equal to tDur.
+					let incomingTransDur = 0;
+					if (useTransitions && index > 0) {
+						const prevClip = trackClips[index - 1];
+						const tType = prevClip.transitionType || 'fade';
+						const isNone = !tType || tType === 'none';
+						const prevDur = Math.max(0.5, Number(prevClip.duration || 3.0));
+						incomingTransDur = isNone
+							? 0.04
+							: Math.min(prevDur * 0.45, baseDur * 0.45, Number(prevClip.transitionDuration || 0.5));
+					}
+
+					const duration = Number((baseDur + incomingTransDur).toFixed(3));
 					const imgPath = path.join(tmp, `img-${trackPrefix}-${index}.png`);
 					const videoPath = path.join(tmp, `clip-${trackPrefix}-${index}.mp4`);
 
 					const imgUrl = clip.imageUrl || clip.dataUrl || '';
+					let imageLoaded = false;
 					if (imgUrl.startsWith('data:image/')) {
 						const base64Data = imgUrl.replace(/^data:image\/[^;]+;base64,/, '');
 						await fs.promises.writeFile(imgPath, Buffer.from(base64Data, 'base64'));
+						imageLoaded = true;
+					} else if (fs.existsSync(imgUrl)) {
+						await fs.promises.copyFile(imgUrl, imgPath);
+						imageLoaded = true;
 					} else if (imgUrl.startsWith('/')) {
 						const localP = path.resolve('./static' + imgUrl);
 						if (fs.existsSync(localP)) {
 							await fs.promises.copyFile(localP, imgPath);
-						} else {
-							await fs.promises.writeFile(imgPath, Buffer.from(''));
+							imageLoaded = true;
 						}
-					} else if (fs.existsSync(imgUrl)) {
-						await fs.promises.copyFile(imgUrl, imgPath);
+					}
+
+					// Fallback: If image is missing or 0 bytes (e.g. placeholder clips), generate a clean slide
+					if (!imageLoaded || !fs.existsSync(imgPath) || (await fs.promises.stat(imgPath)).size === 0) {
+						await runFFmpeg([
+							'-f', 'lavfi',
+							'-i', `color=c=0x18181b:s=${W}x${H}:d=1`,
+							'-vframes', '1',
+							'-y', imgPath
+						], 30000);
 					}
 
 					const motion = clip.motionEffect || 'none';
@@ -178,16 +295,40 @@ export async function POST({ request }) {
 
 					let vFilter = '';
 					if (motion === 'zoom_in') {
-						vFilter = `scale=8000:-1,zoompan=z='min(zoom+0.0012,1.15)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${W}x${H}:fps=30,format=yuv420p`;
+						vFilter = `scale=8000:-1,zoompan=z='min(zoom+0.0012,1.15)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${W}x${H}:fps=30`;
 					} else if (motion === 'zoom_out') {
-						vFilter = `scale=8000:-1,zoompan=z='if(lte(zoom,1.0),1.15,max(1.001,zoom-0.0012))':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${W}x${H}:fps=30,format=yuv420p`;
+						vFilter = `scale=8000:-1,zoompan=z='if(lte(zoom,1.0),1.15,max(1.001,zoom-0.0012))':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${W}x${H}:fps=30`;
 					} else if (motion === 'pan_left') {
-						vFilter = `scale=8000:-1,zoompan=z='1.10':d=${frames}:x='if(lte(on,1),(iw-iw/zoom)/2,max(0,x-0.8))':y='ih/2-(ih/zoom/2)':s=${W}x${H}:fps=30,format=yuv420p`;
+						vFilter = `scale=8000:-1,zoompan=z='1.10':d=${frames}:x='if(lte(on,1),(iw-iw/zoom)/2,max(0,x-0.8))':y='ih/2-(ih/zoom/2)':s=${W}x${H}:fps=30`;
 					} else if (motion === 'pan_right') {
-						vFilter = `scale=8000:-1,zoompan=z='1.10':d=${frames}:x='if(lte(on,1),0,min((iw-iw/zoom),x+0.8))':y='ih/2-(ih/zoom/2)':s=${W}x${H}:fps=30,format=yuv420p`;
+						vFilter = `scale=8000:-1,zoompan=z='1.10':d=${frames}:x='if(lte(on,1),0,min((iw-iw/zoom),x+0.8))':y='ih/2-(ih/zoom/2)':s=${W}x${H}:fps=30`;
+					} else if (motion === 'diagonal_drift') {
+						vFilter = `scale=8000:-1,zoompan=z='min(zoom+0.0008,1.12)':d=${frames}:x='if(lte(on,1),0,min((iw-iw/zoom),x+0.6))':y='if(lte(on,1),0,min((ih-ih/zoom),y+0.6))':s=${W}x${H}:fps=30`;
+					} else if (motion === 'camera_shake') {
+						vFilter = `scale=8000:-1,zoompan=z='1.08':d=${frames}:x='(iw-iw/zoom)/2+sin(on*0.8)*6':y='(ih-ih/zoom)/2+cos(on*0.7)*5':s=${W}x${H}:fps=30`;
+					} else if (motion === 'pulse_pop') {
+						vFilter = `scale=8000:-1,zoompan=z='1.05+sin(on*0.15)*0.04':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${W}x${H}:fps=30`;
 					} else {
-						vFilter = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,fps=30,format=yuv420p`;
+						vFilter = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,fps=30`;
 					}
+
+					// Append overlay effect filter
+					const ov = clip.overlayEffect || 'none';
+					if (ov === 'tv_static') {
+						vFilter += `,noise=alls=22:allf=t+u,drawgrid=w=iw:h=4:t=1:c=black@0.22,eq=saturation=1.2:contrast=1.15`;
+					} else if (ov === 'no_signal') {
+						vFilter += `,drawbox=x=0:y=0:w=iw:h=ih:color=black@0.7:t=fill,drawbox=x=(iw-360)/2:y=(ih-120)/2:w=360:h=120:color=red@0.85:t=fill,drawtext=text='NO SIGNAL':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=(h-text_h)/2-10,drawtext=text='INPUT DISCONNECTED':fontcolor=yellow:fontsize=18:x=(w-text_w)/2:y=(h-text_h)/2+24,noise=alls=28:allf=t+u`;
+					} else if (ov === 'fog') {
+						vFilter += `,eq=brightness=0.06:contrast=0.82:saturation=0.75,curves=lighter,boxblur=1:0`;
+					} else if (ov === 'film_grain') {
+						vFilter += `,noise=alls=18:allf=t,vignette=PI/4,colorchannelmixer=rr=1.05:gg=0.98:bb=0.88`;
+					} else if (ov === 'light_leak') {
+						vFilter += `,eq=brightness=0.08:saturation=1.3,colorbalance=rs=0.25:gs=0.1:bs=-0.15`;
+					} else if (ov === 'rain') {
+						vFilter += `,noise=alls=24:allf=t,eq=contrast=1.25:brightness=-0.04`;
+					}
+
+					vFilter += ',format=yuv420p';
 
 					try {
 						await runFFmpeg([
@@ -225,29 +366,83 @@ export async function POST({ request }) {
 			}
 
 			// Render Main Visual Track (V1)
-			send({ progress: 10, step: 'Memproses Track Visual V1 (Utama)...' });
-			const v1ClipPaths = await renderTrackClips(mainClips, 'v1');
+			send({ progress: 12, step: 'Memproses Track Visual V1 (Utama)...' });
+			const v1ClipPaths = await renderTrackClips(mainClips, 'v1', hasTransitions);
 
-			send({ progress: 55, step: 'Menggabungkan urutan video Track V1...' });
-			const concatV1Txt = path.join(tmp, 'concat-v1.txt');
-			await fs.promises.writeFile(concatV1Txt, v1ClipPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n'));
-
+			send({ progress: 55, step: 'Menggabungkan urutan video Track V1 dengan transisi presisi...' });
 			let currentBaseVideo = path.join(tmp, 'base-v1.mp4');
-			await runFFmpeg([
-				'-f', 'concat',
-				'-safe', '0',
-				'-i', concatV1Txt,
-				'-c', 'copy',
-				'-y', currentBaseVideo
-			], 300000);
 
-			const totalVideoDuration = mainClips.reduce((acc, c) => acc + Math.max(0.5, Number(c.duration || 3.0)), 0);
+			if (hasTransitions && mainClips.length > 1) {
+				try {
+					const xfadeInputs = [];
+					for (let i = 0; i < v1ClipPaths.length; i++) {
+						xfadeInputs.push('-i', v1ClipPaths[i]);
+					}
+
+					const filterParts = [];
+					let lastOutput = '[0:v]';
+					let accTimelineDuration = Math.max(0.5, Number(mainClips[0].duration || 3.0));
+
+					for (let i = 0; i < mainClips.length - 1; i++) {
+						const clipA = mainClips[i];
+						const clipB = mainClips[i + 1];
+						const durB = Math.max(0.5, Number(clipB.duration || 3.0));
+						const tType = clipA.transitionType || 'fade';
+						const isNone = !tType || tType === 'none';
+						const xfadeName = isNone ? 'fade' : tType;
+						const tDur = isNone
+							? 0.04
+							: Math.min(Math.min(accTimelineDuration, durB) * 0.45, Number(clipA.transitionDuration || 0.5));
+						
+						// Transition starts exactly tDur before clipA reaches its nominal timeline end
+						const offset = Math.max(0, accTimelineDuration - tDur);
+						const nextOutput = i === mainClips.length - 2 ? '[v]' : `[v${i}]`;
+
+						filterParts.push(`${lastOutput}[${i + 1}:v]xfade=transition=${xfadeName}:duration=${tDur.toFixed(3)}:offset=${offset.toFixed(3)}${nextOutput}`);
+						lastOutput = nextOutput;
+
+						// Because clipB was rendered with extra length = tDur,
+						// the output length after this transition increases by exactly durB!
+						accTimelineDuration += durB;
+					}
+
+					await runFFmpeg([
+						...xfadeInputs,
+						'-filter_complex', filterParts.join(';'),
+						'-map', '[v]',
+						...normCodec,
+						'-y', currentBaseVideo
+					], 300000);
+				} catch (xfadeErr) {
+					console.warn('XFade processing failed, falling back to direct concat:', xfadeErr.message);
+					const concatV1Txt = path.join(tmp, 'concat-v1.txt');
+					await fs.promises.writeFile(concatV1Txt, v1ClipPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n'));
+					await runFFmpeg([
+						'-f', 'concat',
+						'-safe', '0',
+						'-i', concatV1Txt,
+						'-c', 'copy',
+						'-y', currentBaseVideo
+					], 300000);
+				}
+			} else {
+				// Fast direct concat
+				const concatV1Txt = path.join(tmp, 'concat-v1.txt');
+				await fs.promises.writeFile(concatV1Txt, v1ClipPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n'));
+				await runFFmpeg([
+					'-f', 'concat',
+					'-safe', '0',
+					'-i', concatV1Txt,
+					'-c', 'copy',
+					'-y', currentBaseVideo
+				], 300000);
+			}
 
 			// Render Secondary Visual Track (V2 Layer/Overlay) if present
 			const overlayTrack = resolvedVisualTracks[1];
 			if (overlayTrack && overlayTrack.clips && overlayTrack.clips.length) {
 				send({ progress: 62, step: 'Memproses Track Visual V2 (Layer Overlay / PIP)...' });
-				const v2ClipPaths = await renderTrackClips(overlayTrack.clips, 'v2');
+				const v2ClipPaths = await renderTrackClips(overlayTrack.clips, 'v2', false);
 				const concatV2Txt = path.join(tmp, 'concat-v2.txt');
 				await fs.promises.writeFile(concatV2Txt, v2ClipPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n'));
 
@@ -286,48 +481,8 @@ export async function POST({ request }) {
 				}
 			}
 
-			// Step 3: Handle Multiple Audio Tracks (A1, A2, etc.)
-			send({ progress: 78, step: 'Sinkronisasi dan mixing multi-track audio...' });
-			const rawAudioList = audioTracks && audioTracks.length
-				? audioTracks
-				: (audio?.audioUrl ? [audio] : []);
-
-			const activeAudioItems = [];
-			for (let aIdx = 0; aIdx < rawAudioList.length; aIdx++) {
-				const track = rawAudioList[aIdx];
-				const aUrl = track.audioUrl || track.url;
-				if (!aUrl || track.isMuted) continue;
-
-				const aFile = path.join(tmp, `audio-track-${aIdx}.mp3`);
-				let ok = false;
-
-				if (aUrl.startsWith('data:audio/')) {
-					const base64Data = aUrl.replace(/^data:audio\/[^;]+;base64,/, '');
-					await fs.promises.writeFile(aFile, Buffer.from(base64Data, 'base64'));
-					ok = true;
-				} else if (aUrl.startsWith('/')) {
-					const localA = path.resolve('./static' + aUrl);
-					if (fs.existsSync(localA)) {
-						await fs.promises.copyFile(localA, aFile);
-						ok = true;
-					}
-				} else if (fs.existsSync(aUrl)) {
-					await fs.promises.copyFile(aUrl, aFile);
-					ok = true;
-				}
-
-				if (ok) {
-					activeAudioItems.push({
-						filePath: aFile,
-						volume: Math.min(2.0, Math.max(0.0, Number(track.volume ?? 1.0))),
-						loop: Boolean(track.loop ?? true),
-						name: track.name || `Audio Track #${aIdx + 1}`
-					});
-				}
-			}
-
-			// Step 4: Final Assembly & Encoding
-			send({ progress: 85, step: `Merender MP4 final (${activeAudioItems.length} track audio, ${resolvedVisualTracks.length} layer visual)...` });
+			// Step 3: Final Assembly & Encoding with Audio Synchronization
+			send({ progress: 85, step: `Merender MP4 final (${activeAudioItems.length} track audio, durasi ${totalVideoDuration}s)...` });
 			const finalArgs = ['-i', currentBaseVideo];
 
 			if (activeAudioItems.length > 0) {
@@ -354,7 +509,7 @@ export async function POST({ request }) {
 						'-t', String(totalVideoDuration)
 					);
 				} else {
-					const mixLine = `${amixInputs.join('')}amix=inputs=${activeAudioItems.length}:duration=first:dropout_transition=0:normalize=0[aout]`;
+					const mixLine = `${amixInputs.join('')}amix=inputs=${activeAudioItems.length}:duration=longest:dropout_transition=0:normalize=0[aout]`;
 					finalArgs.push(
 						'-filter_complex',
 						`${filterParts.join(';')};${mixLine}`,
@@ -391,7 +546,7 @@ export async function POST({ request }) {
 
 			send({
 				progress: 100,
-				step: 'Video multi-layer berhasil dibuat!',
+				step: 'Video multi-layer berhasil dibuat dengan sinkronisasi presisi!',
 				done: true,
 				downloadUrl: `/renders/${outName}`,
 				filename: outName,

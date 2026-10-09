@@ -529,7 +529,8 @@ export function smartChunk(script, options = {}) {
 
 function createChunkObject(index, text, options = {}) {
 	const style = options.styleOverride || detect_voice_style(text);
-	const rate = VOICE_RATES[style] || VOICE_RATES.normal;
+	const baseRate = VOICE_RATES[style] || VOICE_RATES.normal;
+	const rate = options.rate || baseRate;
 	const pitch = options.pitch || '0Hz';
 	const pause_after = calculatePauseAfter(style, `${index}-${text}`);
 	const voiceId = options.voiceId || DEFAULT_EDGE_VOICE;

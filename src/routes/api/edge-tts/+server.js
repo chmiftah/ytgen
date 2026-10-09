@@ -356,6 +356,7 @@ export async function POST({ request }) {
 			voiceId = DEFAULT_EDGE_VOICE_ID, 
 			rate, 
 			pitch, 
+			customBass,
 			audioEffect = 'studio_podcast',
 			humanize = true
 		} = await request.json();
@@ -365,7 +366,8 @@ export async function POST({ request }) {
 		}
 
 		const effectPreset = getAudioEffectById(audioEffect);
-		const effectivePitch = pitch !== undefined && pitch !== null ? pitch : (effectPreset?.edgePitch || '0Hz');
+		const effectivePitch = pitch !== undefined && pitch !== null && pitch !== '' ? pitch : (effectPreset?.edgePitch || '0Hz');
+		const effectiveRate = rate !== undefined && rate !== null && rate !== '' ? rate : (effectPreset?.edgeRate || '+0%');
 		const cleanNarration = (text || '').trim();
 		const cleanIntro = (chapterIntro || '').trim();
 		const pauseSec = Number(chapterPause || 0);
@@ -386,7 +388,7 @@ export async function POST({ request }) {
 				text: cleanIntro,
 				normalizedText: cleanIntro,
 				style: 'emphasis',
-				rate: VOICE_RATES.emphasis || '-6%',
+				rate: effectiveRate || VOICE_RATES.emphasis || '-6%',
 				pitch: effectivePitch,
 				pause_after: Math.round(pauseSec * 1000),
 				audio_path: null,
@@ -399,6 +401,7 @@ export async function POST({ request }) {
 			const narrResult = await generateVoiceoverPipeline(cleanNarration, {
 				voiceId: targetVoiceId,
 				pitch: effectivePitch,
+				rate: effectiveRate,
 				humanize: humanize !== false,
 				includeOutroSilence: outroSec > 0
 			});
@@ -427,6 +430,7 @@ export async function POST({ request }) {
 			const pipelineResult = await generateVoiceoverPipeline(fullText, {
 				voiceId: targetVoiceId,
 				pitch: effectivePitch,
+				rate: effectiveRate,
 				humanize: humanize !== false,
 				includeOutroSilence: outroSec > 0
 			});
@@ -450,7 +454,12 @@ export async function POST({ request }) {
 		}
 
 		// Always apply vocal DSP & tight silence trimming so speech starts & ends immediately with zero dead air
-		const activeFfmpegFilter = (effectPreset?.id !== 'natural' ? effectPreset?.ffmpegFilter : '') || '';
+		let activeFfmpegFilter = (effectPreset?.id !== 'natural' ? effectPreset?.ffmpegFilter : '') || '';
+		if (customBass !== undefined && customBass !== null && Number(customBass) > 0) {
+			const bassVal = Math.min(10, Math.max(1, Number(customBass)));
+			const bassFilter = `bass=g=${bassVal}:f=110:w=0.6`;
+			activeFfmpegFilter = activeFfmpegFilter ? `${bassFilter},${activeFfmpegFilter}` : bassFilter;
+		}
 		finalBuffer = await applyAudioPostProcessing(finalBuffer, activeFfmpegFilter);
 		const masteredDur = await getAudioDurationFromBuffer(finalBuffer);
 		if (masteredDur) finalDuration = masteredDur;

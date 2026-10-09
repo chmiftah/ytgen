@@ -22,7 +22,8 @@
 	</div>
 
 	<div class="nav-studios">
-		<a href="/studio" class="studio-pill active">🎬 Cinematic</a>
+		<a href="/script-director" class="studio-pill">🎭 Script Director</a>
+		<a href="/studio" class="studio-pill">🎬 Cinematic</a>
 		<a href="/stickman-studio" class="studio-pill">🎨 Stickman</a>
 		<a href="/docu-studio" class="studio-pill">📰 Docu-Style</a>
 		<a href="/typography-studio" class="studio-pill">⚡ Dan Koe</a>

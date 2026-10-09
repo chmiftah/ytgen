@@ -388,6 +388,7 @@ export async function generateVoiceoverPipeline(rawScript, options = {}, onProgr
 	const chunks = smartChunk(humanizedText, {
 		voiceId,
 		pitch: options.pitch || '0Hz',
+		rate: options.rate || null,
 		minWords: options.minWords || 20,
 		maxWords: options.maxWords || 60
 	});

@@ -31,7 +31,12 @@
 		X,
 		Eye,
 		EyeOff,
-		Radio
+		Radio,
+		Wand2,
+		FileAudio,
+		FileText,
+		CheckCheck,
+		ListOrdered
 	} from 'lucide-svelte';
 
 	// Multi-Layer Visual Tracks State
@@ -40,13 +45,13 @@
 			id: 'v1',
 			name: 'Visual V1 (Utama)',
 			isVisible: true,
-			clips: []
+			clips: /** @type {any[]} */ ([])
 		},
 		{
 			id: 'v2',
 			name: 'Visual V2 (Overlay / PIP)',
 			isVisible: true,
-			clips: []
+			clips: /** @type {any[]} */ ([])
 		}
 	]);
 
@@ -54,22 +59,22 @@
 	let audioTracks = $state([
 		{
 			id: 'a1',
-			name: 'Audio A1 (Musik Latar / BGM)',
-			audioUrl: /** @type {string|null} */ (null),
-			audioName: /** @type {string|null} */ (null),
-			audioDuration: 0,
-			volume: 0.7,
-			loop: true,
-			isMuted: false
-		},
-		{
-			id: 'a2',
-			name: 'Audio A2 (Voice / SFX)',
+			name: 'Audio A1 (Voiceover / Audio Utama)',
 			audioUrl: /** @type {string|null} */ (null),
 			audioName: /** @type {string|null} */ (null),
 			audioDuration: 0,
 			volume: 1.0,
 			loop: false,
+			isMuted: false
+		},
+		{
+			id: 'a2',
+			name: 'Audio A2 (BGM / Musik Latar)',
+			audioUrl: /** @type {string|null} */ (null),
+			audioName: /** @type {string|null} */ (null),
+			audioDuration: 0,
+			volume: 0.35,
+			loop: true,
 			isMuted: false
 		}
 	]);
@@ -92,12 +97,62 @@
 
 	// DOM Elements & Refs
 	let timelineScrollEl = $state(/** @type {HTMLDivElement|undefined} */ (undefined));
+	let timelineRulerContentEl = $state(/** @type {HTMLDivElement|undefined} */ (undefined));
+	let scrollLeft = $state(0);
 	let playheadInterval = /** @type {any} */ (null);
 	let isDraggingPlayhead = $state(false);
 	let resizingClip = $state(/** @type {any} */ (null)); // { trackId, index, startX, startDuration }
 	let fileInputImages = $state(/** @type {HTMLInputElement|undefined} */ (undefined));
 	let fileInputAudio = $state(/** @type {HTMLInputElement|undefined} */ (undefined));
 	let audioTrackElements = $state(/** @type {Record<string, HTMLAudioElement>} */ ({}));
+
+	// AI Audio Storyboard & Bulk Import State
+	let showAiStoryboardModal = $state(false);
+	let isGeneratingStoryboard = $state(false);
+	let storyboardLoadingStep = $state('');
+	let storyboardAudioFile = $state(/** @type {File|null} */ (null));
+	let storyboardAudioPreviewUrl = $state(/** @type {string|null} */ (null));
+	let storyboardStylePreset = $state('cartoon_2d');
+	let storyboardStyleTemplate = $state(
+		'A 2D cartoon digital illustration in the style of educational YouTube animation channels, featuring a nerdy young programmer character with a round white head, wide expressive eyes, messy brown hair, and wearing an oversized casual hoodie. Clean bold black outlines, smooth shading. --ar 16:9'
+	);
+	let storyboardPacing = $state('balanced'); // 'fast' | 'balanced' | 'relaxed'
+	let generatedStoryboard = $state(/** @type {any[]|null} */ (null));
+	let storyboardAudioResult = $state(/** @type {any|null} */ (null));
+	let copiedSceneIdx = $state(/** @type {number|null} */ (null));
+	let copiedAllPromptsStatus = $state(false);
+
+	// Hidden inputs for bulk & single image replacements
+	let bulkFileInput = $state(/** @type {HTMLInputElement|undefined} */ (undefined));
+	let singleClipReplaceInput = $state(/** @type {HTMLInputElement|undefined} */ (undefined));
+	let targetReplaceClipIndex = $state(-1);
+
+	const STYLE_PRESETS = [
+		{
+			id: 'cartoon_2d',
+			label: '🎨 2D Cartoon YouTube (Default)',
+			template:
+				'A 2D cartoon digital illustration in the style of educational YouTube animation channels, featuring a nerdy young programmer character with a round white head, wide expressive eyes, messy brown hair, and wearing an oversized casual hoodie. Clean bold black outlines, smooth shading. --ar 16:9'
+		},
+		{
+			id: 'anime_manga',
+			label: '⛩️ Anime / Webtoon Style',
+			template:
+				'Vibrant modern anime digital illustration, high quality Studio MAPPA aesthetic, featuring a young energetic student protagonist with sharp features, stylish jacket, in a lively Tokyo setting with soft ambient sunlight and particle dust. Crisp cel-shading, dynamic camera perspective. --ar 16:9'
+		},
+		{
+			id: 'pixar_3d',
+			label: '⚡ 3D Pixar Animation',
+			template:
+				'Charming 3D animated character render in Disney Pixar style, featuring an expressive cute character with big curious eyes, detailed tactile clothing textures, soft volumetric warm lighting, raytraced subsurface scattering. --ar 16:9'
+		},
+		{
+			id: 'cinematic_photoreal',
+			label: '📸 Cinematic 8K Photoreal',
+			template:
+				'Hyper-realistic cinematic film still, 35mm photography, dramatic moody lighting, shallow depth of field, subtle motion blur, photorealistic textures, color graded by Roger Deakins, 8k resolution. --ar 16:9'
+		}
+	];
 
 	// Render modal state
 	let isRendering = $state(false);
@@ -118,14 +173,66 @@
 		}, 3000);
 	}
 
-	// Derived: Total video duration is determined by longest track (usually main track V1)
+	// Derived: Total video duration is determined by longest track (visual or audio)
 	let totalDuration = $derived.by(() => {
 		let maxDur = 0;
 		for (const vt of visualTracks) {
 			const dur = vt.clips.reduce((sum, c) => sum + Number(c.duration || 3), 0);
 			if (dur > maxDur) maxDur = dur;
 		}
+		for (const at of audioTracks) {
+			if (at.audioUrl && Number(at.audioDuration || 0) > maxDur) {
+				maxDur = Number(at.audioDuration);
+			}
+		}
 		return Number(maxDur.toFixed(2));
+	});
+
+	// Derived: Total duration of Visual Track V1 (Main)
+	let mainVisualDuration = $derived.by(() => {
+		return Number(
+			(visualTracks[0]?.clips || []).reduce((sum, c) => sum + Number(c.duration || 3), 0).toFixed(2)
+		);
+	});
+
+	// Derived: Duration of Main Audio Track A1
+	let mainAudioDuration = $derived.by(() => {
+		return Number(audioTracks[0]?.audioDuration || 0);
+	});
+
+	// Derived: Detect when visual and audio durations differ
+	let durationMismatch = $derived.by(() => {
+		if (!audioTracks[0]?.audioUrl || (visualTracks[0]?.clips || []).length === 0) return null;
+		const diff = Number((mainAudioDuration - mainVisualDuration).toFixed(2));
+		if (Math.abs(diff) > 0.5) {
+			return {
+				diff,
+				visualDur: mainVisualDuration,
+				audioDur: mainAudioDuration,
+				isVisualShorter: diff > 0
+			};
+		}
+		return null;
+	});
+
+	// Derived: Dynamic ruler interval to avoid text overlap (e.g. 0s 1s 2s 3s overlapping)
+	let rulerInterval = $derived.by(() => {
+		if (pxPerSec <= 15) return 30; // 30s step
+		if (pxPerSec <= 30) return 15; // 15s step
+		if (pxPerSec <= 50) return 10; // 10s step
+		if (pxPerSec <= 80) return 5;  // 5s step
+		return 2;                      // 2s step
+	});
+
+	// Derived: Placeholder Stats on active / main visual track
+	let placeholderStats = $derived.by(() => {
+		const mainClips = visualTracks[0]?.clips || [];
+		const placeholders = mainClips.filter((c) => !c.imageUrl || c.isPlaceholder);
+		return {
+			total: mainClips.length,
+			unassigned: placeholders.length,
+			hasPlaceholders: placeholders.length > 0
+		};
 	});
 
 	// Derived: Active Visual Track object
@@ -176,6 +283,71 @@
 	let currentOverlayClips = $derived.by(() => {
 		return currentActiveLayers.filter((l) => l.trackId !== 'v1');
 	});
+
+	// Derived: Active transition between current base clip and next clip
+	let currentTransitionInfo = $derived.by(() => {
+		if (!currentBaseClip?.clip) return null;
+		const transType = currentBaseClip.clip.transitionType || 'none';
+		const transDur = Number(currentBaseClip.clip.transitionDuration ?? 0.5);
+		if (transType === 'none' || transDur <= 0) return null;
+
+		const remaining = currentBaseClip.duration - currentBaseClip.offset;
+		if (remaining > transDur) return null;
+
+		const nextClip = visualTracks[0]?.clips[currentBaseClip.index + 1] || null;
+		if (!nextClip) return null;
+
+		const progress = Math.max(0, Math.min(1, 1 - (remaining / transDur)));
+
+		return {
+			type: transType,
+			duration: transDur,
+			progress,
+			nextClip
+		};
+	});
+
+	/**
+	 * @param {string|null|undefined} motionEffect
+	 * @param {number} progress
+	 * @param {number} [offset]
+	 */
+	function getClipMotionTransform(motionEffect, progress, offset = 0) {
+		if (!motionEffect || motionEffect === 'none') return 'scale(1.0)';
+		const p = Math.max(0, Math.min(1, Number(progress) || 0));
+		if (motionEffect === 'zoom_in') {
+			const s = 1.0 + p * 0.12;
+			return `scale(${s.toFixed(4)})`;
+		}
+		if (motionEffect === 'zoom_out') {
+			const s = 1.12 - p * 0.12;
+			return `scale(${s.toFixed(4)})`;
+		}
+		if (motionEffect === 'pan_left') {
+			const tx = 2.0 - p * 4.0;
+			return `scale(1.06) translateX(${tx.toFixed(2)}%)`;
+		}
+		if (motionEffect === 'pan_right') {
+			const tx = -2.0 + p * 4.0;
+			return `scale(1.06) translateX(${tx.toFixed(2)}%)`;
+		}
+		if (motionEffect === 'diagonal_drift') {
+			const s = 1.03 + p * 0.07;
+			const tx = -1.5 + p * 3.0;
+			const ty = -1.5 + p * 3.0;
+			return `scale(${s.toFixed(4)}) translate(${tx.toFixed(2)}%, ${ty.toFixed(2)}%)`;
+		}
+		if (motionEffect === 'camera_shake') {
+			const ox = Math.sin(offset * 20) * 1.8;
+			const oy = Math.cos(offset * 25) * 1.4;
+			return `scale(1.05) translate(${ox.toFixed(2)}px, ${oy.toFixed(2)}px)`;
+		}
+		if (motionEffect === 'pulse_pop') {
+			const s = 1.0 + Math.sin(p * Math.PI * 2) * 0.04;
+			return `scale(${s.toFixed(4)})`;
+		}
+		return 'scale(1.0)';
+	}
 
 	// Format seconds into MM:SS.S
 	function formatTime(sec) {
@@ -267,6 +439,9 @@
 				imageUrl: dataUrl,
 				duration: defaultDuration,
 				motionEffect: 'none',
+				transitionType: 'fade',
+				transitionDuration: 0.5,
+				overlayEffect: 'none',
 				overlayPosition: 'top-right', // for overlay tracks
 				overlayScale: 0.35
 			});
@@ -373,6 +548,59 @@
 		showToast('Klip dihapus');
 	}
 
+	// Motion, Transition & Overlay Bulk Actions
+	function applyMotionToAll(motionEffect) {
+		const track = currentVisualTrack;
+		if (!track || !track.clips.length) return;
+		for (const clip of track.clips) {
+			clip.motionEffect = motionEffect;
+		}
+		visualTracks = [...visualTracks];
+		showToast(`Animasi [${motionEffect}] diterapkan ke semua klip`);
+	}
+
+	function smartAlternateMotion() {
+		const track = currentVisualTrack;
+		if (!track || !track.clips.length) return;
+		const sequence = ['zoom_in', 'pan_left', 'zoom_out', 'pan_right', 'diagonal_drift', 'pulse_pop'];
+		track.clips.forEach((clip, idx) => {
+			clip.motionEffect = sequence[idx % sequence.length];
+		});
+		visualTracks = [...visualTracks];
+		showToast('Variasi animasi dinamis diterapkan ke semua klip!');
+	}
+
+	function applyTransitionToAll(transitionType, transitionDuration = 0.5) {
+		const track = currentVisualTrack;
+		if (!track || !track.clips.length) return;
+		for (const clip of track.clips) {
+			clip.transitionType = transitionType;
+			clip.transitionDuration = Number(transitionDuration) || 0.5;
+		}
+		visualTracks = [...visualTracks];
+		showToast(`Transisi [${transitionType}] (${transitionDuration}s) diterapkan ke semua sambungan`);
+	}
+
+	function applyOverlayToAll(overlayEffect) {
+		const track = currentVisualTrack;
+		if (!track || !track.clips.length) return;
+		for (const clip of track.clips) {
+			clip.overlayEffect = overlayEffect;
+		}
+		visualTracks = [...visualTracks];
+		showToast(`Overlay [${overlayEffect}] diterapkan ke semua klip`);
+	}
+
+	function clearAllOverlays() {
+		const track = currentVisualTrack;
+		if (!track || !track.clips.length) return;
+		for (const clip of track.clips) {
+			clip.overlayEffect = 'none';
+		}
+		visualTracks = [...visualTracks];
+		showToast('Semua overlay dinonaktifkan');
+	}
+
 	// Audio Import for a specific track
 	function openAudioPicker(trackId) {
 		targetAudioTrackId = trackId;
@@ -392,6 +620,9 @@
 		const tempAudio = new Audio(dataUrl);
 		tempAudio.addEventListener('loadedmetadata', () => {
 			targetTrack.audioDuration = Number(tempAudio.duration.toFixed(2));
+			if (targetTrack.id === 'a1' || tempAudio.duration > 20) {
+				targetTrack.loop = false;
+			}
 			audioTracks = [...audioTracks];
 			showToast(`Audio "${file.name}" dimuat ke [${targetTrack.name}]`);
 		});
@@ -414,6 +645,286 @@
 			audioTracks = [...audioTracks];
 			showToast(`Audio di [${track.name}] dihapus`);
 		}
+	}
+
+	// -------------------------------------------------------------
+	// AI Audio Storyboard & Bulk Image Matching
+	// -------------------------------------------------------------
+	function selectStylePreset(presetId) {
+		storyboardStylePreset = presetId;
+		const found = STYLE_PRESETS.find((p) => p.id === presetId);
+		if (found) {
+			storyboardStyleTemplate = found.template;
+		}
+	}
+
+	function handleStoryboardAudioSelect(event) {
+		const file = event.target.files?.[0];
+		if (!file) return;
+		storyboardAudioFile = file;
+		if (storyboardAudioPreviewUrl) URL.revokeObjectURL(storyboardAudioPreviewUrl);
+		storyboardAudioPreviewUrl = URL.createObjectURL(file);
+	}
+
+	async function generateAiStoryboard() {
+		if (!storyboardAudioFile) {
+			showToast('Pilih file audio terlebih dahulu!');
+			return;
+		}
+
+		isGeneratingStoryboard = true;
+		storyboardLoadingStep = 'Mengunggah file audio ke server...';
+		generatedStoryboard = null;
+		storyboardAudioResult = null;
+
+		try {
+			const formData = new FormData();
+			formData.append('audio', storyboardAudioFile);
+			formData.append('styleTemplate', storyboardStyleTemplate);
+			formData.append('pacing', storyboardPacing);
+
+			storyboardLoadingStep = 'Whisper sedang mentranskripsi audio & mengenali jeda ucapan...';
+
+			const res = await fetch('/api/ai-audio-storyboard', {
+				method: 'POST',
+				body: formData
+			});
+
+			const data = await res.json();
+			if (!res.ok || !data.success) {
+				throw new Error(data.error || 'Gagal menghasilkan storyboard dari audio.');
+			}
+
+			generatedStoryboard = data.scenes;
+			storyboardAudioResult = data;
+			showToast(`✨ Sukses! ${data.scenes.length} scene & prompt visual berhasil dibuat.`);
+		} catch (err) {
+			console.error('[Generate AI Storyboard Error]:', err);
+			showToast(`⚠️ Error: ${err.message}`);
+		} finally {
+			isGeneratingStoryboard = false;
+			storyboardLoadingStep = '';
+		}
+	}
+
+	function copyAllPrompts() {
+		const scenes = generatedStoryboard || visualTracks[0]?.clips.filter((c) => c.prompt) || [];
+		if (!scenes.length) {
+			showToast('Tidak ada prompt yang tersedia untuk disalin.');
+			return;
+		}
+
+		const promptList = scenes
+			.map((s, idx) => {
+				const num = s.sceneNumber || idx + 1;
+				const p = s.prompt || '';
+				return `${num}. ${p}`;
+			})
+			.join('\n\n');
+
+		navigator.clipboard.writeText(promptList).then(() => {
+			copiedAllPromptsStatus = true;
+			setTimeout(() => {
+				copiedAllPromptsStatus = false;
+			}, 3000);
+			showToast(`📋 Berhasil menyalin ${scenes.length} prompt gambar ke clipboard!`);
+		});
+	}
+
+	function copySinglePrompt(promptText, idx = 0) {
+		if (!promptText) return;
+		navigator.clipboard.writeText(promptText).then(() => {
+			copiedSceneIdx = idx;
+			setTimeout(() => {
+				if (copiedSceneIdx === idx) copiedSceneIdx = null;
+			}, 2000);
+			showToast(`📋 Prompt Scene #${idx + 1} berhasil disalin!`);
+		});
+	}
+
+	function applyStoryboardToTimeline() {
+		if (!generatedStoryboard || !generatedStoryboard.length) {
+			showToast('Belum ada storyboard yang di-generate!');
+			return;
+		}
+
+		// 1. Assign audio to Track A1
+		const audioDur = Number(storyboardAudioResult?.totalDuration || 0);
+		if (storyboardAudioResult?.audioUrl) {
+			const trackA1 = audioTracks.find((t) => t.id === 'a1') || audioTracks[0];
+			trackA1.audioUrl = storyboardAudioResult.audioUrl;
+			trackA1.audioName = storyboardAudioResult.audioName || storyboardAudioFile?.name || 'Voiceover AI';
+			trackA1.audioDuration = audioDur;
+			trackA1.name = 'Audio A1 (Voiceover Utama)';
+			trackA1.loop = false;
+			trackA1.volume = 1.0;
+		}
+
+		// 2. Populate Visual Track V1 with placeholder clips
+		const newClips = generatedStoryboard.map((sc) => ({
+			id: sc.id || `clip-sc-${sc.sceneNumber}-${Date.now()}`,
+			name: `Scene #${sc.sceneNumber}`,
+			sceneNumber: sc.sceneNumber,
+			isPlaceholder: true,
+			imageUrl: '',
+			duration: Number(sc.duration || 4.0),
+			narration: sc.narration || '',
+			prompt: sc.prompt || '',
+			motionEffect: sc.motion || (sc.sceneNumber % 2 === 1 ? 'zoom_in' : 'pan_left'),
+			transitionType: sc.transition || 'fade',
+			transitionDuration: 0.5,
+			overlayEffect: 'none',
+			overlayPosition: 'top-right',
+			overlayScale: 0.35
+		}));
+
+		// 3. Ensure the sum of visual clips exactly matches audio duration
+		if (audioDur > 0 && newClips.length > 0) {
+			const visualSum = newClips.reduce((sum, c) => sum + Number(c.duration || 0), 0);
+			const diff = Number((audioDur - visualSum).toFixed(2));
+			if (Math.abs(diff) > 0.05) {
+				const lastClip = newClips[newClips.length - 1];
+				lastClip.duration = Math.max(0.5, Number((lastClip.duration + diff).toFixed(2)));
+			}
+		}
+
+		visualTracks[0].clips = newClips;
+		visualTracks = [...visualTracks];
+		audioTracks = [...audioTracks];
+
+		showAiStoryboardModal = false;
+		seekTo(0);
+		showToast(`🎬 ${newClips.length} scene placeholder masuk ke timeline! Total: ${formatTime(audioDur || totalDuration)}`);
+	}
+
+	// Scale all visual clips proportionally so their total duration matches audio 1:1
+	function fitVisualToAudio() {
+		const track = visualTracks[0];
+		if (!track || !track.clips.length || !mainAudioDuration) return;
+		const currentDur = track.clips.reduce((sum, c) => sum + Number(c.duration || 0), 0);
+		if (currentDur <= 0) return;
+		const ratio = mainAudioDuration / currentDur;
+		let accumulated = 0;
+		for (let i = 0; i < track.clips.length; i++) {
+			if (i === track.clips.length - 1) {
+				track.clips[i].duration = Math.max(0.5, Number((mainAudioDuration - accumulated).toFixed(2)));
+			} else {
+				const newDur = Number((track.clips[i].duration * ratio).toFixed(2));
+				track.clips[i].duration = Math.max(0.5, newDur);
+				accumulated += track.clips[i].duration;
+			}
+		}
+		visualTracks = [...visualTracks];
+		showToast(`✨ Semua ${track.clips.length} scene visual disesuaikan ke durasi audio (${formatTime(mainAudioDuration)})!`);
+	}
+
+	// Extend the last clip so it fills any trailing gap up to audio end
+	function extendLastClipToAudio() {
+		const track = visualTracks[0];
+		if (!track || !track.clips.length || !mainAudioDuration) return;
+		const currentDur = track.clips.reduce((sum, c) => sum + Number(c.duration || 0), 0);
+		const diff = mainAudioDuration - currentDur;
+		if (diff > 0) {
+			const lastClip = track.clips[track.clips.length - 1];
+			lastClip.duration = Number((lastClip.duration + diff).toFixed(2));
+			visualTracks = [...visualTracks];
+			showToast(`✨ Scene terakhir #${track.clips.length} diperpanjang hingga akhir audio!`);
+		}
+	}
+
+	function openBulkImagePicker() {
+		bulkFileInput?.click();
+	}
+
+	async function handleBulkImageFiles(event) {
+		const files = Array.from(event.target.files || []);
+		if (!files.length) return;
+		await processBulkImages(files);
+		if (bulkFileInput) bulkFileInput.value = '';
+	}
+
+	async function processBulkImages(files) {
+		const track = visualTracks.find((t) => t.id === activeVisualTrackId) || visualTracks[0];
+		if (!track.clips.length) {
+			showToast('Belum ada scene di timeline. Buat AI Storyboard atau tambahkan klip terlebih dahulu!');
+			return;
+		}
+
+		// Natural numeric sorting (e.g. 1.png, 2.png, 10.png)
+		files.sort((a, b) =>
+			a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+		);
+
+		let matchedCount = 0;
+
+		// Extract numbers from filenames: e.g. "1.png", "scene_2.jpg", "03.webp", "adegan-4.png"
+		const fileNumMap = new Map();
+		const unnumberedFiles = [];
+
+		for (const f of files) {
+			const match = f.name.match(/(?:scene[_\-\s]*|adegan[_\-\s]*)?(\d+)/i);
+			if (match && match[1]) {
+				const num = parseInt(match[1], 10);
+				if (!fileNumMap.has(num)) {
+					fileNumMap.set(num, f);
+					continue;
+				}
+			}
+			unnumberedFiles.push(f);
+		}
+
+		// First pass: match exact scene numbers
+		const remainingClips = [];
+		for (let i = 0; i < track.clips.length; i++) {
+			const clip = track.clips[i];
+			const scNum = clip.sceneNumber || i + 1;
+			if (fileNumMap.has(scNum)) {
+				const file = fileNumMap.get(scNum);
+				const dataUrl = await readFileAsDataURL(file);
+				clip.imageUrl = dataUrl;
+				clip.name = file.name;
+				clip.isPlaceholder = false;
+				matchedCount++;
+			} else {
+				remainingClips.push(clip);
+			}
+		}
+
+		// Second pass: sequential assignment for any unnumbered files or remaining placeholder clips
+		let unIdx = 0;
+		for (const clip of remainingClips) {
+			if (unIdx < unnumberedFiles.length) {
+				const file = unnumberedFiles[unIdx++];
+				const dataUrl = await readFileAsDataURL(file);
+				clip.imageUrl = dataUrl;
+				clip.name = file.name;
+				clip.isPlaceholder = false;
+				matchedCount++;
+			}
+		}
+
+		visualTracks = [...visualTracks];
+		showToast(`✨ Berhasil memasang ${matchedCount} gambar ke scene di [${track.name}]!`);
+	}
+
+	function triggerSingleClipReplace(index) {
+		targetReplaceClipIndex = index;
+		singleClipReplaceInput?.click();
+	}
+
+	async function handleSingleClipReplace(event) {
+		const file = event.target.files?.[0];
+		if (!file || targetReplaceClipIndex < 0) return;
+		const dataUrl = await readFileAsDataURL(file);
+		const track = visualTracks.find((t) => t.id === activeVisualTrackId) || visualTracks[0];
+		if (track.clips[targetReplaceClipIndex]) {
+			track.clips[targetReplaceClipIndex].imageUrl = dataUrl;
+			track.clips[targetReplaceClipIndex].name = file.name;
+			track.clips[targetReplaceClipIndex].isPlaceholder = false;
+			visualTracks = [...visualTracks];
+			showToast(`Gambar Scene #${targetReplaceClipIndex + 1} berhasil dipasang.`);
+		}
+		if (singleClipReplaceInput) singleClipReplaceInput.value = '';
 	}
 
 	// Playback Synchronization for all audio tracks
@@ -482,12 +993,34 @@
 		}
 	}
 
-	// Timeline dragging & resizing
-	function handleTimelineRulerClick(e) {
-		const rect = e.currentTarget.getBoundingClientRect();
-		const clickX = e.clientX - rect.left + (timelineScrollEl?.scrollLeft || 0);
-		const newTime = clickX / pxPerSec;
-		seekTo(newTime);
+	// Timeline scrubbing, dragging & seeking
+	function handleRulerMouseDown(/** @type {MouseEvent} */ e) {
+		if (e.button !== 0 || !timelineRulerContentEl) return;
+		isDraggingPlayhead = true;
+
+		const updateTimeFromMouse = (/** @type {number} */ clientX) => {
+			if (!timelineRulerContentEl) return;
+			const rect = timelineRulerContentEl.getBoundingClientRect();
+			const clickX = clientX - rect.left;
+			const newTime = Math.max(0, Math.min(totalDuration, clickX / pxPerSec));
+			seekTo(newTime);
+		};
+
+		updateTimeFromMouse(e.clientX);
+
+		const onMouseMove = (/** @type {MouseEvent} */ moveEvent) => {
+			if (!isDraggingPlayhead) return;
+			updateTimeFromMouse(moveEvent.clientX);
+		};
+
+		const onMouseUp = () => {
+			isDraggingPlayhead = false;
+			window.removeEventListener('mousemove', onMouseMove);
+			window.removeEventListener('mouseup', onMouseUp);
+		};
+
+		window.addEventListener('mousemove', onMouseMove);
+		window.addEventListener('mouseup', onMouseUp);
 	}
 
 	function startResizeClip(/** @type {any} */ event, trackId, /** @type {number} */ index) {
@@ -557,12 +1090,19 @@
 					<text x="640" y="660" font-family="monospace" font-size="20" fill="rgba(255,255,255,0.4)" text-anchor="middle">Track V1 (Base) · Slide #${idx + 1}</text>
 				</svg>
 			`;
+			const motions = ['zoom_in', 'pan_left', 'zoom_out', 'diagonal_drift', 'pulse_pop'];
+			const transitions = ['fade', 'fadeblack', 'slideleft', 'fadewhite', 'none'];
+			const overlays = ['film_grain', 'fog', 'tv_static', 'light_leak', 'none'];
+
 			return {
 				id: `demo-v1-${idx + 1}`,
 				name: `${idx + 1}-slide-${item.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.svg`,
 				imageUrl: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`,
 				duration: 4.0,
-				motionEffect: idx % 2 === 0 ? 'zoom_in' : 'none'
+				motionEffect: motions[idx % motions.length],
+				transitionType: transitions[idx % transitions.length],
+				transitionDuration: 0.5,
+				overlayEffect: overlays[idx % overlays.length]
 			};
 		});
 
@@ -616,6 +1156,12 @@
 			return;
 		}
 
+		const unassigned = mainClips.filter((c) => !c.imageUrl || c.isPlaceholder);
+		if (unassigned.length > 0) {
+			showToast(`⚠️ Masih ada ${unassigned.length} scene yang belum diisi gambar! Harap isi gambar terlebih dahulu.`);
+			return;
+		}
+
 		isRendering = true;
 		renderProgress = 2;
 		renderStep = 'Menghubungkan ke renderer FFmpeg multi-layer...';
@@ -635,7 +1181,10 @@
 						name: c.name,
 						duration: Number(c.duration),
 						imageUrl: c.imageUrl,
-						motionEffect: c.motionEffect || 'none'
+						motionEffect: c.motionEffect || 'none',
+						transitionType: c.transitionType || 'fade',
+						transitionDuration: Number(c.transitionDuration ?? 0.5),
+						overlayEffect: c.overlayEffect || 'none'
 					}))
 				})),
 				audioTracks: audioTracks
@@ -755,6 +1304,21 @@
 		onchange={handleAudioFile}
 		style="display: none;"
 	/>
+	<input
+		type="file"
+		accept="image/*"
+		multiple
+		bind:this={bulkFileInput}
+		onchange={handleBulkImageFiles}
+		style="display: none;"
+	/>
+	<input
+		type="file"
+		accept="image/*"
+		bind:this={singleClipReplaceInput}
+		onchange={handleSingleClipReplace}
+		style="display: none;"
+	/>
 
 	<!-- Dynamic Audio Elements for all audio tracks -->
 	{#each audioTracks as track (track.id)}
@@ -801,6 +1365,15 @@
 		</div>
 
 		<div class="header-right">
+			<button
+				class="btn btn-secondary ai-storyboard-btn"
+				onclick={() => (showAiStoryboardModal = true)}
+				title="Buat scene otomatis dari audio dengan AI prompt visual"
+			>
+				<Sparkles size={14} class="text-accent" />
+				<span>AI Storyboard</span>
+			</button>
+
 			<div class="stat-badge">
 				<Layers size={13} />
 				<span class="stat-label">Layers:</span>
@@ -831,16 +1404,124 @@
 					class="canvas-frame {aspectRatio === '9:16' ? 'ratio-portrait' : aspectRatio === '1:1' ? 'ratio-square' : 'ratio-landscape'}"
 				>
 					{#if currentBaseClip?.clip}
+						{@const baseProg = currentBaseClip.duration > 0 ? currentBaseClip.offset / currentBaseClip.duration : 0}
+						{@const baseMotion = getClipMotionTransform(currentBaseClip.clip.motionEffect, baseProg, currentBaseClip.offset)}
+						{@const slideOffset = currentTransitionInfo?.type === 'slideleft'
+							? ` translateX(-${currentTransitionInfo.progress * 100}%)`
+							: currentTransitionInfo?.type === 'slideright'
+							? ` translateX(${currentTransitionInfo.progress * 100}%)`
+							: ''}
+
 						<!-- Layer 1: Base Background Clip (Track V1) -->
-						<div
-							class="clip-display {currentBaseClip.clip.motionEffect !== 'none' ? `anim-${currentBaseClip.clip.motionEffect}` : ''}"
-							style="background-image: url('{currentBaseClip.clip.imageUrl}');"
-						>
-							<div class="clip-watermark">
-								<span class="clip-idx-badge">V1</span>
-								<span class="clip-filename">{currentBaseClip.clip.name}</span>
+						{#if currentBaseClip.clip.imageUrl}
+							<div
+								class="clip-display"
+								style="background-image: url('{currentBaseClip.clip.imageUrl}'); transform: {baseMotion}{slideOffset}; opacity: {currentTransitionInfo?.type === 'fadeblack' || currentTransitionInfo?.type === 'fadewhite' ? (currentTransitionInfo.progress >= 0.5 ? 0 : 1) : 1};"
+							>
+								<div class="clip-watermark">
+									<span class="clip-idx-badge">V1</span>
+									<span class="clip-filename">{currentBaseClip.clip.name}</span>
+								</div>
 							</div>
-						</div>
+						{:else}
+							<div class="clip-display placeholder-canvas-card">
+								<div class="ph-canvas-inner">
+									<div class="ph-top-badge">
+										<span class="badge-scene-num">🎬 SCENE #{currentBaseClip.clip.sceneNumber || currentBaseClip.index + 1}</span>
+										<span class="badge-scene-dur">⏱️ {currentBaseClip.clip.duration}s</span>
+									</div>
+
+									{#if currentBaseClip.clip.narration}
+										<blockquote class="ph-narration-quote">
+											"{currentBaseClip.clip.narration}"
+										</blockquote>
+									{/if}
+
+									{#if currentBaseClip.clip.prompt}
+										<div class="ph-prompt-display-box">
+											<div class="ph-prompt-header">
+												<span class="ph-prompt-label">🤖 AI IMAGE PROMPT (Midjourney / Leonardo / Flux):</span>
+												<button
+													class="btn btn-xs btn-primary ph-copy-btn"
+													onclick={() => copySinglePrompt(currentBaseClip.clip.prompt, currentBaseClip.index)}
+												>
+													<Copy size={12} />
+													<span>{copiedSceneIdx === currentBaseClip.index ? 'Tersalin! ✓' : 'Copy Prompt'}</span>
+												</button>
+											</div>
+											<p class="ph-prompt-body">{currentBaseClip.clip.prompt}</p>
+										</div>
+									{/if}
+
+									<div class="ph-canvas-footer">
+										<button class="btn btn-xs btn-primary-glow" onclick={() => triggerSingleClipReplace(currentBaseClip.index)}>
+											<Upload size={13} />
+											<span>Unggah Gambar Scene Ini</span>
+										</button>
+										<button class="btn btn-xs btn-secondary" onclick={openBulkImagePicker}>
+											<Upload size={13} />
+											<span>Bulk Import Semua Gambar</span>
+										</button>
+									</div>
+								</div>
+							</div>
+						{/if}
+
+						<!-- Live Scene Transition Layer -->
+						{#if currentTransitionInfo?.nextClip}
+							{@const nextDur = Math.max(0.5, Number(currentTransitionInfo.nextClip.duration || 3))}
+							{@const nextProg = (currentTransitionInfo.progress * currentTransitionInfo.duration) / nextDur}
+							{@const nextMotion = getClipMotionTransform(currentTransitionInfo.nextClip.motionEffect, nextProg, currentTransitionInfo.progress * currentTransitionInfo.duration)}
+
+							{#if currentTransitionInfo.type === 'fade'}
+								<div
+									class="clip-display transition-next-clip"
+									style="background-image: url('{currentTransitionInfo.nextClip.imageUrl}'); opacity: {currentTransitionInfo.progress}; transform: {nextMotion};"
+								></div>
+							{:else if currentTransitionInfo.type === 'fadeblack'}
+								{#if currentTransitionInfo.progress >= 0.5}
+									<div
+										class="clip-display transition-next-clip"
+										style="background-image: url('{currentTransitionInfo.nextClip.imageUrl}'); transform: {nextMotion};"
+									></div>
+								{/if}
+								<div
+									class="transition-color-dip"
+									style="background: #000000; opacity: {currentTransitionInfo.progress < 0.5 ? currentTransitionInfo.progress * 2 : (1 - currentTransitionInfo.progress) * 2};"
+								></div>
+							{:else if currentTransitionInfo.type === 'fadewhite'}
+								{#if currentTransitionInfo.progress >= 0.5}
+									<div
+										class="clip-display transition-next-clip"
+										style="background-image: url('{currentTransitionInfo.nextClip.imageUrl}'); transform: {nextMotion};"
+									></div>
+								{/if}
+								<div
+									class="transition-color-dip"
+									style="background: #ffffff; opacity: {currentTransitionInfo.progress < 0.5 ? currentTransitionInfo.progress * 2 : (1 - currentTransitionInfo.progress) * 2};"
+								></div>
+							{:else if currentTransitionInfo.type === 'slideleft'}
+								<div
+									class="clip-display transition-next-clip"
+									style="background-image: url('{currentTransitionInfo.nextClip.imageUrl}'); transform: translateX({(1 - currentTransitionInfo.progress) * 100}%) {nextMotion};"
+								></div>
+							{:else if currentTransitionInfo.type === 'slideright'}
+								<div
+									class="clip-display transition-next-clip"
+									style="background-image: url('{currentTransitionInfo.nextClip.imageUrl}'); transform: translateX({-(1 - currentTransitionInfo.progress) * 100}%) {nextMotion};"
+								></div>
+							{:else if currentTransitionInfo.type === 'wipeleft'}
+								<div
+									class="clip-display transition-next-clip"
+									style="background-image: url('{currentTransitionInfo.nextClip.imageUrl}'); clip-path: inset(0 0 0 {(1 - currentTransitionInfo.progress) * 100}%); transform: {nextMotion};"
+								></div>
+							{:else if currentTransitionInfo.type === 'circlecrop'}
+								<div
+									class="clip-display transition-next-clip"
+									style="background-image: url('{currentTransitionInfo.nextClip.imageUrl}'); clip-path: circle({currentTransitionInfo.progress * 75}% at 50% 50%); transform: {nextMotion};"
+								></div>
+							{/if}
+						{/if}
 
 						<!-- Layer 2+: Overlay Clips (Track V2, V3...) displayed in Picture-In-Picture or Overlay -->
 						{#each currentOverlayClips as ovLayer (ovLayer.trackId + ovLayer.index)}
@@ -858,6 +1539,37 @@
 								</div>
 							</div>
 						{/each}
+
+						<!-- Live Visual Overlay Effects Layer -->
+						{#if currentBaseClip.clip.overlayEffect && currentBaseClip.clip.overlayEffect !== 'none'}
+							<div class="fx-overlay-canvas fx-{currentBaseClip.clip.overlayEffect}">
+								{#if currentBaseClip.clip.overlayEffect === 'tv_static'}
+									<div class="fx-tv-scanlines"></div>
+									<div class="fx-tv-noise-anim"></div>
+									<div class="fx-vhs-osd">
+										<span class="vhs-rec-dot">● REC</span>
+										<span class="vhs-sp">PLAY ► SP</span>
+									</div>
+								{:else if currentBaseClip.clip.overlayEffect === 'no_signal'}
+									<div class="fx-smpte-bars"></div>
+									<div class="fx-no-signal-modal">
+										<div class="no-signal-banner">⚠️ NO SIGNAL</div>
+										<div class="no-signal-desc">INPUT DISCONNECTED</div>
+									</div>
+								{:else if currentBaseClip.clip.overlayEffect === 'fog'}
+									<div class="fx-fog-stream fx-fog-a"></div>
+									<div class="fx-fog-stream fx-fog-b"></div>
+								{:else if currentBaseClip.clip.overlayEffect === 'film_grain'}
+									<div class="fx-film-vignette-ring"></div>
+									<div class="fx-film-grain-particles"></div>
+									<div class="fx-film-hair-scratch"></div>
+								{:else if currentBaseClip.clip.overlayEffect === 'light_leak'}
+									<div class="fx-light-leak-burst"></div>
+								{:else if currentBaseClip.clip.overlayEffect === 'rain'}
+									<div class="fx-rain-drop-curtain"></div>
+								{/if}
+							</div>
+						{/if}
 					{:else}
 						<div class="empty-player">
 							<ImageIcon size={48} opacity={0.3} />
@@ -972,13 +1684,49 @@
 				{#if activeClip}
 					<div class="card-section">
 						<div class="section-title">
-							<span>Klip [{currentVisualTrack.name}] (#{activeClipIndex + 1})</span>
+							<span>Klip [{currentVisualTrack.name}] (#{activeClip.sceneNumber || activeClipIndex + 1})</span>
 							<span class="file-tag">{activeClip.name}</span>
 						</div>
 
 						<div class="thumb-preview-box">
-							<img src={activeClip.imageUrl} alt={activeClip.name} class="thumb-img" />
+							{#if activeClip.imageUrl}
+								<img src={activeClip.imageUrl} alt={activeClip.name} class="thumb-img" />
+								<button class="btn btn-xs btn-secondary btn-replace-thumb" onclick={() => triggerSingleClipReplace(activeClipIndex)}>
+									<Upload size={12} />
+									<span>Ganti Gambar</span>
+								</button>
+							{:else}
+								<div class="thumb-placeholder-box" onclick={() => triggerSingleClipReplace(activeClipIndex)}>
+									<ImageIcon size={28} opacity={0.4} />
+									<span class="ph-box-title">Scene #{activeClip.sceneNumber || activeClipIndex + 1} (Kosong)</span>
+									<span class="ph-box-sub">Klik untuk unggah gambar</span>
+									<button class="btn btn-xs btn-primary mt-1">Unggah Gambar</button>
+								</div>
+							{/if}
 						</div>
+
+						{#if activeClip.narration || activeClip.prompt}
+							<div class="storyboard-clip-panel">
+								{#if activeClip.narration}
+									<div class="clip-narration-box">
+										<span class="clip-panel-label">🎙️ Narasi Audio:</span>
+										<p class="clip-narration-text">"{activeClip.narration}"</p>
+									</div>
+								{/if}
+								{#if activeClip.prompt}
+									<div class="clip-prompt-box">
+										<div class="clip-panel-header">
+											<span class="clip-panel-label">✨ Visual Prompt:</span>
+											<button class="btn btn-xs btn-secondary" onclick={() => copySinglePrompt(activeClip.prompt, activeClipIndex)}>
+												<Copy size={11} />
+												<span>{copiedSceneIdx === activeClipIndex ? 'Disalin ✓' : 'Copy'}</span>
+											</button>
+										</div>
+										<textarea class="prompt-textarea" bind:value={activeClip.prompt} rows={3}></textarea>
+									</div>
+								{/if}
+							</div>
+						{/if}
 
 						<!-- Durasi Pengaturan -->
 						<div class="setting-row">
@@ -1028,16 +1776,124 @@
 							</div>
 						</div>
 
-						<!-- Motion Animation Effect -->
-						<div class="setting-row">
-							<span class="setting-label">Efek Gerak:</span>
-							<select bind:value={activeClip.motionEffect} class="select-input">
-								<option value="none">⏹️ Diam (Static)</option>
-								<option value="zoom_in">🔍 Ken Burns Zoom In</option>
-								<option value="zoom_out">🔎 Ken Burns Zoom Out</option>
-								<option value="pan_left">⬅️ Geser Halus Kiri</option>
-								<option value="pan_right">➡️ Geser Halus Kanan</option>
-							</select>
+						<!-- 1. Motion Animation Effect -->
+						<div class="setting-group-box">
+							<div class="setting-row">
+								<span class="setting-label">
+									<Sliders size={13} class="text-primary" />
+									<span>Animasi Gerak:</span>
+								</span>
+								<select bind:value={activeClip.motionEffect} class="select-input">
+									<option value="none">⏹️ Diam (Static)</option>
+									<option value="zoom_in">🔍 Ken Burns Zoom In</option>
+									<option value="zoom_out">🔎 Ken Burns Zoom Out</option>
+									<option value="pan_left">⬅️ Geser Halus Kiri</option>
+									<option value="pan_right">➡️ Geser Halus Kanan</option>
+									<option value="diagonal_drift">↗️ Diagonal Drift (Miring Dinamis)</option>
+									<option value="camera_shake">📳 Guncangan Kamera (Shake)</option>
+									<option value="pulse_pop">💓 Detak Halus (Pulse / Pop)</option>
+								</select>
+							</div>
+							<div class="setting-btn-row">
+								<button
+									class="btn btn-xs btn-secondary"
+									onclick={() => applyMotionToAll(activeClip.motionEffect || 'none')}
+									title="Terapkan animasi ini ke semua klip di track visual"
+								>
+									Terapkan ke Semua Klip
+								</button>
+								<button
+									class="btn btn-xs btn-secondary text-accent"
+									onclick={smartAlternateMotion}
+									title="Variasikan gerakan otomatis (Zoom In, Pan, Zoom Out...) di seluruh klip"
+								>
+									🎲 Variasi Otomatis
+								</button>
+							</div>
+						</div>
+
+						<!-- 2. Transition to Next Scene -->
+						<div class="setting-group-box">
+							<div class="setting-row">
+								<span class="setting-label">
+									<Sparkles size={13} class="text-accent" />
+									<span>Transisi Scene:</span>
+								</span>
+								<select bind:value={activeClip.transitionType} class="select-input">
+									<option value="none">⏹️ Cut Langsung (Tanpa Transisi)</option>
+									<option value="fade">🌫️ Crossfade / Dissolve Halus</option>
+									<option value="fadeblack">⬛ Dip to Black (Layar Hitam)</option>
+									<option value="fadewhite">⬜ Dip to White (Flash Terang)</option>
+									<option value="slideleft">⬅️ Geser Kiri (Slide Left)</option>
+									<option value="slideright">➡️ Geser Kanan (Slide Right)</option>
+									<option value="wipeleft">🧹 Sapu Kiri (Wipe Left)</option>
+									<option value="circlecrop">⭕ Iris Lingkaran (Circle Crop)</option>
+								</select>
+							</div>
+
+							{#if activeClip.transitionType && activeClip.transitionType !== 'none'}
+								<div class="setting-row sub-row">
+									<span class="setting-label-sm">Durasi Transisi:</span>
+									<div class="slider-with-val">
+										<input
+											type="range"
+											min="0.2"
+											max="1.5"
+											step="0.1"
+											bind:value={activeClip.transitionDuration}
+											class="slider-range-sm"
+										/>
+										<span class="sub-val-badge">{activeClip.transitionDuration || 0.5}s</span>
+									</div>
+								</div>
+							{/if}
+
+							<div class="setting-btn-row">
+								<button
+									class="btn btn-xs btn-secondary"
+									onclick={() => applyTransitionToAll(activeClip.transitionType || 'fade', activeClip.transitionDuration || 0.5)}
+									title="Terapkan transisi ini ke semua sambungan antar scene"
+								>
+									🔗 Terapkan Transisi ke Semua Sambungan
+								</button>
+							</div>
+						</div>
+
+						<!-- 3. Overlay Effect (Opsi A) -->
+						<div class="setting-group-box">
+							<div class="setting-row">
+								<span class="setting-label">
+									<Film size={13} class="text-warning" />
+									<span>Overlay Effect:</span>
+								</span>
+								<select bind:value={activeClip.overlayEffect} class="select-input">
+									<option value="none">⏹️ Tanpa Overlay (Normal)</option>
+									<option value="tv_static">📺 TV Rusak / VHS Glitch (Scanlines & Noise)</option>
+									<option value="no_signal">📡 Sinyal Hilang (SMPTE Bars & Alert)</option>
+									<option value="fog">🌫️ Berkabut / Misty Haze (Kabut Sinematik)</option>
+									<option value="film_grain">🎬 Film Lawas 8mm & Grain Vintage</option>
+									<option value="light_leak">⚡ Light Leaks (Kilatan Cahaya Lensa)</option>
+									<option value="rain">🌧️ Hujan / Rain Streaks</option>
+								</select>
+							</div>
+							<div class="setting-btn-row">
+								<button
+									class="btn btn-xs btn-secondary"
+									onclick={() => applyOverlayToAll(activeClip.overlayEffect || 'none')}
+									title="Terapkan efek overlay ini ke semua klip di track visual"
+								>
+									🎨 Terapkan ke Semua Klip
+								</button>
+								{#if activeClip.overlayEffect && activeClip.overlayEffect !== 'none'}
+									<button
+										class="btn btn-xs btn-secondary text-danger"
+										onclick={clearAllOverlays}
+										title="Hapus overlay dari semua klip"
+									>
+										🧹 Bersihkan Semua
+									</button>
+								{/if}
+							</div>
 						</div>
 
 						<!-- Clip Actions -->
@@ -1194,18 +2050,71 @@
 		<!-- Timeline Toolbar -->
 		<div class="timeline-bar">
 			<div class="timeline-left-actions">
-				<button class="btn btn-sm btn-primary" onclick={() => fileInputImages?.click()}>
+				<button
+					class="btn btn-sm btn-primary-ai"
+					onclick={() => (showAiStoryboardModal = true)}
+					title="Upload audio narasi & generate prompt visual tiap scene"
+				>
+					<Sparkles size={14} />
+					<span>AI Storyboard (Audio)</span>
+				</button>
+				<button
+					class="btn btn-sm btn-accent-bulk"
+					onclick={openBulkImagePicker}
+					title="Impor banyak gambar sekaligus (otomatis mencocokkan nomor file 1..N ke scene)"
+				>
+					<Upload size={14} />
+					<span>Bulk Import Gambar</span>
+				</button>
+				<button class="btn btn-sm btn-secondary" onclick={() => fileInputImages?.click()}>
 					<Plus size={14} />
-					<span>Import Gambar ke [{currentVisualTrack.name.split(' ')[0]}]</span>
+					<span>+ Gambar Biasa</span>
 				</button>
 				<button class="btn btn-sm btn-secondary" onclick={addVisualTrack}>
 					<Layers size={14} />
-					<span>+ Track Visual</span>
+					<span>+ Track V</span>
 				</button>
 				<button class="btn btn-sm btn-secondary" onclick={addAudioTrack}>
 					<Music size={14} />
-					<span>+ Track Audio</span>
+					<span>+ Track A</span>
 				</button>
+
+				{#if placeholderStats.hasPlaceholders}
+					<div class="placeholder-quick-actions">
+						<button
+							class="btn btn-xs btn-outline-warning"
+							onclick={copyAllPrompts}
+							title="Salin seluruh prompt untuk di-paste ke Midjourney/Leonardo"
+						>
+							<Copy size={12} />
+							<span>{copiedAllPromptsStatus ? 'Tersalin! ✅' : `Copy Semua Prompt (${placeholderStats.unassigned})`}</span>
+						</button>
+					</div>
+				{/if}
+
+				{#if durationMismatch}
+					<div class="mismatch-sync-pill">
+						<span class="mismatch-text">
+							⚠️ Visual ({formatTime(durationMismatch.visualDur)}) ≠ Audio ({formatTime(durationMismatch.audioDur)})
+						</span>
+						<button
+							class="btn btn-xs btn-warning-glow"
+							onclick={fitVisualToAudio}
+							title="Otomatis skalakan durasi semua scene visual agar sama persis dengan audio (1:1)"
+						>
+							🔗 Samakan Durasi Visual ke Audio
+						</button>
+						{#if durationMismatch.isVisualShorter}
+							<button
+								class="btn btn-xs btn-secondary"
+								onclick={extendLastClipToAudio}
+								title="Perpanjang scene terakhir sampai akhir audio"
+							>
+								➕ Perpanjang Scene Terakhir
+							</button>
+						{/if}
+					</div>
+				{/if}
 
 				<!-- Sorting Options: Nama vs Timestamp Download -->
 				<div class="sort-selector-group">
@@ -1273,23 +2182,62 @@
 		</div>
 
 		<!-- Scrollable Tracks Workspace -->
-		<div class="timeline-scrollable" bind:this={timelineScrollEl}>
+		<div
+			class="timeline-scrollable"
+			bind:this={timelineScrollEl}
+			onscroll={(e) => (scrollLeft = e.currentTarget.scrollLeft)}
+		>
 			<div class="tracks-inner" style="min-width: {Math.max(1000, totalDuration * pxPerSec + 250)}px;">
 				<!-- Time Ruler Track -->
-				<div class="ruler-track" onclick={handleTimelineRulerClick}>
-					{#each Array(Math.ceil(totalDuration) + 6) as _, sec}
-						<div class="ruler-mark" style="left: {sec * pxPerSec}px;">
-							<div class="ruler-line"></div>
-							<span class="ruler-text">{sec}s</span>
+				<div class="ruler-track">
+					<!-- Sticky Header matching track header column -->
+					<div class="track-header-fixed ruler-header-fixed">
+						<div class="th-main-title">
+							<Clock size={12} class="text-primary" />
+							<span class="ruler-header-title">TIMELINE</span>
 						</div>
-					{/each}
+					</div>
 
-					<!-- Playhead Needle -->
-					<div class="playhead-needle" style="left: {currentTime * pxPerSec}px;">
-						<div class="playhead-handle">
-							<span>{formatTime(currentTime)}</span>
+					<!-- Scrollable Ruler Content & Marks -->
+					<div
+						class="ruler-content"
+						bind:this={timelineRulerContentEl}
+						onmousedown={handleRulerMouseDown}
+						role="slider"
+						tabindex="0"
+						aria-label="Timeline scrubber"
+						aria-valuenow={currentTime}
+						aria-valuemin={0}
+						aria-valuemax={totalDuration}
+					>
+						{#each Array(Math.ceil((totalDuration + 20) / rulerInterval) + 1) as _, idx}
+							{@const sec = idx * rulerInterval}
+							<div class="ruler-mark major-mark" style="left: {sec * pxPerSec}px;">
+								<div class="ruler-line major-line"></div>
+								<span class="ruler-text">{formatTime(sec)}</span>
+							</div>
+							{#if rulerInterval >= 5}
+								{#each [1, 2, 3, 4] as sub}
+									{@const subSec = sec + (sub * rulerInterval) / 5}
+									{#if subSec <= totalDuration + 15}
+										<div class="ruler-mark minor-mark" style="left: {subSec * pxPerSec}px;">
+											<div class="ruler-line minor-line"></div>
+										</div>
+									{/if}
+								{/each}
+							{/if}
+						{/each}
+
+						<!-- Playhead Needle -->
+						<div
+							class="playhead-needle"
+							style="left: {currentTime * pxPerSec}px; opacity: {currentTime * pxPerSec < (scrollLeft - 10) ? 0 : 1};"
+						>
+							<div class="playhead-handle">
+								<span>{formatTime(currentTime)}</span>
+							</div>
+							<div class="playhead-line"></div>
 						</div>
-						<div class="playhead-line"></div>
 					</div>
 				</div>
 
@@ -1341,8 +2289,8 @@
 							{#if vt.clips.length}
 								{#each vt.clips as clip, i}
 									<div
-										class="clip-card {activeVisualTrackId === vt.id && activeClipIndex === i ? 'active-clip' : ''}"
-										style="width: {Math.max(48, clip.duration * pxPerSec)}px;"
+										class="clip-card {activeVisualTrackId === vt.id && activeClipIndex === i ? 'active-clip' : ''} {!clip.imageUrl || clip.isPlaceholder ? 'is-placeholder-clip' : ''}"
+										style="width: {clip.duration * pxPerSec}px;"
 										onclick={(e) => {
 											e.stopPropagation();
 											activeVisualTrackId = vt.id;
@@ -1350,14 +2298,64 @@
 										}}
 									>
 										<div class="clip-thumb-preview">
-											<img src={clip.imageUrl} alt={clip.name} loading="lazy" />
+											{#if clip.imageUrl}
+												<img src={clip.imageUrl} alt={clip.name} loading="lazy" />
+											{:else}
+												<div
+													class="placeholder-thumb-card"
+													onclick={(e) => {
+														e.stopPropagation();
+														triggerSingleClipReplace(i);
+													}}
+													title="Scene #{clip.sceneNumber || i + 1} - Klik untuk pasang gambar"
+												>
+													<span class="ph-mini-icon">🖼️</span>
+													<span class="ph-mini-tag">Scene #{clip.sceneNumber || i + 1}</span>
+												</div>
+											{/if}
+
+											<!-- Badges for Motion & Overlay FX -->
+											<div class="clip-badges-float">
+												{#if clip.prompt}
+													<button
+														class="badge-mini badge-copy-prompt"
+														title="Salin Prompt Scene #{clip.sceneNumber || i + 1}"
+														onclick={(e) => {
+															e.stopPropagation();
+															copySinglePrompt(clip.prompt, i);
+														}}
+													>
+														{copiedSceneIdx === i ? '✓' : '📋'}
+													</button>
+												{/if}
+												{#if clip.motionEffect && clip.motionEffect !== 'none'}
+													<span class="badge-mini badge-motion" title="Gerak: {clip.motionEffect}">
+														{#if clip.motionEffect.includes('zoom')}🔍{:else if clip.motionEffect.includes('pan')}⬅️{:else if clip.motionEffect.includes('shake')}📳{:else}↗️{/if}
+													</span>
+												{/if}
+												{#if clip.overlayEffect && clip.overlayEffect !== 'none'}
+													<span class="badge-mini badge-overlay" title="Overlay: {clip.overlayEffect}">
+														{#if clip.overlayEffect === 'tv_static'}📺{:else if clip.overlayEffect === 'no_signal'}📡{:else if clip.overlayEffect === 'fog'}🌫️{:else if clip.overlayEffect === 'film_grain'}🎬{:else if clip.overlayEffect === 'light_leak'}⚡{:else}🌧️{/if}
+													</span>
+												{/if}
+											</div>
 										</div>
 
 										<div class="clip-info-strip">
-											<span class="clip-index">#{i + 1}</span>
+											<span class="clip-index">#{clip.sceneNumber || i + 1}</span>
 											<span class="clip-name-text">{clip.name}</span>
 											<span class="clip-dur-badge">{clip.duration}s</span>
 										</div>
+
+										<!-- Right edge transition badge if not last clip -->
+										{#if i < vt.clips.length - 1 && clip.transitionType && clip.transitionType !== 'none'}
+											<div
+												class="transition-edge-badge"
+												title="Transisi ke #{i + 2}: {clip.transitionType} ({clip.transitionDuration || 0.5}s)"
+											>
+												<span>⧖</span>
+											</div>
+										{/if}
 
 										<!-- Right edge resize handle -->
 										<div
@@ -1426,7 +2424,7 @@
 							{#if at.audioUrl}
 								<div
 									class="audio-waveform-block"
-									style="width: {Math.max(80, (at.audioDuration || totalDuration) * pxPerSec)}px;"
+									style="width: {(at.audioDuration || totalDuration) * pxPerSec}px;"
 								>
 									<div class="audio-strip-header">
 										<Music size={12} />
@@ -1526,6 +2524,225 @@
 									<ExternalLink size={18} />
 									<span>Buka di Tab Baru</span>
 								</a>
+							</div>
+						</div>
+					{/if}
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- AI Audio Storyboard Modal -->
+	{#if showAiStoryboardModal}
+		<div class="modal-backdrop">
+			<div class="modal-card modal-card-storyboard">
+				<div class="modal-header">
+					<div class="modal-title-group">
+						<Wand2 size={22} class="text-accent" />
+						<div>
+							<h3>AI Audio to Storyboard & Scene Prompts</h3>
+							<p class="modal-subtitle">Upload audio narasi ➔ AI bagi scene & buat prompt visual konsisten ➔ Impor gambar bulk</p>
+						</div>
+					</div>
+					{#if !isGeneratingStoryboard}
+						<button class="close-btn" onclick={() => (showAiStoryboardModal = false)}>
+							<X size={18} />
+						</button>
+					{/if}
+				</div>
+
+				<div class="modal-body">
+					{#if isGeneratingStoryboard}
+						<div class="rendering-state sb-loading-state">
+							<div class="ai-spin-wrapper">
+								<Sparkles size={40} class="ai-spin-icon" />
+							</div>
+							<p class="step-text font-bold text-accent">{storyboardLoadingStep}</p>
+							<p class="sub-hint">Whisper sedang mentranskripsi narasi & AI LLM menyusun visual prompt 2D YouTube cartoon tiap adegan...</p>
+						</div>
+					{:else if !generatedStoryboard}
+						<!-- Step 1: Input Audio & Style Settings -->
+						<div class="storyboard-setup-form">
+							<!-- 1. Audio Upload Dropzone -->
+							<div class="sb-form-group">
+								<label class="sb-label" for="sb-audio-input">
+									<FileAudio size={15} class="text-primary" />
+									<span>1. Upload File Audio Voiceover / Narasi:</span>
+								</label>
+								<div class="audio-drop-area">
+									<input
+										type="file"
+										accept="audio/*"
+										id="sb-audio-input"
+										onchange={handleStoryboardAudioSelect}
+										class="hidden-file-input"
+									/>
+									<label for="sb-audio-input" class="audio-drop-label">
+										{#if storyboardAudioFile}
+											<div class="audio-selected-box">
+												<FileAudio size={26} class="text-accent" />
+												<div class="audio-sel-meta">
+													<span class="audio-sel-name">{storyboardAudioFile.name}</span>
+													<span class="audio-sel-size">{(storyboardAudioFile.size / 1024 / 1024).toFixed(2)} MB</span>
+												</div>
+												<span class="btn btn-xs btn-secondary">Ganti Audio</span>
+											</div>
+										{:else}
+											<div class="audio-empty-box">
+												<Upload size={28} opacity={0.6} />
+												<span class="audio-upload-text">Klik untuk pilih file audio narasi (MP3, WAV, M4A)</span>
+												<span class="audio-upload-hint">Audio akan dipotong jadi adegan otomatis dan dipasang ke track A1</span>
+											</div>
+										{/if}
+									</label>
+								</div>
+
+								{#if storyboardAudioPreviewUrl}
+									<div class="audio-player-preview-mini">
+										<audio src={storyboardAudioPreviewUrl} controls class="w-full"></audio>
+									</div>
+								{/if}
+							</div>
+
+							<!-- 2. Art Style Anchor & Presets -->
+							<div class="sb-form-group">
+								<div class="sb-label-row">
+									<label class="sb-label" for="sb-style-textarea">
+										<Sparkles size={15} class="text-accent" />
+										<span>2. Master Art Style & Karakter:</span>
+									</label>
+									<span class="sb-hint">Menjaga gambar konsisten dari Scene 1 sampai akhir</span>
+								</div>
+
+								<div class="style-presets-bar">
+									{#each STYLE_PRESETS as preset}
+										<button
+											type="button"
+											class="preset-chip {storyboardStylePreset === preset.id ? 'active' : ''}"
+											onclick={() => selectStylePreset(preset.id)}
+										>
+											{preset.label}
+										</button>
+									{/each}
+								</div>
+
+								<textarea
+									id="sb-style-textarea"
+									bind:value={storyboardStyleTemplate}
+									rows={3}
+									class="sb-textarea"
+									placeholder="Deskripsikan gaya seni, karakter, dan aspek rasio..."
+								></textarea>
+							</div>
+
+							<!-- 3. Pacing / Durasi Scene -->
+							<div class="sb-form-group">
+								<label class="sb-label">
+									<Clock size={15} class="text-warning" />
+									<span>3. Pacing Pemotongan Adegan (Durasi Tiap Scene):</span>
+								</label>
+								<div class="pacing-selector-grid">
+									<label class="pacing-card {storyboardPacing === 'fast' ? 'selected' : ''}">
+										<input type="radio" bind:group={storyboardPacing} value="fast" />
+										<span class="pacing-title">⚡ Cepat (2.8s - 4.5s)</span>
+										<span class="pacing-desc">Banyak adegan berganti cepat, pas untuk Shorts / Reels</span>
+									</label>
+									<label class="pacing-card {storyboardPacing === 'balanced' ? 'selected' : ''}">
+										<input type="radio" bind:group={storyboardPacing} value="balanced" />
+										<span class="pacing-title">⚖️ Seimbang (4.0s - 6.5s)</span>
+										<span class="pacing-desc">Standar video edukasi YouTube & dokumenter</span>
+									</label>
+									<label class="pacing-card {storyboardPacing === 'relaxed' ? 'selected' : ''}">
+										<input type="radio" bind:group={storyboardPacing} value="relaxed" />
+										<span class="pacing-title">🧘 Santai (5.5s - 8.5s)</span>
+										<span class="pacing-desc">Untuk narasi santai, cerita mendalam & dramatis</span>
+									</label>
+								</div>
+							</div>
+
+							<div class="sb-submit-row">
+								<button
+									type="button"
+									class="btn btn-primary-glow btn-lg w-full"
+									disabled={!storyboardAudioFile}
+									onclick={generateAiStoryboard}
+								>
+									<Wand2 size={18} />
+									<span>Analisis Audio & Buat Prompt Scene</span>
+								</button>
+							</div>
+						</div>
+					{:else}
+						<!-- Step 2: Storyboard Review, Copy Prompts, & Apply -->
+						<div class="storyboard-results-view">
+							<div class="sb-summary-bar">
+								<div class="sb-stat-group">
+									<div class="sb-stat-item">
+										<span class="sb-stat-label">Total Scenes:</span>
+										<span class="sb-stat-val text-accent">{generatedStoryboard.length} Adegan</span>
+									</div>
+									<div class="sb-stat-item">
+										<span class="sb-stat-label">Durasi Audio:</span>
+										<span class="sb-stat-val text-primary">{formatTime(storyboardAudioResult?.totalDuration || 0)}</span>
+									</div>
+								</div>
+								<div class="sb-top-actions">
+									<button type="button" class="btn btn-sm btn-secondary" onclick={copyAllPrompts}>
+										{#if copiedAllPromptsStatus}
+											<CheckCheck size={14} class="text-success" />
+											<span>Tersalin Semua!</span>
+										{:else}
+											<Copy size={14} />
+											<span>Copy Semua Prompts (1..N)</span>
+										{/if}
+									</button>
+									<button type="button" class="btn btn-sm btn-outline-danger" onclick={() => (generatedStoryboard = null)}>
+										<span>Ulangi / Ganti Audio</span>
+									</button>
+								</div>
+							</div>
+
+							<div class="sb-scenes-scroll">
+								{#each generatedStoryboard as sc, sIdx}
+									<div class="sb-scene-card">
+										<div class="sb-card-top">
+											<span class="sb-card-num">Scene #{sc.sceneNumber}</span>
+											<span class="sb-card-time">{formatTime(sc.start)} - {formatTime(sc.end)} ({sc.duration}s)</span>
+											<div class="sb-card-badges">
+												<span class="badge-mini badge-motion">{sc.motion}</span>
+												<span class="badge-mini badge-trans">{sc.transition}</span>
+											</div>
+											<button
+												type="button"
+												class="btn btn-xs btn-secondary btn-copy-single"
+												onclick={() => copySinglePrompt(sc.prompt, sIdx)}
+											>
+												<Copy size={12} />
+												<span>{copiedSceneIdx === sIdx ? 'Disalin ✓' : 'Copy'}</span>
+											</button>
+										</div>
+
+										<div class="sb-narration-box">
+											<span class="sb-label-sub">🎙️ Narasi:</span>
+											<p class="sb-narration-text">"{sc.narration}"</p>
+										</div>
+
+										<div class="sb-prompt-box">
+											<span class="sb-label-sub">✨ Prompt Visual (English):</span>
+											<p class="sb-prompt-text">{sc.prompt}</p>
+										</div>
+									</div>
+								{/each}
+							</div>
+
+							<div class="sb-apply-footer">
+								<div class="sb-footer-info">
+									<span>💡 <strong>Langkah Selanjutnya:</strong> Klik tombol di samping untuk menaruh audio ke A1 dan placeholder scene ke V1. Setelah gambar selesai di-generate, klik <strong>Bulk Import Gambar</strong> untuk memasang visual otomatis!</span>
+								</div>
+								<button type="button" class="btn btn-primary btn-lg" onclick={applyStoryboardToTimeline}>
+									<Sparkles size={18} />
+									<span>Terapkan Storyboard ke Timeline & Audio Track A1</span>
+								</button>
 							</div>
 						</div>
 					{/if}
@@ -1764,8 +2981,9 @@
 		background-size: contain;
 		background-position: center;
 		background-repeat: no-repeat;
-		position: relative;
-		transition: transform 0.2s ease-out;
+		position: absolute;
+		inset: 0;
+		will-change: transform, opacity;
 	}
 
 	/* Overlay Picture-in-Picture Box */
@@ -1816,6 +3034,15 @@
 	.anim-pan_right {
 		animation: animPanRight 4s ease-in-out infinite alternate;
 	}
+	.anim-diagonal_drift {
+		animation: animDiagonalDrift 4.5s ease-in-out infinite alternate;
+	}
+	.anim-camera_shake {
+		animation: animCameraShake 0.4s ease-in-out infinite;
+	}
+	.anim-pulse_pop {
+		animation: animPulsePop 1.6s ease-in-out infinite alternate;
+	}
 
 	@keyframes animZoomIn {
 		0% { transform: scale(1.0); }
@@ -1832,6 +3059,326 @@
 	@keyframes animPanRight {
 		0% { transform: scale(1.06) translateX(-2%); }
 		100% { transform: scale(1.06) translateX(2%); }
+	}
+	@keyframes animDiagonalDrift {
+		0% { transform: scale(1.04) translate(-1.5%, -1.5%); }
+		100% { transform: scale(1.10) translate(1.5%, 1.5%); }
+	}
+	@keyframes animCameraShake {
+		0% { transform: scale(1.06) translate(0, 0); }
+		20% { transform: scale(1.06) translate(-1.5px, 1.5px); }
+		40% { transform: scale(1.06) translate(1.5px, -1px); }
+		60% { transform: scale(1.06) translate(-1px, -1.5px); }
+		80% { transform: scale(1.06) translate(1px, 1.5px); }
+		100% { transform: scale(1.06) translate(0, 0); }
+	}
+	@keyframes animPulsePop {
+		0% { transform: scale(1.0); }
+		50% { transform: scale(1.05); }
+		100% { transform: scale(1.0); }
+	}
+
+	/* Live Transition Layers */
+	.transition-next-clip {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		background-size: contain;
+		background-position: center;
+		background-repeat: no-repeat;
+		z-index: 5;
+		pointer-events: none;
+		will-change: transform, opacity;
+	}
+
+	.transition-color-dip {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 6;
+		pointer-events: none;
+	}
+
+	/* Live Visual Overlay Effects */
+	.fx-overlay-canvas {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 7;
+		pointer-events: none;
+		overflow: hidden;
+	}
+
+	/* 1. TV Static / VHS Glitch */
+	.fx-tv-scanlines {
+		position: absolute;
+		inset: 0;
+		background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.35) 0px, rgba(0, 0, 0, 0.35) 2px, transparent 2px, transparent 4px);
+		opacity: 0.85;
+	}
+
+	.fx-tv-noise-anim {
+		position: absolute;
+		inset: 0;
+		background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.35'/%3E%3C/svg%3E");
+		animation: tvNoiseShake 0.15s steps(2) infinite;
+		mix-blend-mode: overlay;
+	}
+
+	@keyframes tvNoiseShake {
+		0% { transform: translate(0, 0); }
+		50% { transform: translate(-3%, 2%); }
+		100% { transform: translate(2%, -3%); }
+	}
+
+	.fx-vhs-osd {
+		position: absolute;
+		bottom: 12px;
+		left: 14px;
+		display: flex;
+		gap: 12px;
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: #22c55e;
+		text-shadow: 0 0 6px #22c55e;
+		letter-spacing: 0.08em;
+	}
+
+	.vhs-rec-dot {
+		color: #ef4444;
+		text-shadow: 0 0 6px #ef4444;
+		animation: blinkSlow 1s steps(2) infinite;
+	}
+
+	@keyframes blinkSlow {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0; }
+	}
+
+	/* 2. No Signal SMPTE */
+	.fx-smpte-bars {
+		position: absolute;
+		inset: 0;
+		background: linear-gradient(to right, #ffffff 0%, #ffffff 14.28%, #eab308 14.28%, #eab308 28.57%, #06b6d4 28.57%, #06b6d4 42.85%, #22c55e 42.85%, #22c55e 57.14%, #d946ef 57.14%, #d946ef 71.42%, #ef4444 71.42%, #ef4444 85.71%, #2563eb 85.71%, #2563eb 100%);
+		opacity: 0.9;
+	}
+
+	.fx-no-signal-modal {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		background: rgba(0, 0, 0, 0.85);
+		border: 3px solid #ef4444;
+		border-radius: 8px;
+		padding: 14px 24px;
+		text-align: center;
+		box-shadow: 0 0 20px rgba(239, 68, 68, 0.6);
+	}
+
+	.no-signal-banner {
+		font-family: var(--font-mono);
+		font-size: 1.15rem;
+		font-weight: 800;
+		color: #ef4444;
+		letter-spacing: 0.1em;
+		animation: blinkSlow 0.8s steps(2) infinite;
+	}
+
+	.no-signal-desc {
+		font-family: var(--font-mono);
+		font-size: 0.68rem;
+		color: #fbbf24;
+		margin-top: 4px;
+		letter-spacing: 0.05em;
+	}
+
+	/* 3. Fog / Misty Smoke */
+	.fx-fog-stream {
+		position: absolute;
+		inset: -50%;
+		background: radial-gradient(ellipse at 35% 45%, rgba(255, 255, 255, 0.3) 0%, rgba(220, 230, 242, 0.18) 35%, transparent 65%),
+		            radial-gradient(ellipse at 75% 65%, rgba(255, 255, 255, 0.25) 0%, rgba(200, 215, 235, 0.14) 40%, transparent 70%);
+		filter: blur(8px);
+		mix-blend-mode: screen;
+	}
+
+	.fx-fog-a {
+		animation: fogDriftA 12s ease-in-out infinite alternate;
+	}
+	.fx-fog-b {
+		animation: fogDriftB 16s ease-in-out infinite alternate;
+		opacity: 0.7;
+	}
+
+	@keyframes fogDriftA {
+		0% { transform: translate(-10%, -5%); }
+		100% { transform: translate(10%, 5%); }
+	}
+	@keyframes fogDriftB {
+		0% { transform: translate(8%, 10%) scale(1.1); }
+		100% { transform: translate(-8%, -8%) scale(0.95); }
+	}
+
+	/* 4. Film Grain 8mm */
+	.fx-film-vignette-ring {
+		position: absolute;
+		inset: 0;
+		box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.7), inset 0 0 140px rgba(0, 0, 0, 0.55);
+		background-color: rgba(180, 83, 9, 0.06);
+		mix-blend-mode: multiply;
+	}
+
+	.fx-film-grain-particles {
+		position: absolute;
+		inset: 0;
+		background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23grain)' opacity='0.28'/%3E%3C/svg%3E");
+		animation: filmGrainJitter 0.12s steps(2) infinite;
+		mix-blend-mode: overlay;
+	}
+
+	@keyframes filmGrainJitter {
+		0% { transform: translate(0, 0); }
+		50% { transform: translate(2%, -2%); }
+		100% { transform: translate(-2%, 2%); }
+	}
+
+	.fx-film-hair-scratch {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: 42%;
+		width: 1px;
+		background: rgba(255, 255, 255, 0.25);
+		box-shadow: 0 0 2px rgba(255, 255, 255, 0.4);
+		animation: hairFlicker 2s steps(4) infinite;
+	}
+
+	@keyframes hairFlicker {
+		0%, 100% { opacity: 0; transform: translateX(0); }
+		25% { opacity: 0.6; transform: translateX(25px); }
+		50% { opacity: 0; transform: translateX(-15px); }
+		75% { opacity: 0.8; transform: translateX(10px); }
+	}
+
+	/* 5. Light Leak */
+	.fx-light-leak-burst {
+		position: absolute;
+		inset: -20%;
+		background: radial-gradient(circle at 85% 15%, rgba(251, 146, 60, 0.5) 0%, rgba(245, 158, 11, 0.28) 30%, transparent 65%),
+		            radial-gradient(circle at 15% 85%, rgba(239, 68, 68, 0.35) 0%, transparent 55%);
+		mix-blend-mode: screen;
+		animation: lightLeakPulse 5s ease-in-out infinite alternate;
+	}
+
+	@keyframes lightLeakPulse {
+		0% { opacity: 0.6; transform: scale(1.0) rotate(0deg); }
+		50% { opacity: 0.95; transform: scale(1.08) rotate(3deg); }
+		100% { opacity: 0.5; transform: scale(0.96) rotate(-2deg); }
+	}
+
+	/* 6. Rain */
+	.fx-rain-drop-curtain {
+		position: absolute;
+		inset: 0;
+		background: repeating-linear-gradient(105deg, transparent, transparent 18px, rgba(255, 255, 255, 0.22) 19px, transparent 20px);
+		animation: rainFall 0.35s linear infinite;
+	}
+
+	@keyframes rainFall {
+		0% { background-position: 0 0; }
+		100% { background-position: 15px 100px; }
+	}
+
+	/* Setting Group Boxes (Inspector) */
+	.setting-group-box {
+		background: rgba(14, 20, 34, 0.6);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 8px;
+		padding: 8px 10px;
+		margin-bottom: 10px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.setting-btn-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-wrap: wrap;
+		padding-top: 2px;
+	}
+
+	.sub-row {
+		margin-top: 2px;
+	}
+
+	.setting-label-sm {
+		font-size: 0.68rem;
+		color: #94a3b8;
+		white-space: nowrap;
+	}
+
+	.slider-with-val {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex: 1;
+	}
+
+	.slider-range-sm {
+		flex: 1;
+		height: 4px;
+		accent-color: #06b6d4;
+		cursor: pointer;
+	}
+
+	.sub-val-badge {
+		font-family: var(--font-mono);
+		font-size: 0.65rem;
+		font-weight: 700;
+		color: #06b6d4;
+		min-width: 32px;
+	}
+
+	/* Timeline Badges */
+	.clip-badges-float {
+		position: absolute;
+		top: 3px;
+		left: 3px;
+		display: flex;
+		gap: 2px;
+		z-index: 5;
+	}
+
+	.badge-mini {
+		font-size: 0.58rem;
+		padding: 1px 3px;
+		border-radius: 3px;
+		background: rgba(0, 0, 0, 0.75);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		line-height: 1;
+	}
+
+	.transition-edge-badge {
+		position: absolute;
+		right: 6px;
+		top: 3px;
+		background: rgba(99, 102, 241, 0.85);
+		color: #ffffff;
+		font-size: 0.6rem;
+		padding: 1px 3px;
+		border-radius: 3px;
+		z-index: 6;
+		pointer-events: none;
+		line-height: 1;
 	}
 
 	.clip-watermark {
@@ -2513,13 +4060,35 @@
 
 	/* Ruler Track */
 	.ruler-track {
-		height: 26px;
+		height: 28px;
 		background: #0e1422;
 		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 		position: sticky;
 		top: 0;
 		z-index: 25;
+		display: flex;
+	}
+
+	.ruler-header-fixed {
+		height: 100%;
+		background: #0e1422;
+		border-right: 1px solid rgba(255, 255, 255, 0.08);
+		z-index: 30;
+	}
+
+	.ruler-header-title {
+		font-size: 0.65rem;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		color: #94a3b8;
+	}
+
+	.ruler-content {
+		position: relative;
+		flex: 1;
+		height: 100%;
 		cursor: pointer;
+		user-select: none;
 	}
 
 	.ruler-mark {
@@ -2538,12 +4107,55 @@
 		background: rgba(255, 255, 255, 0.2);
 	}
 
+	.ruler-mark.minor-mark .minor-line {
+		height: 4px;
+		background: rgba(255, 255, 255, 0.12);
+	}
+
+	.ruler-mark.major-mark .major-line {
+		height: 10px;
+		background: rgba(255, 255, 255, 0.45);
+	}
+
 	.ruler-text {
 		font-family: var(--font-mono);
-		font-size: 0.62rem;
-		color: #64748b;
+		font-size: 0.65rem;
+		color: #94a3b8;
 		padding-left: 3px;
 		user-select: none;
+		white-space: nowrap;
+	}
+
+	.mismatch-sync-pill {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		background: rgba(234, 179, 8, 0.15);
+		border: 1px solid rgba(234, 179, 8, 0.45);
+		border-radius: 999px;
+		padding: 3px 10px;
+		margin-left: 8px;
+		animation: pulseWarning 2s infinite ease-in-out;
+	}
+	@keyframes pulseWarning {
+		0%, 100% { border-color: rgba(234, 179, 8, 0.45); }
+		50% { border-color: rgba(234, 179, 8, 0.85); box-shadow: 0 0 12px rgba(234, 179, 8, 0.3); }
+	}
+	.mismatch-text {
+		font-size: 0.72rem;
+		color: #fef08a;
+		font-weight: 600;
+	}
+	.btn-warning-glow {
+		background: linear-gradient(135deg, #eab308, #f59e0b);
+		color: #000000;
+		font-weight: 700;
+		border: none;
+		box-shadow: 0 2px 8px rgba(234, 179, 8, 0.35);
+	}
+	.btn-warning-glow:hover {
+		background: linear-gradient(135deg, #facc15, #fbbf24);
+		box-shadow: 0 4px 14px rgba(234, 179, 8, 0.55);
 	}
 
 	/* Playhead Needle */
@@ -2555,6 +4167,7 @@
 		z-index: 35;
 		pointer-events: none;
 		transform: translateX(-50%);
+		transition: opacity 0.1s ease;
 	}
 
 	.playhead-handle {
@@ -2578,7 +4191,7 @@
 		top: 18px;
 		left: 50%;
 		width: 2px;
-		height: 500px;
+		height: 1200px;
 		background: #ef4444;
 		box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
 	}
@@ -2657,8 +4270,8 @@
 		display: flex;
 		align-items: center;
 		flex: 1;
-		padding: 4px 6px;
-		gap: 3px;
+		padding: 4px 0;
+		gap: 0;
 		position: relative;
 	}
 
@@ -2667,7 +4280,7 @@
 		height: 74px;
 		background: #172138;
 		border: 1px solid rgba(255, 255, 255, 0.12);
-		border-radius: 6px;
+		border-radius: 4px;
 		overflow: hidden;
 		display: flex;
 		flex-direction: column;
@@ -2675,6 +4288,7 @@
 		cursor: pointer;
 		transition: border-color 0.15s, box-shadow 0.15s;
 		flex-shrink: 0;
+		box-sizing: border-box;
 	}
 
 	.clip-card:hover {
@@ -2705,17 +4319,20 @@
 	.clip-info-strip {
 		height: 20px;
 		background: rgba(14, 20, 34, 0.9);
-		padding: 0 6px;
+		padding: 0 4px;
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		font-size: 0.65rem;
-		gap: 4px;
+		gap: 3px;
+		overflow: hidden;
+		white-space: nowrap;
 	}
 
 	.clip-index {
 		font-weight: 700;
 		color: #06b6d4;
+		flex-shrink: 0;
 	}
 
 	.clip-name-text {
@@ -2724,12 +4341,14 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		flex: 1;
+		min-width: 0;
 	}
 
 	.clip-dur-badge {
 		font-family: var(--font-mono);
 		font-weight: 700;
 		color: #e2e8f0;
+		flex-shrink: 0;
 	}
 
 	/* Resizing Drag Handle */
@@ -2737,7 +4356,7 @@
 		position: absolute;
 		top: 0;
 		bottom: 0;
-		width: 12px;
+		width: 8px;
 		cursor: ew-resize;
 		z-index: 10;
 		display: flex;
@@ -3021,5 +4640,608 @@
 	@keyframes toastPop {
 		from { opacity: 0; transform: translate(-50%, 10px); }
 		to { opacity: 1; transform: translate(-50%, 0); }
+	}
+
+	/* AI Storyboard & Bulk Import Styles */
+	.ai-storyboard-btn {
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.2));
+		border: 1px solid rgba(168, 85, 247, 0.4);
+		color: #e0e7ff;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-weight: 600;
+		transition: all 0.2s ease;
+	}
+	.ai-storyboard-btn:hover {
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(168, 85, 247, 0.35));
+		border-color: rgba(168, 85, 247, 0.7);
+		box-shadow: 0 0 16px rgba(168, 85, 247, 0.35);
+	}
+
+	.btn-primary-ai {
+		background: linear-gradient(135deg, #6366f1, #8b5cf6);
+		color: #ffffff;
+		border: none;
+		font-weight: 600;
+		box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+	}
+	.btn-primary-ai:hover {
+		background: linear-gradient(135deg, #4f46e5, #7c3aed);
+		box-shadow: 0 4px 18px rgba(99, 102, 241, 0.55);
+	}
+
+	.btn-accent-bulk {
+		background: linear-gradient(135deg, #06b6d4, #0ea5e9);
+		color: #ffffff;
+		border: none;
+		font-weight: 600;
+		box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
+	}
+	.btn-accent-bulk:hover {
+		background: linear-gradient(135deg, #0891b2, #0284c7);
+		box-shadow: 0 4px 18px rgba(14, 165, 233, 0.5);
+	}
+
+	.btn-primary-glow {
+		background: linear-gradient(135deg, #6366f1, #ec4899);
+		color: #ffffff;
+		border: none;
+		font-weight: 600;
+		box-shadow: 0 4px 16px rgba(236, 72, 153, 0.35);
+	}
+	.btn-primary-glow:hover {
+		background: linear-gradient(135deg, #4f46e5, #db2777);
+		box-shadow: 0 4px 22px rgba(236, 72, 153, 0.55);
+	}
+
+	.placeholder-quick-actions {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-left: 6px;
+		padding-left: 8px;
+		border-left: 1px solid rgba(255, 255, 255, 0.1);
+	}
+	.btn-outline-warning {
+		background: rgba(234, 179, 8, 0.12);
+		border: 1px solid rgba(234, 179, 8, 0.4);
+		color: #fde047;
+	}
+	.btn-outline-warning:hover {
+		background: rgba(234, 179, 8, 0.22);
+		border-color: rgba(234, 179, 8, 0.7);
+	}
+
+	/* Canvas Placeholder Card */
+	.placeholder-canvas-card {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: radial-gradient(circle at 50% 40%, #1e1b4b 0%, #090a16 80%);
+		padding: 30px;
+		text-align: center;
+		box-sizing: border-box;
+	}
+	.ph-canvas-inner {
+		max-width: 650px;
+		width: 100%;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 16px;
+	}
+	.ph-top-badge {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.badge-scene-num {
+		background: #6366f1;
+		color: #ffffff;
+		padding: 4px 12px;
+		border-radius: 999px;
+		font-weight: 700;
+		font-size: 0.85rem;
+		box-shadow: 0 0 12px rgba(99, 102, 241, 0.5);
+	}
+	.badge-scene-dur {
+		background: rgba(255, 255, 255, 0.1);
+		color: #cbd5e1;
+		padding: 4px 10px;
+		border-radius: 999px;
+		font-size: 0.8rem;
+		font-weight: 600;
+	}
+	.ph-narration-quote {
+		margin: 0;
+		font-size: 1.15rem;
+		font-style: italic;
+		color: #f8fafc;
+		line-height: 1.5;
+		text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+	}
+	.ph-prompt-display-box {
+		width: 100%;
+		background: rgba(15, 23, 42, 0.75);
+		border: 1px solid rgba(168, 85, 247, 0.35);
+		border-radius: 10px;
+		padding: 12px 16px;
+		text-align: left;
+		backdrop-filter: blur(8px);
+	}
+	.ph-prompt-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 8px;
+	}
+	.ph-prompt-label {
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: #c084fc;
+		letter-spacing: 0.05em;
+	}
+	.ph-prompt-body {
+		margin: 0;
+		font-size: 0.85rem;
+		color: #e2e8f0;
+		line-height: 1.45;
+		user-select: all;
+	}
+	.ph-canvas-footer {
+		display: flex;
+		gap: 10px;
+		flex-wrap: wrap;
+		justify-content: center;
+		margin-top: 4px;
+	}
+
+	/* Timeline Placeholder Clip Card */
+	.is-placeholder-clip {
+		background: linear-gradient(135deg, #1e1b4b, #111827) !important;
+		border: 1px dashed rgba(168, 85, 247, 0.5) !important;
+	}
+	.placeholder-thumb-card {
+		width: 100%;
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 3px;
+		cursor: pointer;
+		background: rgba(99, 102, 241, 0.08);
+		transition: background 0.2s ease;
+	}
+	.placeholder-thumb-card:hover {
+		background: rgba(99, 102, 241, 0.2);
+	}
+	.ph-mini-icon {
+		font-size: 1.1rem;
+		opacity: 0.7;
+	}
+	.ph-mini-tag {
+		font-size: 0.65rem;
+		color: #c084fc;
+		font-weight: 700;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		padding: 0 4px;
+	}
+	.badge-copy-prompt {
+		background: #6366f1 !important;
+		color: #ffffff !important;
+		cursor: pointer;
+		border: none;
+		transition: transform 0.15s ease;
+	}
+	.badge-copy-prompt:hover {
+		transform: scale(1.15);
+	}
+
+	/* Sidebar Clip Inspector for Storyboard Clip */
+	.btn-replace-thumb {
+		margin-top: 8px;
+		width: 100%;
+	}
+	.thumb-placeholder-box {
+		height: 110px;
+		background: rgba(15, 23, 42, 0.6);
+		border: 2px dashed rgba(168, 85, 247, 0.35);
+		border-radius: 8px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		cursor: pointer;
+		padding: 10px;
+		transition: border-color 0.2s ease;
+	}
+	.thumb-placeholder-box:hover {
+		border-color: rgba(168, 85, 247, 0.8);
+		background: rgba(99, 102, 241, 0.1);
+	}
+	.ph-box-title {
+		font-size: 0.8rem;
+		font-weight: 700;
+		color: #c084fc;
+	}
+	.ph-box-sub {
+		font-size: 0.7rem;
+		color: #94a3b8;
+	}
+	.storyboard-clip-panel {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		margin-top: 10px;
+		padding-top: 10px;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.clip-panel-label {
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: #94a3b8;
+	}
+	.clip-narration-text {
+		margin: 4px 0 0;
+		font-size: 0.8rem;
+		color: #f1f5f9;
+		font-style: italic;
+		background: rgba(0, 0, 0, 0.25);
+		padding: 6px 10px;
+		border-radius: 6px;
+	}
+	.clip-panel-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 4px;
+	}
+	.prompt-textarea {
+		width: 100%;
+		background: #0f172a;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 6px;
+		padding: 8px;
+		font-size: 0.75rem;
+		color: #e2e8f0;
+		resize: vertical;
+		font-family: inherit;
+		box-sizing: border-box;
+	}
+
+	/* AI Storyboard Modal Specifics */
+	.modal-card-storyboard {
+		max-width: 820px;
+		width: 90vw;
+		max-height: 85vh;
+		display: flex;
+		flex-direction: column;
+	}
+	.modal-subtitle {
+		margin: 2px 0 0;
+		font-size: 0.78rem;
+		color: #94a3b8;
+		font-weight: 400;
+	}
+	.storyboard-setup-form {
+		display: flex;
+		flex-direction: column;
+		gap: 18px;
+	}
+	.sb-form-group {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.sb-label {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: #e2e8f0;
+	}
+	.sb-label-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.sb-hint {
+		font-size: 0.72rem;
+		color: #94a3b8;
+	}
+	.audio-drop-area {
+		width: 100%;
+	}
+	.hidden-file-input {
+		display: none;
+	}
+	.audio-drop-label {
+		display: block;
+		cursor: pointer;
+	}
+	.audio-empty-box {
+		border: 2px dashed rgba(99, 102, 241, 0.4);
+		background: rgba(99, 102, 241, 0.05);
+		border-radius: 10px;
+		padding: 24px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		transition: all 0.2s ease;
+	}
+	.audio-empty-box:hover {
+		border-color: rgba(99, 102, 241, 0.8);
+		background: rgba(99, 102, 241, 0.12);
+	}
+	.audio-upload-text {
+		font-weight: 600;
+		font-size: 0.88rem;
+		color: #e2e8f0;
+	}
+	.audio-upload-hint {
+		font-size: 0.75rem;
+		color: #94a3b8;
+	}
+	.audio-selected-box {
+		border: 1px solid rgba(168, 85, 247, 0.5);
+		background: rgba(168, 85, 247, 0.08);
+		border-radius: 10px;
+		padding: 14px 18px;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+	.audio-sel-meta {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+	.audio-sel-name {
+		font-weight: 600;
+		font-size: 0.85rem;
+		color: #f8fafc;
+	}
+	.audio-sel-size {
+		font-size: 0.72rem;
+		color: #94a3b8;
+	}
+	.audio-player-preview-mini {
+		margin-top: 6px;
+	}
+	.style-presets-bar {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+	.preset-chip {
+		background: #1e293b;
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		color: #cbd5e1;
+		border-radius: 999px;
+		padding: 5px 12px;
+		font-size: 0.75rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.preset-chip:hover {
+		background: #334155;
+		color: #ffffff;
+	}
+	.preset-chip.active {
+		background: #6366f1;
+		border-color: #818cf8;
+		color: #ffffff;
+		box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+	}
+	.sb-textarea {
+		width: 100%;
+		background: #0f172a;
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		border-radius: 8px;
+		padding: 10px;
+		color: #e2e8f0;
+		font-size: 0.82rem;
+		line-height: 1.45;
+		resize: vertical;
+		font-family: inherit;
+		box-sizing: border-box;
+	}
+	.sb-textarea:focus {
+		outline: none;
+		border-color: #818cf8;
+	}
+	.pacing-selector-grid {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 10px;
+	}
+	.pacing-card {
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: #0f172a;
+		border-radius: 8px;
+		padding: 10px;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.pacing-card input {
+		display: none;
+	}
+	.pacing-card.selected {
+		border-color: #6366f1;
+		background: rgba(99, 102, 241, 0.12);
+	}
+	.pacing-title {
+		font-weight: 700;
+		font-size: 0.8rem;
+		color: #f1f5f9;
+	}
+	.pacing-desc {
+		font-size: 0.7rem;
+		color: #94a3b8;
+		line-height: 1.35;
+	}
+	.sb-loading-state {
+		padding: 50px 20px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 14px;
+	}
+	.ai-spin-wrapper {
+		width: 70px;
+		height: 70px;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(236, 72, 153, 0.2));
+		animation: spinPulse 2s infinite ease-in-out;
+	}
+	@keyframes spinPulse {
+		0%, 100% { transform: scale(1) rotate(0deg); }
+		50% { transform: scale(1.1) rotate(180deg); }
+	}
+
+	/* Storyboard Results Review View */
+	.storyboard-results-view {
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+	}
+	.sb-summary-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		background: rgba(15, 23, 42, 0.7);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 8px;
+		padding: 10px 14px;
+	}
+	.sb-stat-group {
+		display: flex;
+		align-items: center;
+		gap: 16px;
+	}
+	.sb-stat-item {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.sb-stat-label {
+		font-size: 0.78rem;
+		color: #94a3b8;
+	}
+	.sb-stat-val {
+		font-size: 0.85rem;
+		font-weight: 700;
+	}
+	.sb-top-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.sb-scenes-scroll {
+		max-height: 48vh;
+		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding-right: 4px;
+	}
+	.sb-scene-card {
+		background: #0f172a;
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 8px;
+		padding: 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.sb-card-top {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+	.sb-card-num {
+		font-weight: 700;
+		font-size: 0.82rem;
+		color: #818cf8;
+	}
+	.sb-card-time {
+		font-size: 0.75rem;
+		color: #94a3b8;
+	}
+	.sb-card-badges {
+		display: flex;
+		gap: 4px;
+		margin-left: auto;
+	}
+	.badge-trans {
+		background: rgba(14, 165, 233, 0.2);
+		color: #38bdf8;
+	}
+	.btn-copy-single {
+		margin-left: 6px;
+	}
+	.sb-narration-box {
+		background: rgba(0, 0, 0, 0.25);
+		padding: 6px 10px;
+		border-radius: 6px;
+	}
+	.sb-label-sub {
+		font-size: 0.68rem;
+		font-weight: 700;
+		color: #94a3b8;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+	.sb-narration-text {
+		margin: 2px 0 0;
+		font-size: 0.8rem;
+		color: #f1f5f9;
+		font-style: italic;
+	}
+	.sb-prompt-box {
+		background: rgba(168, 85, 247, 0.08);
+		border: 1px solid rgba(168, 85, 247, 0.25);
+		padding: 8px 10px;
+		border-radius: 6px;
+	}
+	.sb-prompt-text {
+		margin: 2px 0 0;
+		font-size: 0.8rem;
+		color: #e2e8f0;
+		line-height: 1.4;
+		user-select: all;
+	}
+	.sb-apply-footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		background: rgba(99, 102, 241, 0.08);
+		border: 1px solid rgba(99, 102, 241, 0.25);
+		border-radius: 8px;
+		padding: 12px 16px;
+	}
+	.sb-footer-info {
+		font-size: 0.78rem;
+		color: #cbd5e1;
+		line-height: 1.4;
+		flex: 1;
 	}
 </style>

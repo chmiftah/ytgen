@@ -1,4 +1,5 @@
 <script>
+	import { untrack } from 'svelte';
 	import { 
 		X, 
 		Flame, 
@@ -165,17 +166,23 @@
 		return CONTENT_CATEGORIES.find(c => c.id === selectedCategoryKey) || CONTENT_CATEGORIES[0];
 	});
 
+	let wasOpen = false;
+
 	$effect(() => {
-		if (isOpen) {
-			if (initialNiche && CONTENT_CATEGORIES.some(c => c.id === initialNiche)) {
-				selectedCategoryKey = initialNiche;
-			}
-			if (initialTopic && !topicInput) {
-				topicInput = initialTopic;
-			}
-			if (titles.length === 0) {
-				handleGenerateTitles();
-			}
+		const currentlyOpen = isOpen;
+		if (currentlyOpen && !wasOpen) {
+			wasOpen = true;
+			untrack(() => {
+				if (initialNiche && CONTENT_CATEGORIES.some((c) => c.id === initialNiche)) {
+					selectedCategoryKey = initialNiche;
+				}
+				topicInput = initialTopic || '';
+				if (titles.length === 0) {
+					handleGenerateTitles();
+				}
+			});
+		} else if (!currentlyOpen && wasOpen) {
+			wasOpen = false;
 		}
 	});
 
@@ -190,6 +197,7 @@
 		if (overrideTopic !== null) {
 			topicInput = overrideTopic;
 		}
+		const effectiveTopic = overrideTopic !== null ? overrideTopic : topicInput;
 
 		try {
 			const resolvedKey = (deepseekApiKey && deepseekApiKey !== 'sk-0802f45e1d4e41c8ae8d46396c97b746')
@@ -203,7 +211,7 @@
 				body: JSON.stringify({
 					category: selectedCategoryKey,
 					angle: selectedAngle,
-					topic: topicInput.trim(),
+					topic: effectiveTopic.trim(),
 					apiKey: cleanKey
 				})
 			});
@@ -225,7 +233,7 @@
 	function handleSelectCategory(catKey) {
 		selectedCategoryKey = catKey;
 		topicInput = ''; // reset topic input when switching category
-		handleGenerateTitles();
+		handleGenerateTitles('');
 	}
 
 	function copyToClipboard(text, index) {
@@ -354,7 +362,7 @@
 							onkeydown={(e) => { if (e.key === 'Enter') handleGenerateTitles(); }}
 						/>
 						{#if topicInput}
-							<button type="button" class="clear-topic-btn" onclick={() => { topicInput = ''; handleGenerateTitles(); }}>
+							<button type="button" class="clear-topic-btn" onclick={() => { topicInput = ''; handleGenerateTitles(''); }}>
 								<X size={13} />
 							</button>
 						{/if}

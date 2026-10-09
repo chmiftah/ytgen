@@ -1,5 +1,5 @@
 <script>
-	import { Zap, Play, Pause, Wand2, RefreshCw, Download, ChevronRight, ChevronLeft, Search, Film, Music, Type, Settings, Check, X, Sparkles, Clock, Mic, Volume2, RotateCcw, Eye, EyeOff, Key, Sliders } from 'lucide-svelte';
+	import { Zap, Play, Pause, Wand2, RefreshCw, Download, ChevronRight, ChevronLeft, Search, Film, Music, Type, Settings, Check, X, Sparkles, Clock, Mic, Volume2, RotateCcw, Eye, EyeOff, Key, Sliders, AlertCircle } from 'lucide-svelte';
 	import { POPULAR_VOICES } from '$lib/services/voiceService.js';
 
 	// ------------------------------------------------------------------
@@ -24,8 +24,10 @@
 	];
 
 	const VOICE_OPTIONS = [
-		{ id: 'id-ID-ArdiNeural', label: 'Ardi (Pria)', rate: '+10%' },
-		{ id: 'id-ID-GadisNeural', label: 'Gadis (Wanita)', rate: '+8%' }
+		{ id: 'id-ID-ArdiNeural', label: 'Ardi (Pria ID)', rate: '+10%', lang: 'id' },
+		{ id: 'id-ID-GadisNeural', label: 'Gadis (Wanita ID)', rate: '+8%', lang: 'id' },
+		{ id: 'en-US-ChristopherNeural', label: 'Christopher (Male EN)', rate: '+0%', lang: 'en' },
+		{ id: 'en-US-JennyNeural', label: 'Jenny (Female EN)', rate: '+0%', lang: 'en' }
 	];
 
 	// Model ElevenLabs yang support Bahasa Indonesia
@@ -172,6 +174,7 @@
 	// State
 	// ------------------------------------------------------------------
 	let step = $state(1); // 1: Setup, 2: Review Script, 3: Footage, 4: Audio, 5: Render
+	let contentLang = $state('id'); // 'id' | 'en'
 	let selectedTheme = $state('dark-psychology');
 	let customTopic = $state('');
 	let targetDuration = $state(35);
@@ -179,15 +182,18 @@
 	// Step 2 - Titles & Script
 	let titleOptions = $state([]);
 	let selectedTitle = $state(null);
+	let generatedTitlesHistory = $state([]);
 	let scenes = $state([]);
 	let totalDuration = $state(0);
 	let isGeneratingTitles = $state(false);
 	let isGeneratingScript = $state(false);
+	let rerollCount = $state(0);
 
 	// Step 3 - Footage
 	let giphyApiKey = $state('');
 	let searchingSceneIdx = $state(null);
 	let giphyResults = $state({});
+	let footageSource = $state('auto'); // 'auto' | 'giphy' | 'pexels'
 
 	// Step 4 - Audio & Settings
 	let selectedVoiceEngine = $state('edge_tts'); // 'edge_tts' | 'elevenlabs'
@@ -231,6 +237,13 @@
 
 	function totalScenesDuration() {
 		return scenes.reduce((s, sc) => s + (sc.audioDuration || sc.duration || 4), 0).toFixed(1);
+	}
+
+	function getPreviewSubtitle(text, style) {
+		if (!text) return '';
+		const words = text.split(/\s+/).filter(Boolean);
+		const phrase = words.slice(0, 3).join(' ') + (words.length > 3 ? '...' : '');
+		return style === 'mrbeast-bold' ? phrase.toUpperCase() : phrase;
 	}
 
 	$effect(() => {
@@ -312,26 +325,48 @@
 	}
 
 	// ------------------------------------------------------------------
-	// Step 1 → Step 2: Generate Titles
+	// Step 1 → Step 2: Generate Titles (with anti-duplicate history)
 	// ------------------------------------------------------------------
-	async function handleGenerateTitles() {
+	async function handleGenerateTitles(isReroll = false) {
 		errorMsg = '';
 		const topic = getTopicText();
 		if (!topic) { errorMsg = 'Masukkan topik atau pilih tema terlebih dahulu.'; return; }
 
 		isGeneratingTitles = true;
-		titleOptions = [];
+		if (isReroll) {
+			rerollCount++;
+		} else {
+			rerollCount = 0;
+			titleOptions = [];
+			generatedTitlesHistory = [];
+		}
 		selectedTitle = null;
+		scenes = [];
 
 		try {
 			const res = await fetch('/api/generate-shorts-script', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'generate-titles', theme: selectedTheme, topic })
+				body: JSON.stringify({
+					action: 'generate-titles',
+					theme: selectedTheme,
+					topic,
+					customTopic: customTopic.trim(),
+					isReroll,
+					rerollCount,
+					excludeTitles: generatedTitlesHistory.slice(-20),
+					seed: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+					lang: contentLang
+				})
 			});
 			const data = await res.json();
 			if (!data.success) throw new Error(data.error || 'Gagal generate judul.');
 			titleOptions = data.titles || [];
+			for (const t of titleOptions) {
+				if (t.title && !generatedTitlesHistory.includes(t.title)) {
+					generatedTitlesHistory.push(t.title);
+				}
+			}
 			step = 2;
 		} catch (e) {
 			errorMsg = e.message;
@@ -357,7 +392,8 @@
 					action: 'generate-script',
 					theme: selectedTheme,
 					topic,
-					targetDuration
+					targetDuration,
+					lang: contentLang
 				})
 			});
 			const data = await res.json();
@@ -373,7 +409,7 @@
 	}
 
 	// ------------------------------------------------------------------
-	// Step 3: Search Giphy for a scene
+	// Step 3: Search Footage (Giphy / Pexels) for a scene
 	// ------------------------------------------------------------------
 	async function searchGiphyForScene(idx) {
 		const scene = scenes[idx];
@@ -389,18 +425,21 @@
 					query: scene.giphyQuery,
 					theme: selectedTheme,
 					limit: 8,
-					apiKey: giphyApiKey || undefined
+					apiKey: giphyApiKey || undefined,
+					sceneIndex: idx,
+					footageSource
 				})
 			});
 			const data = await res.json();
 			if (data.success) {
 				giphyResults[idx] = data.clips || [];
-				// Auto-select first clip
+				// Auto-select diverse clip per scene
 				if (!scene.selectedClip && data.clips.length > 0) {
-					scenes[idx] = { ...scenes[idx], selectedClip: data.clips[0] };
+					const pickIdx = idx % data.clips.length;
+					scenes[idx] = { ...scenes[idx], selectedClip: data.clips[pickIdx] };
 				}
 			} else {
-				errorMsg = data.error || 'Gagal mengambil klip dari Giphy.';
+				errorMsg = data.error || 'Gagal mengambil klip footage.';
 			}
 		} catch (e) {
 			errorMsg = e.message;
@@ -412,12 +451,14 @@
 	async function searchAllScenes() {
 		for (let i = 0; i < scenes.length; i++) {
 			await searchGiphyForScene(i);
+			if (i < scenes.length - 1) {
+				await new Promise((r) => setTimeout(r, 200));
+			}
 		}
 	}
 
 	function selectClip(sceneIdx, clip) {
 		scenes[sceneIdx] = { ...scenes[sceneIdx], selectedClip: clip };
-		giphyResults[sceneIdx] = [];
 	}
 
 	// ------------------------------------------------------------------
@@ -596,6 +637,20 @@
 						</div>
 					</div>
 
+					<div class="lang-section" style="margin-bottom: 24px;">
+						<label>🌐 Bahasa Konten (Language)</label>
+						<div class="duration-options">
+							<button class="duration-btn" class:selected={contentLang === 'id'} onclick={() => { contentLang = 'id'; selectedVoice = 'id-ID-ArdiNeural'; }}>
+								<span class="dur-label">🇮🇩 Indonesia</span>
+								<span class="dur-sub">Naskah & Suara ID</span>
+							</button>
+							<button class="duration-btn" class:selected={contentLang === 'en'} onclick={() => { contentLang = 'en'; selectedVoice = 'en-US-ChristopherNeural'; }}>
+								<span class="dur-label">🇺🇸 English</span>
+								<span class="dur-sub">EN Script & Voice</span>
+							</button>
+						</div>
+					</div>
+
 					<div class="theme-grid">
 						{#each THEMES as theme}
 							<button
@@ -676,22 +731,42 @@
 				<div class="step-content">
 					<div class="step-header">
 						<div class="step-number">02</div>
-						<div>
-							<h2>Pilih Judul & Generate Naskah</h2>
-							<p>AI membuat 3 opsi judul viral. Pilih satu, lalu AI akan generate naskah per adegan.</p>
+						<div style="flex: 1;">
+							<div class="step-header-row">
+								<h2>Pilih Judul & Generate Naskah</h2>
+								<button
+									class="btn-reroll-top"
+									onclick={() => handleGenerateTitles(true)}
+									disabled={isGeneratingTitles}
+									title="Generate 3 pilihan judul baru yang berbeda"
+								>
+									<RefreshCw size={14} class={isGeneratingTitles ? 'spin' : ''} />
+									<span>{isGeneratingTitles ? 'Meracik Judul Baru...' : '🎲 Acak Judul Baru'}</span>
+								</button>
+							</div>
+							<p>AI membuat 3 opsi judul viral. Pilih satu, atau klik <strong>Acak Judul Baru</strong> untuk opsi sudut pandang lain.</p>
 						</div>
 					</div>
 
-					{#if titleOptions.length > 0}
-						<div class="titles-list">
+					{#if isGeneratingTitles && titleOptions.length === 0}
+						<div class="titles-loading-state">
+							<RefreshCw size={26} class="spin" />
+							<span>AI sedang meracik 3 sudut pandang judul baru yang viral...</span>
+						</div>
+					{:else if titleOptions.length > 0}
+						<div class="titles-list" class:loading-faded={isGeneratingTitles}>
 							{#each titleOptions as t, i}
 								<button
 									class="title-card"
 									class:selected={selectedTitle?.title === t.title}
 									onclick={() => { selectedTitle = t; scenes = []; }}
+									disabled={isGeneratingTitles}
 								>
 									<div class="title-rank">#{i + 1}</div>
 									<div class="title-body">
+										{#if t.subTopic}
+											<div class="title-subtopic-tag">🎯 {t.subTopic}</div>
+										{/if}
 										<div class="title-text">{t.title}</div>
 										{#if t.hook}
 											<div class="title-hook">"{t.hook}"</div>
@@ -719,9 +794,17 @@
 								Ganti Tema
 							</button>
 							<button
+								class="btn-secondary"
+								onclick={() => handleGenerateTitles(true)}
+								disabled={isGeneratingTitles}
+							>
+								<RefreshCw size={15} class={isGeneratingTitles ? 'spin' : ''} />
+								Acak Judul Lain
+							</button>
+							<button
 								class="btn-primary"
 								onclick={handleGenerateScript}
-								disabled={!selectedTitle || isGeneratingScript}
+								disabled={!selectedTitle || isGeneratingScript || isGeneratingTitles}
 							>
 								{#if isGeneratingScript}
 									<RefreshCw size={18} class="spin" />
@@ -779,36 +862,60 @@
 			{/if}
 
 			<!-- ============================== -->
-			<!-- STEP 3: FOOTAGE GIPHY -->
+			<!-- STEP 3: FOOTAGE GIPHY / PEXELS -->
 			<!-- ============================== -->
 			{#if step === 3}
 				<div class="step-content">
 					<div class="step-header">
 						<div class="step-number">03</div>
 						<div>
-							<h2>Pilih Footage dari Giphy</h2>
-							<p>AI otomatis mencari klip Giphy per adegan. Klik klip untuk mengganti pilihan.</p>
+							<h2>Pilih Footage & Klip Video</h2>
+							<p>AI otomatis mencari klip visual per adegan. Anda bisa mengedit kata kunci dan memilih klip secara fleksibel.</p>
 						</div>
 					</div>
 
-					<div class="giphy-key-section">
-						<div class="giphy-key-info">
-							<span>🔑 Giphy API Key</span>
-							<a href="https://developers.giphy.com" target="_blank" rel="noopener">Dapatkan gratis →</a>
+					<div class="footage-toolbar">
+						<div class="source-pills">
+							<span class="source-pills-label">Sumber:</span>
+							<button
+								class="source-pill"
+								class:active={footageSource === 'auto'}
+								onclick={() => footageSource = 'auto'}
+							>
+								🤖 Otomatis (Giphy + Pexels)
+							</button>
+							<button
+								class="source-pill"
+								class:active={footageSource === 'giphy'}
+								onclick={() => footageSource = 'giphy'}
+							>
+								👾 Giphy GIF
+							</button>
+							<button
+								class="source-pill"
+								class:active={footageSource === 'pexels'}
+								onclick={() => footageSource = 'pexels'}
+							>
+								📹 Pexels 9:16 Video
+							</button>
 						</div>
-						<input
-							type="text"
-							bind:value={giphyApiKey}
-							placeholder="Masukkan Giphy API Key (atau biarkan kosong untuk default)"
-							class="api-key-input"
-						/>
+
+						<div class="giphy-key-mini">
+							<span title="Opsional">🔑 Giphy Key:</span>
+							<input
+								type="text"
+								bind:value={giphyApiKey}
+								placeholder="Default server key (opsional)"
+								class="api-key-input-sm"
+							/>
+						</div>
 					</div>
 
 					<div class="footage-actions">
 						<button class="btn-primary" onclick={searchAllScenes} disabled={searchingSceneIdx !== null}>
 							{#if searchingSceneIdx !== null}
 								<RefreshCw size={16} class="spin" />
-								Mencari Klip...
+								Mencari Klip (Scene {searchingSceneIdx + 1})...
 							{:else}
 								<Search size={16} />
 								Cari Semua Klip Otomatis
@@ -821,12 +928,29 @@
 							<div class="footage-scene">
 								<div class="footage-scene-header">
 									<div class="footage-scene-num">Scene {i + 1}</div>
-									<div class="footage-scene-query">"{scene.giphyQuery}"</div>
-									<div class="footage-scene-text">{scene.spokenText.slice(0, 60)}...</div>
+
+									<!-- Interactive Editable Query Input -->
+									<div class="footage-query-box">
+										<Search size={13} class="query-icon" />
+										<input
+											type="text"
+											bind:value={scene.giphyQuery}
+											class="footage-query-input"
+											placeholder="Kata kunci pencarian (misal: detective, mind blown, cat)"
+											onkeydown={(e) => {
+												if (e.key === 'Enter') {
+													e.preventDefault();
+													searchGiphyForScene(i);
+												}
+											}}
+										/>
+									</div>
+
 									<button
-										class="btn-ghost-sm"
+										class="btn-ghost-sm btn-search-clip"
 										onclick={() => searchGiphyForScene(i)}
 										disabled={searchingSceneIdx === i}
+										title="Cari klip untuk kata kunci ini"
 									>
 										{#if searchingSceneIdx === i}
 											<RefreshCw size={12} class="spin" />
@@ -835,12 +959,21 @@
 										{/if}
 										Cari
 									</button>
+
+									<div class="footage-scene-text" title={scene.spokenText}>{scene.spokenText.slice(0, 50)}...</div>
 								</div>
 
 								<!-- Current selected clip -->
 								{#if scene.selectedClip}
 									<div class="selected-clip">
-										<div class="selected-clip-label">✅ Terpilih:</div>
+										<div class="selected-clip-header">
+											<span class="selected-clip-label">✅ Terpilih:</span>
+											{#if scene.selectedClip.source === 'pexels'}
+												<span class="clip-badge pexels">📹 Pexels 9:16</span>
+											{:else}
+												<span class="clip-badge giphy">👾 Giphy</span>
+											{/if}
+										</div>
 										<div class="clip-preview-container">
 											<video
 												src={scene.selectedClip.mp4Url}
@@ -850,24 +983,31 @@
 												playsinline
 												class="clip-video-thumb"
 											></video>
-											<div class="clip-info">{scene.selectedClip.title?.slice(0, 40) || 'Klip Giphy'}</div>
+											<div class="clip-meta">
+												<div class="clip-info">{scene.selectedClip.title?.slice(0, 50) || 'Klip Terpilih'}</div>
+												<div class="clip-dimensions">{scene.selectedClip.width}×{scene.selectedClip.height} px • {scene.selectedClip.source?.toUpperCase()}</div>
+											</div>
 										</div>
 									</div>
 								{:else}
 									<div class="no-clip-placeholder">
-										<Film size={24} />
-										<span>Belum ada klip. Klik "Cari" untuk mencari.</span>
+										<Film size={20} />
+										<span>Belum ada klip. Ketik kata kunci lalu klik "Cari".</span>
 									</div>
 								{/if}
 
-								<!-- Giphy search results grid -->
+								<!-- Search results grid -->
 								{#if giphyResults[i]?.length > 0}
+									<div class="results-grid-header">
+										<span>Pilihan Footage ({giphyResults[i].length} klip) - Klik klip untuk memilih:</span>
+									</div>
 									<div class="giphy-results-grid">
 										{#each giphyResults[i] as clip}
 											<button
 												class="giphy-result-item"
 												class:selected-result={scene.selectedClip?.id === clip.id}
 												onclick={() => selectClip(i, clip)}
+												title={clip.title}
 											>
 												<video
 													src={clip.mp4Url}
@@ -877,11 +1017,23 @@
 													playsinline
 													class="result-video"
 												></video>
+												<div class="result-badge-tag">
+													{#if clip.source === 'pexels'}
+														<span class="mini-badge pexels">📹 Pexels</span>
+													{:else}
+														<span class="mini-badge giphy">👾 Giphy</span>
+													{/if}
+												</div>
 												{#if scene.selectedClip?.id === clip.id}
 													<div class="result-check"><Check size={16} /></div>
 												{/if}
 											</button>
 										{/each}
+									</div>
+								{:else if giphyResults[i] && giphyResults[i].length === 0 && searchingSceneIdx !== i}
+									<div class="empty-clips-hint">
+										<AlertCircle size={14} />
+										<span>Klip tidak ditemukan untuk kata kunci ini. Coba gunakan kata kunci bahasa Inggris yang lebih sederhana (1-2 kata).</span>
 									</div>
 								{/if}
 							</div>
@@ -923,7 +1075,7 @@
 										class:active={selectedVoiceEngine === 'edge_tts'}
 										onclick={() => {
 											selectedVoiceEngine = 'edge_tts';
-											if (!selectedVoice.startsWith('id-ID-')) selectedVoice = 'id-ID-ArdiNeural';
+											if (!selectedVoice.startsWith('id-ID-') && !selectedVoice.startsWith('en-US-')) selectedVoice = contentLang === 'en' ? 'en-US-ChristopherNeural' : 'id-ID-ArdiNeural';
 										}}
 									>
 										<Mic size={13} /> Edge TTS (Gratis)
@@ -944,7 +1096,7 @@
 
 							{#if selectedVoiceEngine === 'edge_tts'}
 								<div class="option-row">
-									{#each VOICE_OPTIONS as voice}
+									{#each VOICE_OPTIONS.filter(v => v.lang === contentLang) as voice}
 										<button
 											class="option-card"
 											class:selected={selectedVoice === voice.id}
@@ -1013,14 +1165,13 @@
 									{/if}
 								</div>
 
-								<!-- Model Selector (Spesifik Support Bahasa Indonesia) -->
 								<div class="eleven-model-box">
 									<div class="model-box-header">
 										<div class="model-title-with-badge">
 											<span class="model-section-title">🤖 Model AI ElevenLabs</span>
-											<span class="model-indonesia-pill">🇮🇩 Support Bahasa Indonesia</span>
+											<span class="model-indonesia-pill">🌐 Support 30+ Languages</span>
 										</div>
-										<span class="model-section-hint">Semua model di bawah fasih membaca naskah Indonesia</span>
+										<span class="model-section-hint">Semua model di bawah fasih membaca naskah berbagai bahasa</span>
 									</div>
 									<div class="model-cards-list">
 										{#each ELEVEN_MODELS as m}
@@ -1332,7 +1483,7 @@
 						<!-- Subtitle overlay preview -->
 						{#if previewingScene !== null && scenes[previewingScene]?.spokenText}
 							<div class="phone-subtitle" class:viral-yellow={selectedSubtitle === 'viral-yellow'} class:mrbeast={selectedSubtitle === 'mrbeast-bold'}>
-								{scenes[previewingScene].spokenText}
+								{getPreviewSubtitle(scenes[previewingScene].spokenText, selectedSubtitle)}
 							</div>
 						{/if}
 
@@ -1707,11 +1858,62 @@
 	/* ================================================================ */
 	/* STEP 2 – TITLES */
 	/* ================================================================ */
+	.step-header-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+	.btn-reroll-top {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		background: rgba(167, 139, 250, 0.12);
+		border: 1px solid rgba(167, 139, 250, 0.28);
+		border-radius: 9999px;
+		color: #c4b5fd;
+		font-size: 0.82rem;
+		font-weight: 700;
+		padding: 0.35rem 0.9rem;
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+	.btn-reroll-top:hover:not(:disabled) {
+		background: rgba(167, 139, 250, 0.22);
+		border-color: #a78bfa;
+		color: #ffffff;
+		transform: translateY(-1px);
+	}
+	.btn-reroll-top:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+	.titles-loading-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 1rem;
+		padding: 3rem 1.5rem;
+		background: rgba(255, 255, 255, 0.02);
+		border: 1px dashed rgba(167, 139, 250, 0.2);
+		border-radius: 12px;
+		color: #c4b5fd;
+		font-size: 0.95rem;
+		margin-bottom: 1.5rem;
+	}
 	.titles-list {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
 		margin-bottom: 1.5rem;
+		transition: opacity 0.2s ease;
+	}
+	.titles-list.loading-faded {
+		opacity: 0.45;
+		pointer-events: none;
+		filter: blur(0.5px);
 	}
 
 	.title-card {
@@ -1740,6 +1942,18 @@
 		width: 2rem;
 	}
 	.title-body { flex: 1; }
+	.title-subtopic-tag {
+		display: inline-block;
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: #c4b5fd;
+		background: rgba(167, 139, 250, 0.15);
+		border: 1px solid rgba(167, 139, 250, 0.28);
+		padding: 0.15rem 0.55rem;
+		border-radius: 9999px;
+		margin-bottom: 0.35rem;
+		letter-spacing: 0.02em;
+	}
 	.title-text { font-weight: 700; font-size: 1rem; margin-bottom: 0.3rem; }
 	.title-hook { font-size: 0.8rem; color: rgba(232, 232, 240, 0.5); font-style: italic; }
 	.title-ctr {
@@ -1832,45 +2046,95 @@
 	/* ================================================================ */
 	/* STEP 3 – FOOTAGE */
 	/* ================================================================ */
-	.giphy-key-section {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(167, 139, 250, 0.12);
-		border-radius: 12px;
-		padding: 1rem 1.25rem;
-		margin-bottom: 1.25rem;
-	}
-	.giphy-key-info {
+	/* ================================================================ */
+	/* STEP 3 – FOOTAGE */
+	/* ================================================================ */
+	.footage-toolbar {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		margin-bottom: 0.6rem;
-		font-size: 0.85rem;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(167, 139, 250, 0.12);
+		border-radius: 12px;
+		padding: 0.75rem 1rem;
+		margin-bottom: 1.25rem;
 	}
-	.giphy-key-info a { color: #a78bfa; font-size: 0.8rem; }
-
-	.footage-actions { margin-bottom: 1.5rem; }
+	.source-pills {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+	.source-pills-label {
+		font-size: 0.8rem;
+		color: rgba(232, 232, 240, 0.5);
+		margin-right: 0.25rem;
+	}
+	.source-pill {
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		color: rgba(232, 232, 240, 0.7);
+		font-size: 0.78rem;
+		padding: 0.35rem 0.75rem;
+		border-radius: 20px;
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+	.source-pill:hover {
+		background: rgba(167, 139, 250, 0.15);
+		color: #e8e8f0;
+	}
+	.source-pill.active {
+		background: linear-gradient(135deg, rgba(167, 139, 250, 0.3), rgba(99, 102, 241, 0.3));
+		border-color: #a78bfa;
+		color: #fff;
+		font-weight: 600;
+	}
+	.giphy-key-mini {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.78rem;
+		color: rgba(232, 232, 240, 0.5);
+	}
+	.api-key-input-sm {
+		background: rgba(0, 0, 0, 0.3);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 6px;
+		padding: 0.3rem 0.6rem;
+		font-size: 0.75rem;
+		color: #e8e8f0;
+		width: 170px;
+	}
+	.footage-actions { margin-bottom: 1.25rem; }
 
 	.footage-scenes {
 		display: flex;
 		flex-direction: column;
 		gap: 1.25rem;
-		max-height: 560px;
+		max-height: 580px;
 		overflow-y: auto;
 		padding-right: 0.25rem;
 	}
 
 	.footage-scene {
 		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(167, 139, 250, 0.1);
+		border: 1px solid rgba(167, 139, 250, 0.12);
 		border-radius: 12px;
 		padding: 1rem;
+		transition: border-color 0.2s;
+	}
+	.footage-scene:hover {
+		border-color: rgba(167, 139, 250, 0.25);
 	}
 
 	.footage-scene-header {
 		display: flex;
 		align-items: center;
-		gap: 0.75rem;
-		margin-bottom: 0.75rem;
+		gap: 0.6rem;
+		margin-bottom: 0.85rem;
 		flex-wrap: wrap;
 	}
 	.footage-scene-num {
@@ -1882,47 +2146,120 @@
 		border-radius: 20px;
 		flex-shrink: 0;
 	}
-	.footage-scene-query {
-		font-size: 0.8rem;
-		color: rgba(167, 139, 250, 0.8);
+	.footage-query-box {
+		display: flex;
+		align-items: center;
+		background: rgba(0, 0, 0, 0.35);
+		border: 1px solid rgba(167, 139, 250, 0.25);
+		border-radius: 8px;
+		padding: 0.25rem 0.6rem;
+		gap: 0.4rem;
+		flex: 1;
+		min-width: 220px;
+		max-width: 380px;
+	}
+	.footage-query-box:focus-within {
+		border-color: #a78bfa;
+		box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.2);
+	}
+	.footage-query-box :global(.query-icon) {
+		color: rgba(167, 139, 250, 0.7);
 		flex-shrink: 0;
 	}
+	.footage-query-input {
+		background: transparent;
+		border: none;
+		outline: none;
+		color: #f1f1f8;
+		font-size: 0.82rem;
+		width: 100%;
+		font-weight: 500;
+	}
+	.footage-query-input::placeholder {
+		color: rgba(232, 232, 240, 0.35);
+	}
+	.btn-search-clip {
+		padding: 0.3rem 0.7rem;
+		font-size: 0.78rem;
+		border-radius: 6px;
+	}
 	.footage-scene-text {
-		font-size: 0.8rem;
-		color: rgba(232, 232, 240, 0.5);
+		font-size: 0.78rem;
+		color: rgba(232, 232, 240, 0.45);
 		flex: 1;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
-	.selected-clip { margin-bottom: 0.75rem; }
+	.selected-clip {
+		margin-bottom: 0.75rem;
+		background: rgba(74, 222, 128, 0.04);
+		border: 1px solid rgba(74, 222, 128, 0.15);
+		border-radius: 10px;
+		padding: 0.6rem 0.75rem;
+	}
+	.selected-clip-header {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 0.4rem;
+	}
 	.selected-clip-label {
 		font-size: 0.75rem;
 		color: #4ade80;
-		margin-bottom: 0.4rem;
+		font-weight: 600;
+	}
+	.clip-badge {
+		font-size: 0.68rem;
+		font-weight: 600;
+		padding: 0.15rem 0.45rem;
+		border-radius: 10px;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+	.clip-badge.giphy {
+		background: rgba(167, 139, 250, 0.2);
+		color: #c4b5fd;
+		border: 1px solid rgba(167, 139, 250, 0.3);
+	}
+	.clip-badge.pexels {
+		background: rgba(20, 184, 166, 0.2);
+		color: #5eead4;
+		border: 1px solid rgba(20, 184, 166, 0.3);
 	}
 	.clip-preview-container { display: flex; align-items: center; gap: 0.75rem; }
 	.clip-video-thumb {
-		width: 120px;
-		height: 80px;
+		width: 110px;
+		height: 70px;
 		object-fit: cover;
 		border-radius: 8px;
-		border: 2px solid rgba(74, 222, 128, 0.3);
+		border: 2px solid rgba(74, 222, 128, 0.4);
+		background: #000;
 	}
-	.clip-info { font-size: 0.8rem; color: rgba(232, 232, 240, 0.6); }
+	.clip-meta { display: flex; flex-direction: column; gap: 0.2rem; }
+	.clip-info { font-size: 0.8rem; color: rgba(232, 232, 240, 0.8); font-weight: 500; }
+	.clip-dimensions { font-size: 0.7rem; color: rgba(232, 232, 240, 0.4); }
 
 	.no-clip-placeholder {
 		display: flex;
 		align-items: center;
-		gap: 0.75rem;
-		color: rgba(232, 232, 240, 0.3);
-		font-size: 0.85rem;
-		padding: 0.75rem 0;
+		gap: 0.6rem;
+		color: rgba(232, 232, 240, 0.35);
+		font-size: 0.82rem;
+		padding: 0.6rem 0;
 	}
 
+	.results-grid-header {
+		font-size: 0.74rem;
+		color: rgba(232, 232, 240, 0.5);
+		margin-top: 0.5rem;
+		margin-bottom: 0.35rem;
+	}
 	.giphy-results-grid {
 		display: grid;
 		grid-template-columns: repeat(4, 1fr);
 		gap: 0.5rem;
-		margin-top: 0.5rem;
 	}
 	.giphy-result-item {
 		position: relative;
@@ -1931,12 +2268,48 @@
 		aspect-ratio: 16/9;
 		border: 2px solid transparent;
 		cursor: pointer;
-		transition: border-color 0.2s;
+		transition: all 0.2s;
 		padding: 0;
-		background: transparent;
+		background: #000;
 	}
-	.giphy-result-item:hover { border-color: rgba(167, 139, 250, 0.6); }
+	.giphy-result-item:hover {
+		border-color: rgba(167, 139, 250, 0.7);
+		transform: scale(1.02);
+	}
 	.giphy-result-item.selected-result { border-color: #4ade80; }
+	.result-badge-tag {
+		position: absolute;
+		bottom: 4px;
+		left: 4px;
+		z-index: 2;
+	}
+	.mini-badge {
+		font-size: 0.62rem;
+		font-weight: 600;
+		padding: 0.1rem 0.35rem;
+		border-radius: 4px;
+		backdrop-filter: blur(4px);
+	}
+	.mini-badge.giphy {
+		background: rgba(109, 40, 217, 0.75);
+		color: #fff;
+	}
+	.mini-badge.pexels {
+		background: rgba(13, 148, 136, 0.85);
+		color: #fff;
+	}
+	.empty-clips-hint {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.78rem;
+		color: #f87171;
+		background: rgba(248, 113, 113, 0.08);
+		border: 1px solid rgba(248, 113, 113, 0.2);
+		padding: 0.5rem 0.75rem;
+		border-radius: 8px;
+		margin-top: 0.5rem;
+	}
 	.result-video {
 		width: 100%;
 		height: 100%;
@@ -2820,25 +3193,30 @@
 
 	.phone-subtitle {
 		position: absolute;
-		bottom: 60px;
-		left: 8px;
-		right: 8px;
+		bottom: 75px;
+		left: 12px;
+		right: 12px;
 		text-align: center;
-		font-size: 0.65rem;
-		font-weight: 800;
-		line-height: 1.3;
-		padding: 4px;
+		font-size: 0.76rem;
+		font-weight: 900;
+		line-height: 1.2;
+		padding: 4px 6px;
 		z-index: 5;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.phone-subtitle.viral-yellow {
-		color: white;
-		text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+		color: #FFE800;
+		font-family: 'Arial Black', -apple-system, sans-serif;
+		text-shadow: -1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 1.5px 0 #000, 0 2px 4px rgba(0, 0, 0, 0.9);
 	}
 	.phone-subtitle.mrbeast {
-		color: white;
-		font-family: Impact, sans-serif;
-		text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000;
-		letter-spacing: 0.5px;
+		color: #FFFFFF;
+		font-family: Impact, -apple-system, sans-serif;
+		text-transform: uppercase;
+		letter-spacing: 0.6px;
+		text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 2px 6px rgba(180, 0, 0, 0.85);
 	}
 
 	.phone-ui-overlay {

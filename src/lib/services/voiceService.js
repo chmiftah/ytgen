@@ -215,9 +215,73 @@ export const POPULAR_VOICES = [
 	}
 ];
 
+export const GEMINI_TTS_VOICES = [
+	{
+		id: 'gemini-Puck',
+		voiceName: 'Puck',
+		name: 'Puck (Pria Energik & Santai)',
+		gender: 'Male',
+		lang: 'Multi',
+		category: 'Santai & Kartun',
+		description: 'Karakter suara pria muda, ceria, sedikit jenaka — sangat pas untuk gaya animasi Stickman!',
+		emoji: '👦',
+		sampleUrl: null,
+		provider: 'gemini_tts'
+	},
+	{
+		id: 'gemini-Charon',
+		voiceName: 'Charon',
+		name: 'Charon (Pria Deep & Berwibawa)',
+		gender: 'Male',
+		lang: 'Multi',
+		category: 'Berat & Dokumenter',
+		description: 'Suara pria berwibawa, berat, dan misterius — cocok untuk topik misteri, horor, & fakta filosofis',
+		emoji: '🎙️',
+		sampleUrl: null,
+		provider: 'gemini_tts'
+	},
+	{
+		id: 'gemini-Kore',
+		voiceName: 'Kore',
+		name: 'Kore (Wanita Hangat & Ramah)',
+		gender: 'Female',
+		lang: 'Multi',
+		category: 'Hangat & Storytelling',
+		description: 'Suara wanita lembut, ramah, dan artikulasi jernih — ideal untuk edukasi & cerita santai',
+		emoji: '👩',
+		sampleUrl: null,
+		provider: 'gemini_tts'
+	},
+	{
+		id: 'gemini-Fenrir',
+		voiceName: 'Fenrir',
+		name: 'Fenrir (Pria Tegas & Berapi-api)',
+		gender: 'Male',
+		lang: 'Multi',
+		category: 'Tegas & Semangat',
+		description: 'Suara pria bertenaga, percaya diri dan tegas — bagus untuk aksi seru & narasi motivasi',
+		emoji: '🐺',
+		sampleUrl: null,
+		provider: 'gemini_tts'
+	},
+	{
+		id: 'gemini-Aoede',
+		voiceName: 'Aoede',
+		name: 'Aoede (Wanita Elegan & Ekspresif)',
+		gender: 'Female',
+		lang: 'Multi',
+		category: 'Ekspresif & Jernih',
+		description: 'Artikulasi tinggi, ekspresif dan dinamis untuk narasi bersemangat & inspiratif',
+		emoji: '✨',
+		sampleUrl: null,
+		provider: 'gemini_tts'
+	}
+];
+
 export const DEFAULT_F5_VOICE_ID = 'f5-reporter';
 export const DEFAULT_EDGE_VOICE_ID = 'id-ID-ArdiNeural';
 export const DEFAULT_ELEVEN_VOICE_ID = 'pNInz6obpgDQGcFmaJgB';
+export const DEFAULT_GEMINI_VOICE_ID = 'gemini-Puck';
 
 export function isF5Voice(voiceId) {
 	if (!voiceId) return false;
@@ -229,20 +293,30 @@ export function isEdgeVoice(voiceId) {
 	return EDGE_TTS_VOICES.some((v) => v.id === voiceId) || voiceId.includes('Neural');
 }
 
+export function isGeminiVoice(voiceId) {
+	if (!voiceId) return false;
+	return (
+		voiceId.startsWith('gemini-') ||
+		GEMINI_TTS_VOICES.some((v) => v.id === voiceId || v.voiceName === voiceId)
+	);
+}
+
 export function getVoiceById(voiceId) {
 	return (
 		F5_LOCAL_VOICES.find((v) => v.id === voiceId) ||
 		EDGE_TTS_VOICES.find((v) => v.id === voiceId) ||
+		GEMINI_TTS_VOICES.find((v) => v.id === voiceId || v.voiceName === voiceId) ||
 		POPULAR_VOICES.find((v) => v.id === voiceId) ||
 		null
 	);
 }
 
 export function getVoiceEngine(voiceId, explicitMode = null) {
-	if (explicitMode && ['f5_tts', 'edge_tts', 'elevenlabs'].includes(explicitMode)) {
+	if (explicitMode && ['f5_tts', 'edge_tts', 'elevenlabs', 'gemini_tts'].includes(explicitMode)) {
 		return explicitMode;
 	}
 	if (isF5Voice(voiceId)) return 'f5_tts';
 	if (isEdgeVoice(voiceId)) return 'edge_tts';
+	if (isGeminiVoice(voiceId)) return 'gemini_tts';
 	return 'elevenlabs';
 }

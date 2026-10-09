@@ -1,6 +1,26 @@
 <script>
 	import { onMount } from 'svelte';
-	import { Wand2, Play, Pause, ArrowLeft, Layers, Download, Film, RefreshCw, Music, Volume2, Mic, Sliders, Flame, Sparkles } from 'lucide-svelte';
+	import {
+		Wand2,
+		Play,
+		Pause,
+		ArrowLeft,
+		Layers,
+		Download,
+		Film,
+		RefreshCw,
+		Music,
+		Volume2,
+		Mic,
+		Sliders,
+		Flame,
+		Sparkles,
+		Key,
+		ExternalLink,
+		Eye,
+		EyeOff,
+		Check
+	} from 'lucide-svelte';
 	import { SCRIPT_PRESETS } from '$lib/services/scriptAnalyzer.js';
 	import GenerationProgressConsole from '$lib/components/GenerationProgressConsole.svelte';
 	import StickmanScriptModal from '$lib/components/StickmanScriptModal.svelte';
@@ -11,8 +31,14 @@
 		getAudioEffectById
 	} from '$lib/services/audioEffectService.js';
 	import { BGM_TRACKS } from '$lib/services/audioEngine.js';
-	import { DEFAULT_EDGE_VOICE_ID } from '$lib/services/voiceService.js';
+	import {
+		DEFAULT_EDGE_VOICE_ID,
+		DEFAULT_GEMINI_VOICE_ID,
+		GEMINI_TTS_VOICES,
+		isGeminiVoice
+	} from '$lib/services/voiceService.js';
 	import { humanizeScript } from '$lib/services/scriptHumanizer.js';
+	import WhisperAudioModal from '$lib/components/WhisperAudioModal.svelte';
 
 	let script = $state(SCRIPT_PRESETS[0].text);
 	let videoTitle = $state(SCRIPT_PRESETS[0].title);
@@ -24,6 +50,7 @@
 	);
 	let showScriptModal = $state(false);
 	let showTitleModal = $state(false);
+	let showWhisperModal = $state(false);
 	let isGeneratingQuickTitle = $state(false);
 	let activeAudioTab = $state('voice');
 	let humanizeNotice = $state('');
@@ -67,6 +94,61 @@
 		}
 	}
 
+	async function handleWhisperImportSuccess(data) {
+		if (data.scenes && data.scenes.length > 0) {
+			if (data.fullTranscript) {
+				script = data.fullTranscript;
+			}
+			if (!videoTitle || videoTitle.length < 5) {
+				videoTitle = (data.fullTranscript || '').slice(0, 48).trim() + '...';
+			}
+
+			// Automatically analyze empty space for every single scene so text never collides with character!
+			const aligned = [];
+			for (const sc of data.scenes) {
+				let side = 'right';
+				if (sc.image) {
+					try { side = await detectEmptySide(sc.image); } catch {}
+				}
+				const align = side === 'right' ? 'right' : 'left';
+				aligned.push({
+					...sc,
+					textSide: side,
+					layoutSide: side,
+					textAlign: align,
+					textOffsetX: 0,
+					textOffsetY: 0
+				});
+			}
+
+			scenes = aligned;
+			stickmanTextAlign = 'auto';
+			activeSceneIndex = 0;
+			selectScene(0);
+			// Navigate to Step 3 so the user can inspect & customize Pose & Karakter, then Step 4 (Papan), then Step 5 (Player)
+			wizardStep = 3;
+			addGenLog('WHISPER', `Berhasil! ${data.scenes.length} adegan telah dibuat. Posisi teks otomatis ditempatkan di ruang kosong setiap gambar!`, 'success');
+		}
+	}
+
+	function applyStylesAndOpenPlayer() {
+		// Apply selected global styles from Step 3 & 4 to all scenes
+		scenes = scenes.map((s) => ({
+			...s,
+			imageAnim: s.imageAnim || stickmanImageAnim,
+			idleMotion: s.idleMotion || stickmanIdleMotion,
+			textAnim: stickmanAnim,
+			textIdleMotion: stickmanTextIdleMotion,
+			textColorTop: stickmanTextColorTop,
+			textColorBottom: stickmanTextColorBottom,
+			doodleType: stickmanDoodle,
+			fontSize: stickmanFontSize
+		}));
+		wizardStep = 5;
+		activeSceneIndex = 0;
+		selectScene(0);
+	}
+
 	async function generateQuickAiTitle(chosenCategory = 'wealth_finance') {
 		if (isGeneratingQuickTitle) return;
 		isGeneratingQuickTitle = true;
@@ -91,6 +173,16 @@
 			isGeneratingQuickTitle = false;
 		}
 	}
+	// ── Wizard Step State ─────────────────────────────────
+	let wizardStep = $state(1); // 1-5
+
+	function setSceneAlign(id) {
+		if (!currentScene) return;
+		scenes[activeSceneIndex] = { ...currentScene, textAlign: id, textSide: id === 'left' ? 'left' : id === 'right' ? 'right' : id === 'middle' ? 'middle' : 'center' };
+		scenes = [...scenes];
+		stickmanTextAlign = id;
+	}
+
 	let scenes = $state([]);
 	let activeSceneIndex = $state(0);
 	let stickmanTextRotate = $state(-0.8);
@@ -132,9 +224,10 @@
 	let stickmanFontSize = $state(60);
 	let stickmanFontFamily = $state("'Shadows Into Light',cursive");
 	let stickmanAnim = $state('pop');
-	let stickmanTextAlign = $state('left');
+	let stickmanTextAlign = $state('auto');
 	let stickmanTextIdleMotion = $state('shake');
 	const POS_OPTIONS = [
+		{ id: 'auto', label: '🎯 Auto (Ruang Kosong)' },
 		{ id: 'left', label: 'Kiri' },
 		{ id: 'center', label: 'Tengah Kolom' },
 		{ id: 'right', label: 'Kanan' },
@@ -268,6 +361,10 @@
 	let stickmanDoodle = $state('none');
 
 	// Voices & Audio Effect (Filter Suara / Karakter Vokal)
+	let selectedVoiceEngine = $state('edge_tts'); // 'edge_tts' | 'gemini_tts'
+	let geminiApiKey = $state('');
+	let showGeminiKey = $state(false);
+
 	const QUICK_VOICES = [
 		{ id: 'id-ID-ArdiNeural', name: 'Ardi', gender: 'Pria', lang: 'ID', emoji: '👨', sampleUrl: '/voice-samples/id-ID-ArdiNeural.mp3' },
 		{ id: 'id-ID-GadisNeural', name: 'Gadis', gender: 'Wanita', lang: 'ID', emoji: '👩', sampleUrl: '/voice-samples/id-ID-GadisNeural.mp3' },
@@ -280,9 +377,112 @@
 	let selectedAudioEffect = $state(DEFAULT_AUDIO_EFFECT_ID);
 	let isRegeneratingVoice = $state(false);
 
+	// Custom Voice Tuner State
+	let customPitchHz = $state(-14);
+	let customRatePct = $state(-2);
+	let customBassDb = $state(4);
+	let isTestingCustomVoice = $state(false);
+	let testVoiceAudio = null;
+
+	function selectAudioEffectPreset(eff) {
+		selectedAudioEffect = eff.id;
+		if (eff.id === 'cinematic_deep') {
+			customPitchHz = -14;
+			customRatePct = -4;
+			customBassDb = 5;
+		} else if (eff.id === 'studio_podcast') {
+			customPitchHz = -8;
+			customRatePct = -2;
+			customBassDb = 4;
+		} else if (eff.id === 'energetic_creator') {
+			customPitchHz = -3;
+			customRatePct = 4;
+			customBassDb = 2;
+		} else if (eff.id === 'storyteller') {
+			customPitchHz = -18;
+			customRatePct = -6;
+			customBassDb = 5;
+		} else if (eff.id === 'movie_trailer') {
+			customPitchHz = -28;
+			customRatePct = -4;
+			customBassDb = 6;
+		} else if (eff.id === 'natural') {
+			customPitchHz = 0;
+			customRatePct = 0;
+			customBassDb = 0;
+		}
+	}
+
+	async function testCustomVoice() {
+		if (isTestingCustomVoice) {
+			if (testVoiceAudio) {
+				testVoiceAudio.pause();
+				testVoiceAudio = null;
+			}
+			isTestingCustomVoice = false;
+			return;
+		}
+
+		isTestingCustomVoice = true;
+		try {
+			const res = await fetch('/api/edge-tts', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					text: selectedVoiceId.startsWith('en-')
+						? "Hello! This is a live preview of your custom tuned Edge TTS voice."
+						: "Halo! Ini adalah contoh tes karakter suara kustom Edge TTS untuk video kamu.",
+					voiceId: selectedVoiceId || 'id-ID-ArdiNeural',
+					pitch: `${customPitchHz}Hz`,
+					rate: `${customRatePct >= 0 ? '+' : ''}${customRatePct}%`,
+					customBass: customBassDb,
+					audioEffect: selectedAudioEffect
+				})
+			});
+			const data = await res.json();
+			if (data.success && (data.staticAudioUrl || data.audioUrl)) {
+				if (testVoiceAudio) testVoiceAudio.pause();
+				testVoiceAudio = new Audio(data.staticAudioUrl || data.audioUrl);
+				testVoiceAudio.onended = () => { isTestingCustomVoice = false; };
+				testVoiceAudio.onerror = () => { isTestingCustomVoice = false; };
+				await testVoiceAudio.play();
+			} else {
+				alert(data.error || 'Gagal mengetes suara kustom');
+				isTestingCustomVoice = false;
+			}
+		} catch (err) {
+			console.error('Test voice error:', err);
+			isTestingCustomVoice = false;
+		}
+	}
+
 	let previewAudioEl = null;
 	let playingEffectPreviewId = $state(null);
 	let playingVoicePreviewId = $state(null);
+
+	function setVoiceEngine(engine) {
+		selectedVoiceEngine = engine;
+		if (typeof window !== 'undefined') {
+			localStorage.setItem('stickman_voice_engine', engine);
+		}
+		if (engine === 'gemini_tts') {
+			if (!isGeminiVoice(selectedVoiceId)) {
+				selectedVoiceId = DEFAULT_GEMINI_VOICE_ID;
+			}
+		} else {
+			if (isGeminiVoice(selectedVoiceId)) {
+				selectedVoiceId = DEFAULT_EDGE_VOICE_ID;
+			}
+		}
+	}
+
+	function handleGeminiKeyChange(val) {
+		geminiApiKey = (val || '').trim();
+		if (typeof window !== 'undefined') {
+			localStorage.setItem('stickman_gemini_api_key', geminiApiKey);
+			localStorage.setItem('gemini_api_key', geminiApiKey);
+		}
+	}
 
 	function toggleEffectPreview(eff, e) {
 		if (e) e.stopPropagation();
@@ -302,9 +502,8 @@
 		playingEffectPreviewId = eff.id;
 	}
 
-	function toggleVoicePreview(v, e) {
+	async function toggleVoicePreview(v, e) {
 		if (e) e.stopPropagation();
-		if (!v.sampleUrl) return;
 		if (playingVoicePreviewId === v.id) {
 			if (previewAudioEl) {
 				previewAudioEl.pause();
@@ -313,11 +512,55 @@
 			playingVoicePreviewId = null;
 			return;
 		}
-		if (previewAudioEl) previewAudioEl.pause();
-		previewAudioEl = new Audio(v.sampleUrl);
-		previewAudioEl.onended = () => { playingVoicePreviewId = null; };
-		previewAudioEl.play().catch(() => {});
-		playingVoicePreviewId = v.id;
+
+		if (v.sampleUrl) {
+			if (previewAudioEl) previewAudioEl.pause();
+			previewAudioEl = new Audio(v.sampleUrl);
+			previewAudioEl.onended = () => { playingVoicePreviewId = null; };
+			previewAudioEl.play().catch(() => {});
+			playingVoicePreviewId = v.id;
+			return;
+		}
+
+		// On-the-fly preview for Gemini Voices
+		if (isGeminiVoice(v.id)) {
+			if (!geminiApiKey || geminiApiKey.trim().length < 15) {
+				alert('Masukkan Gemini API Key gratis terlebih dahulu di kotak input Gemini di atas untuk mencoba preview suara ini!');
+				return;
+			}
+			if (previewAudioEl) {
+				previewAudioEl.pause();
+				previewAudioEl.currentTime = 0;
+			}
+			playingVoicePreviewId = v.id;
+			try {
+				const charName = v.name ? v.name.split(' (')[0] : (v.voiceName || 'Gemini');
+				const res = await fetch('/api/gemini-tts', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						text: `Halo! Ini karakter suara ${charName}, siap menghidupkan animasi Stickman kamu!`,
+						voiceId: v.id,
+						apiKey: geminiApiKey,
+						audioEffect: selectedAudioEffect || 'studio_podcast'
+					})
+				});
+				const data = await res.json();
+				if (data.success && (data.staticAudioUrl || data.audioUrl)) {
+					v.sampleUrl = data.staticAudioUrl || data.audioUrl;
+					previewAudioEl = new Audio(v.sampleUrl);
+					previewAudioEl.onended = () => { playingVoicePreviewId = null; };
+					previewAudioEl.play().catch(() => {});
+				} else {
+					alert(data.error || 'Gagal memutar preview suara Gemini');
+					playingVoicePreviewId = null;
+				}
+			} catch (err) {
+				console.error('Gemini preview error:', err);
+				alert('Gagal menghubungi Gemini TTS: ' + err.message);
+				playingVoicePreviewId = null;
+			}
+		}
 	}
 
 	// Backsound (BGM) State
@@ -421,14 +664,28 @@
 		if (!scenes[sceneIndex]) return;
 		const sc = scenes[sceneIndex];
 		try {
-			const res = await fetch('/api/edge-tts', {
+			const isGemini = selectedVoiceEngine === 'gemini_tts' || isGeminiVoice(selectedVoiceId);
+			const endpoint = isGemini ? '/api/gemini-tts' : '/api/edge-tts';
+			const bodyPayload = isGemini
+				? {
+						text: sc.narration,
+						voiceId: selectedVoiceId || DEFAULT_GEMINI_VOICE_ID,
+						apiKey: geminiApiKey,
+						audioEffect: selectedAudioEffect || 'cinematic_deep'
+					}
+				: {
+						text: sc.narration,
+						voiceId: selectedVoiceId || 'id-ID-ArdiNeural',
+						pitch: `${customPitchHz}Hz`,
+						rate: `${customRatePct >= 0 ? '+' : ''}${customRatePct}%`,
+						customBass: customBassDb,
+						audioEffect: selectedAudioEffect || 'cinematic_deep'
+					};
+
+			const res = await fetch(endpoint, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					text: sc.narration,
-					voiceId: selectedVoiceId || 'id-ID-ArdiNeural',
-					audioEffect: selectedAudioEffect || 'cinematic_deep'
-				})
+				body: JSON.stringify(bodyPayload)
 			});
 			const data = await res.json();
 			if (data.success && (data.staticAudioUrl || data.audioUrl)) {
@@ -439,6 +696,8 @@
 					wordTimings: data.wordTimings || []
 				};
 				scenes = [...scenes];
+			} else if (data.error) {
+				alert(data.error);
 			}
 		} catch (err) {
 			console.error('Error regenerating voiceover:', err);
@@ -641,6 +900,7 @@
 			});
 		}
 		scenes = updated;
+		stickmanTextAlign = 'auto';
 	}
 
 	function applyAnimToAll() {
@@ -653,14 +913,28 @@
 		stickmanAnim = anim;
 	}
 
-	function setTextAlign(align) {
+	async function setTextAlign(align) {
 		stickmanTextAlign = align;
 		if (!currentScene) return;
-		scenes[activeSceneIndex] = { ...currentScene, textAlign: align };
-		scenes = [...scenes];
+		if (align === 'auto') {
+			await autoAlignCurrentScene();
+		} else {
+			const side = align === 'left' ? 'left' : align === 'right' ? 'right' : currentScene.textSide || 'right';
+			scenes[activeSceneIndex] = { ...currentScene, textAlign: align, textSide: side, layoutSide: side };
+			scenes = [...scenes];
+		}
 	}
-	function applyAlignToAll() {
-		scenes = scenes.map((s) => ({ ...s, textAlign: stickmanTextAlign }));
+	async function applyAlignToAll() {
+		if (stickmanTextAlign === 'auto') {
+			await autoAlignAllScenes();
+		} else {
+			const side = stickmanTextAlign === 'left' ? 'left' : stickmanTextAlign === 'right' ? 'right' : null;
+			scenes = scenes.map((s) => ({
+				...s,
+				textAlign: stickmanTextAlign,
+				...(side ? { textSide: side, layoutSide: side } : {})
+			}));
+		}
 	}
 	function getOverlayStyle(scene) {
 		const align = scene?.textAlign || stickmanTextAlign;
@@ -748,6 +1022,9 @@
 	let showImagePicker = $state(false);
 	let imagePickerFilter = $state('');
 	let selectedImageCategory = $state('all');
+	let imagePickerLimit = $state(60);
+	let pickerGridSize = $state('large'); // 'large' | 'medium' | 'compact'
+	let previewAsset = $state(null);
 	let imageUploadInputEl = $state(null);
 	let stickmanCategories = $state([]);
 
@@ -767,10 +1044,27 @@
 		})
 	);
 
+	let displayedAssets = $derived(
+		filteredAssets.slice(0, imagePickerLimit)
+	);
+
+	$effect(() => {
+		// Reset limit when filter or category changes
+		imagePickerFilter;
+		selectedImageCategory;
+		imagePickerLimit = 60;
+	});
+
 	function openImagePicker() {
 		if (!currentScene) return;
 		imagePickerFilter = '';
+		selectedImageCategory = 'all';
+		imagePickerLimit = 60;
 		showImagePicker = true;
+	}
+
+	function loadMoreAssets() {
+		imagePickerLimit = Math.min(filteredAssets.length, imagePickerLimit + 60);
 	}
 
 	async function applyAssetToScene(asset) {
@@ -823,6 +1117,19 @@
 	}
 
 	onMount(async () => {
+		if (typeof window !== 'undefined') {
+			const savedGeminiKey = localStorage.getItem('stickman_gemini_api_key') || localStorage.getItem('gemini_api_key') || '';
+			if (savedGeminiKey) geminiApiKey = savedGeminiKey;
+
+			const savedEngine = localStorage.getItem('stickman_voice_engine');
+			if (savedEngine && ['edge_tts', 'gemini_tts'].includes(savedEngine)) {
+				selectedVoiceEngine = savedEngine;
+				if (savedEngine === 'gemini_tts' && !isGeminiVoice(selectedVoiceId)) {
+					selectedVoiceId = DEFAULT_GEMINI_VOICE_ID;
+				}
+			}
+		}
+
 		try {
 			const res = await fetch('/api/stickman-assets');
 			const data = await res.json();
@@ -945,21 +1252,73 @@
 				}
 				let voiceData = null;
 				try {
-					addGenLog('EDGE-TTS', `Voiceover adegan ${i+1} (${selectedAudioEffect})...`, 'info');
-					const ttsRes = await fetch('/api/edge-tts', {
-						method: 'POST', headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							text: sc.narration,
-							voiceId: selectedVoiceId || 'id-ID-ArdiNeural',
-							audioEffect: selectedAudioEffect || 'cinematic_deep'
-						})
+					const isGemini = selectedVoiceEngine === 'gemini_tts' || isGeminiVoice(selectedVoiceId);
+					const engineLabel = isGemini ? 'GEMINI-TTS' : 'EDGE-TTS';
+					addGenLog(engineLabel, `Voiceover adegan ${i+1} (${selectedAudioEffect})...`, 'info');
+
+					// Add pacing delay for Gemini to avoid burst rate limit
+					if (isGemini && i > 0) {
+						await new Promise((r) => setTimeout(r, 800));
+					}
+
+					const endpoint = isGemini ? '/api/gemini-tts' : '/api/edge-tts';
+					const bodyPayload = isGemini
+						? {
+								text: sc.narration,
+								voiceId: selectedVoiceId || DEFAULT_GEMINI_VOICE_ID,
+								apiKey: geminiApiKey,
+								audioEffect: selectedAudioEffect || 'cinematic_deep'
+							}
+						: {
+								text: sc.narration,
+								voiceId: selectedVoiceId || 'id-ID-ArdiNeural',
+								pitch: `${customPitchHz}Hz`,
+								rate: `${customRatePct >= 0 ? '+' : ''}${customRatePct}%`,
+								customBass: customBassDb,
+								audioEffect: selectedAudioEffect || 'cinematic_deep'
+							};
+
+					const ttsRes = await fetch(endpoint, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(bodyPayload)
 					});
 					voiceData = await ttsRes.json();
-					if (voiceData?.success) {
+
+					// Graceful fallback to Edge TTS if Gemini hits 429 rate limit
+					if (isGemini && (!voiceData?.success || voiceData?.error?.includes('429') || voiceData?.error?.toLowerCase().includes('kuota'))) {
+						addGenLog('GEMINI-QUOTA', `Adegan ${i+1}: Kuota Gemini tercapai, dialihkan otomatis ke Edge TTS agar video tetap jadi!`, 'warn');
+						try {
+							const fallbackVoice = selectedVoiceId.startsWith('en-') ? 'en-US-ChristopherNeural' : 'id-ID-ArdiNeural';
+							const edgeRes = await fetch('/api/edge-tts', {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({
+									text: sc.narration,
+									voiceId: fallbackVoice,
+									pitch: `${customPitchHz}Hz`,
+									rate: `${customRatePct >= 0 ? '+' : ''}${customRatePct}%`,
+									customBass: customBassDb,
+									audioEffect: selectedAudioEffect || 'cinematic_deep'
+								})
+							});
+							voiceData = await edgeRes.json();
+							if (voiceData?.success) {
+								genProgress.stats.ttsClips++;
+								addGenLog('EDGE-TTS', `Audio cadangan adegan ${i+1} siap (${voiceData.duration}s)`, 'success');
+							}
+						} catch (edgeErr) {
+							console.warn('Edge fallback error:', edgeErr);
+						}
+					} else if (voiceData?.success) {
 						genProgress.stats.ttsClips++;
-						addGenLog('EDGE-TTS', `Audio siap ${voiceData.duration}s`, 'success');
+						addGenLog(engineLabel, `Audio siap ${voiceData.duration}s`, 'success');
+					} else if (voiceData?.error) {
+						addGenLog('WARN', `${engineLabel}: ${voiceData.error}`, 'warn');
 					}
-				} catch (e) { addGenLog('WARN', `TTS gagal adegan ${i+1}`, 'warn'); }
+				} catch (e) {
+					addGenLog('WARN', `TTS gagal adegan ${i+1}: ${e.message}`, 'warn');
+				}
 				const kp = resolveKeyPoint(sc);
 				const imgUrl = matchedAsset ? matchedAsset.url : '';
 				let textSide = 'right';
@@ -1354,407 +1713,734 @@
 </script>
 
 <svelte:window onpointermove={onWindowPointerMove} onpointerup={onWindowPointerUp} onkeydown={onWindowKeydown} />
+
+<svelte:head>
+	<title>Stickman Studio – Whiteboard & Sketch Animation | AI Video Studio</title>
+	<meta name="description" content="Buat video animasi stickman whiteboard & sketchbook edukasi dengan AI: 5-langkah wizard, 6 tema kertas, suara narator neural, dan render 1080p." />
+</svelte:head>
+
 <div class="stickman-studio">
-	<header class="studio-header">
-		<a href="/" class="btn btn-secondary btn-sm back-btn"><ArrowLeft size={16} /><span>Kembali</span></a>
-		<div class="title-wrap">
-			<h2>🎨 Stickman Explainer Studio</h2>
-			<p>Background gambar stickman full — teks hanya poin penting di area kosong.</p>
-		</div>
-
-		<!-- Main Toolbar Aspect Ratio Mode Switcher -->
-		<div class="header-aspect-switcher" role="radiogroup" aria-label="Format Video">
-			<button
-				type="button"
-				class="aspect-switch-pill"
-				class:active={!isShorts}
-				onclick={() => { if (isShorts) toggleShorts(); }}
-				title="Format Horizontal 16:9 (YouTube Reguler, PC, TV)"
-			>
-				<span class="icon">▬</span>
-				<span class="txt">16:9 Landscape</span>
-			</button>
-			<button
-				type="button"
-				class="aspect-switch-pill"
-				class:active={isShorts}
-				onclick={() => { if (!isShorts) toggleShorts(); }}
-				title="Format Vertikal 9:16 (YouTube Shorts, TikTok, Instagram Reels)"
-			>
-				<span class="icon">▮</span>
-				<span class="txt">9:16 Shorts</span>
-				<span class="pill-badge">VIRAL</span>
-			</button>
-		</div>
-	</header>
-
-	<main class="studio-content">
-		<section class="script-panel glass-panel">
-			<!-- Judul Video dengan Generator Judul AI (Mandiri Berbasis Niche / Topik) -->
-			<div class="video-title-card">
-				<div class="title-head-row">
-					<div class="title-label-wrap">
-						<span class="title-label">🎯 Judul Video (High-CTR AI)</span>
-						{#if videoTitle}
-							<span class="title-char-count">{videoTitle.length} char {#if videoTitle.length <= 60}<span class="badge-mobile">📱 Mobile Ready</span>{/if}</span>
-						{/if}
-					</div>
-					<div class="title-btn-group">
-						<button
-							type="button"
-							class="btn-quick-title"
-							onclick={() => generateQuickAiTitle()}
-							disabled={isGeneratingQuickTitle}
-							title="Dapatkan 1 ide judul viral otomatis dari DeepSeek AI"
-						>
-							{#if isGeneratingQuickTitle}
-								<RefreshCw size={12} class="spin" />
-								<span>AI Meriset...</span>
-							{:else}
-								<Sparkles size={12} class="text-amber" />
-								<span>🎲 Ide Cepat</span>
-							{/if}
-						</button>
-						<button
-							type="button"
-							class="btn-open-title-modal"
-							onclick={() => showTitleModal = true}
-							title="Buka Generator 10 Opsi Judul Viral + Skor CTR + Konsep Thumbnail"
-						>
-							<Flame size={12} class="text-flame" />
-							<span>🔥 Riset 10 Opsi</span>
-						</button>
-					</div>
-				</div>
-
-				<div class="title-input-wrap">
-					<input
-						type="text"
-						bind:value={videoTitle}
-						placeholder="Ketik topik atau klik '🎲 Ide Cepat' / '🔥 Riset 10 Opsi'..."
-						class="title-input"
-					/>
-				</div>
-
-				<!-- Quick Category Ideation Chips & Direct Script Trigger -->
-				<div class="title-bottom-row">
-					<div class="title-niche-chips">
-						<span class="chips-label">Kategori:</span>
-						<button type="button" class="mini-niche-btn" onclick={() => generateQuickAiTitle('wealth_finance')} title="Ide judul uang & finansial">💸 Uang</button>
-						<button type="button" class="mini-niche-btn" onclick={() => generateQuickAiTitle('dark_psychology')} title="Ide judul psikologi gelap & otak">🧠 Psikologi</button>
-						<button type="button" class="mini-niche-btn" onclick={() => generateQuickAiTitle('investigation')} title="Ide judul investigasi & skandal">🕵️ Investigasi</button>
-						<button type="button" class="mini-niche-btn" onclick={() => generateQuickAiTitle('science_paradox')} title="Ide judul sains & paradoks AI">⏳ Paradoks/AI</button>
-						<button type="button" class="mini-niche-btn" onclick={() => generateQuickAiTitle('stoic_philosophy')} title="Ide judul filosofi & stoikisme">🏛️ Filosofi</button>
-						<button type="button" class="mini-niche-btn" onclick={() => generateQuickAiTitle('business_downfall')} title="Ide judul kasus kejatuhan bisnis">🏢 Bisnis</button>
-					</div>
-
-					{#if videoTitle}
-						<button
-							type="button"
-							class="btn-title-to-script"
-							onclick={() => showScriptModal = true}
-							title="Minta AI menuliskan naskah stickman lengkap untuk judul ini"
-						>
-							<Sparkles size={11} />
-							<span>📝 Buat Naskah dari Judul Ini →</span>
-						</button>
-					{/if}
+	<!-- ============================================================ -->
+	<!-- WIZARD HEADER -->
+	<!-- ============================================================ -->
+	<header class="wiz-header">
+		<div class="wiz-header-inner">
+			<div class="wiz-brand">
+				<a href="/" class="wiz-back-btn"><ArrowLeft size={16}/></a>
+				<div class="wiz-title-block">
+					<div class="wiz-badge"><Sparkles size={13}/> Stickman Studio</div>
+					<h1 class="wiz-title">Whiteboard <span class="wiz-gradient">Animator</span></h1>
 				</div>
 			</div>
 
-			<!-- Naskah Video Editor Card -->
-			<div class="script-editor-card">
-				<div class="panel-header">
-					<div class="panel-title-group">
-						<h3>📝 Naskah Video</h3>
-						<span class="badge">Stickman • Retensi Tinggi</span>
+			<!-- Step bar -->
+			<nav class="wiz-stepbar" aria-label="Wizard Navigation">
+				{#each [
+					{ n: 1, icon: '🎯', label: 'Format & Topik' },
+					{ n: 2, icon: '📝', label: 'Naskah & Pacing' },
+					{ n: 3, icon: '🧍', label: 'Pose & Karakter' },
+					{ n: 4, icon: '🎨', label: 'Papan & Audio' },
+					{ n: 5, icon: '🎬', label: 'Preview & Render' }
+				] as s}
+					<button
+						class="wiz-step"
+						class:active={wizardStep === s.n}
+						class:done={wizardStep > s.n || (scenes.length > 0 && s.n < wizardStep)}
+						onclick={() => { wizardStep = s.n; }}
+						disabled={!scenes.length && wizardStep < s.n && (!script.trim() || s.n > 2)}
+						title="Step {s.n}: {s.label}"
+					>
+						<span class="wiz-step-dot">
+							{#if wizardStep > s.n || (scenes.length > 0 && wizardStep !== s.n)}✓{:else}{s.n}{/if}
+						</span>
+						<span class="wiz-step-label">{s.label}</span>
+						{#if s.n < 5}<span class="wiz-step-line"></span>{/if}
+					</button>
+				{/each}
+			</nav>
+
+			<!-- Header Whisper Audio Import Button -->
+			<div class="wiz-header-whisper">
+				<button
+					type="button"
+					class="wiz-btn-groq-header"
+					onclick={() => showWhisperModal = true}
+					title="Buat video langsung dari 1 file audio rekaman utuh (Groq Whisper AI)"
+				>
+					<Mic size={13} class="text-emerald-400" />
+					<span class="wiz-groq-label">Dari Audio Utuh</span>
+					<span class="header-groq-badge">WHISPER</span>
+				</button>
+			</div>
+
+			<!-- Aspect toggle (always visible) -->
+			<div class="wiz-aspect-toggle">
+				<button class="asp-pill" class:active={!isShorts} onclick={() => { if (isShorts) toggleShorts(); }} title="16:9 Landscape">
+					<span>▬</span><span class="asp-txt">16:9</span>
+				</button>
+				<button class="asp-pill" class:active={isShorts} onclick={() => { if (!isShorts) toggleShorts(); }} title="9:16 Shorts">
+					<span>▮</span><span class="asp-txt">9:16</span><span class="asp-badge">VIRAL</span>
+				</button>
+			</div>
+		</div>
+	</header>
+
+	<!-- ============================================================ -->
+	<!-- STEP CONTENT -->
+	<!-- ============================================================ -->
+	<main class="wiz-main">
+
+		<!-- ==================== STEP 1: FORMAT & TOPIK ==================== -->
+		{#if wizardStep === 1}
+		<div class="wiz-step-content" id="step-1">
+			<div class="wiz-step-hero">
+				<div class="wiz-step-num">01</div>
+				<div>
+					<h2 class="wiz-step-title">Format & Topik Video</h2>
+					<p class="wiz-step-desc">Pilih format video, kategori konten, dan buat judul viral berkualifikasi CTR tinggi.</p>
+				</div>
+			</div>
+
+			<!-- Quick Full Audio Banner -->
+			<div class="wiz-card wiz-audio-banner">
+				<div class="wiz-audio-banner-left">
+					<div class="wiz-audio-icon">
+						<Mic size={22} />
 					</div>
-					<div class="panel-actions">
-						<button
-							type="button"
-							class="btn-tool-humanize"
-							onclick={handleHumanize}
-							disabled={isHumanizing || !script.trim()}
-							title="Humanize Naskah: Hilangkan kata kaku ('Anda', klise formal), tambahkan jeda dramatis, dan rapikan alur untuk voiceover"
-						>
-							<Sparkles size={13} class="humanize-icon" />
-							<span>{isHumanizing ? 'Memproses...' : 'Humanize'}</span>
-						</button>
-						<button type="button" class="btn-ai-gen" onclick={() => showScriptModal = true} title="Buka AI Script Generator Stickman Viral">
-							<Flame size={14} class="flame-icon" />
-							<span>✨ AI Script Generator</span>
-						</button>
+					<div>
+						<div class="wiz-audio-banner-title">
+							<span>Punya 1 File Audio Rekaman Utuh?</span>
+							<span class="wiz-badge-groq">⚡ GROQ WHISPER-LARGE-V3</span>
+						</div>
+						<div class="wiz-audio-banner-desc">
+							Upload suara rekaman Anda dari awal sampai akhir. AI akan mentranskrip otomatis, memotong per adegan, dan mencarikan gambar stickman yang cocok!
+						</div>
+					</div>
+				</div>
+				<button type="button" class="wiz-audio-banner-btn" onclick={() => showWhisperModal = true}>
+					<Sparkles size={14} />
+					<span>Import Audio Sekarang →</span>
+				</button>
+			</div>
+
+			<div class="wiz-grid-2">
+				<!-- Judul Video -->
+				<div class="wiz-card">
+					<div class="wiz-card-head">
+						<span class="wiz-card-title">🎯 Judul Video (High-CTR AI)</span>
+						<div class="wiz-card-actions">
+							<button type="button" class="wiz-btn-sm wiz-btn-accent" onclick={() => generateQuickAiTitle()} disabled={isGeneratingQuickTitle} title="Ide Cepat 1 Judul AI">
+								{#if isGeneratingQuickTitle}<RefreshCw size={12} class="spin"/>{:else}<Sparkles size={12}/>{/if}
+								<span>🎲 Ide Cepat</span>
+							</button>
+							<button type="button" class="wiz-btn-sm wiz-btn-fire" onclick={() => showTitleModal = true}>
+								<Flame size={12}/><span>🔥 Riset 10 Opsi</span>
+							</button>
+						</div>
+					</div>
+					<input type="text" bind:value={videoTitle} placeholder="Ketik topik atau klik tombol di atas..." class="wiz-input"/>
+					{#if videoTitle}<span class="wiz-char-count">{videoTitle.length} karakter</span>{/if}
+
+					<div class="wiz-niche-chips">
+						<span class="wiz-chips-label">Kategori:</span>
+						<button type="button" class="wiz-niche-chip" onclick={() => generateQuickAiTitle('wealth_finance')}>💸 Uang/Finansial</button>
+						<button type="button" class="wiz-niche-chip" onclick={() => generateQuickAiTitle('dark_psychology')}>🧠 Psikologi Gelap</button>
+						<button type="button" class="wiz-niche-chip" onclick={() => generateQuickAiTitle('investigation')}>🕵️ Investigasi</button>
+						<button type="button" class="wiz-niche-chip" onclick={() => generateQuickAiTitle('science_paradox')}>⏳ Paradoks/AI</button>
+						<button type="button" class="wiz-niche-chip" onclick={() => generateQuickAiTitle('stoic_philosophy')}>🏛️ Stoikisme</button>
+						<button type="button" class="wiz-niche-chip" onclick={() => generateQuickAiTitle('business_downfall')}>🏢 Kasus Bisnis</button>
 					</div>
 				</div>
 
-				{#if humanizeNotice}
-					<div class="humanize-notice">
-						<Sparkles size={13} class="notice-icon" />
-						<span>{humanizeNotice}</span>
-					</div>
-				{/if}
-
-				<!-- Quick Viral Preset Templates -->
-				<div class="quick-preset-bar">
-					<div class="preset-header-row">
-						<span class="preset-label">⚡ Topik Viral Cepat:</span>
-						<div class="preset-lang-tabs">
-							<button
-								type="button"
-								class="lang-tab-btn"
-								class:active={presetLangFilter === 'all'}
-								onclick={() => presetLangFilter = 'all'}
-							>Semua</button>
-							<button
-								type="button"
-								class="lang-tab-btn"
-								class:active={presetLangFilter === 'id'}
-								onclick={() => presetLangFilter = 'id'}
-							>🇮🇩 ID</button>
-							<button
-								type="button"
-								class="lang-tab-btn"
-								class:active={presetLangFilter === 'en'}
-								onclick={() => presetLangFilter = 'en'}
-							>🇺🇸 EN</button>
+				<!-- Preset Naskah Cepat -->
+				<div class="wiz-card">
+					<div class="wiz-card-head">
+						<span class="wiz-card-title">⚡ Preset Naskah Cepat</span>
+						<div class="wiz-preset-lang">
+							<button type="button" class="wiz-lang-btn" class:active={presetLangFilter==='all'} onclick={() => presetLangFilter='all'}>Semua</button>
+							<button type="button" class="wiz-lang-btn" class:active={presetLangFilter==='id'} onclick={() => presetLangFilter='id'}>🇮🇩 ID</button>
+							<button type="button" class="wiz-lang-btn" class:active={presetLangFilter==='en'} onclick={() => presetLangFilter='en'}>🇺🇸 EN</button>
 						</div>
 					</div>
-					<div class="preset-pills">
+					<div class="wiz-preset-pills">
 						{#each filteredPresets as p}
-							<button
-								type="button"
-								class="preset-pill"
-								class:active={script === p.text}
-								onclick={() => {
-									script = p.text;
-									videoTitle = p.title;
-									if (p.lang === 'en' && selectedVoiceId.startsWith('id-ID')) {
-										selectedVoiceId = 'en-US-ChristopherNeural';
-									}
-								}}
-								title="{p.title}"
-							>
-								{#if p.lang === 'en'}<span class="lang-flag-mini">EN</span>{/if}
+							<button type="button" class="wiz-preset-pill" class:active={script === p.text} onclick={() => { script = p.text; videoTitle = p.title; if (p.lang === 'en' && selectedVoiceId.startsWith('id-ID')) selectedVoiceId = 'en-US-ChristopherNeural'; }}>
+								{#if p.lang === 'en'}<span class="wiz-flag">EN</span>{/if}
 								<span>{p.title.split(':')[0]}</span>
 							</button>
 						{/each}
 					</div>
 				</div>
+			</div>
 
-				<div class="textarea-wrapper">
-					<textarea
-						bind:value={script}
-						placeholder="Tulis naskah atau klik '✨ AI Script Generator' di atas untuk meracik naskah berbobot dengan retensi tinggi..."
-						rows="8"
-					></textarea>
-					<div class="textarea-footer-info">
-						<div class="stat-items">
-							<span class="stat-pill">📊 ~{estimatedScenes} Adegan</span>
-							<span class="stat-pill">📝 {wordCount} Kata</span>
-							<button
-								type="button"
-								class="mini-humanize-btn"
-								onclick={handleHumanize}
-								disabled={isHumanizing || !script.trim()}
-								title="Humanize naskah: ubah gaya kaku jadi santai & sesuaikan pacing audio"
-							>
-								✨ Humanize Naskah
+			<div class="wiz-step-actions">
+				<button class="wiz-btn-primary" onclick={() => wizardStep = 2} disabled={!videoTitle && !script.trim()}>
+					<span>Lanjut ke Naskah</span><span>→</span>
+				</button>
+			</div>
+		</div>
+		{/if}
+
+		<!-- ==================== STEP 2: NASKAH & PACING ==================== -->
+		{#if wizardStep === 2}
+		<div class="wiz-step-content" id="step-2">
+			<div class="wiz-step-hero">
+				<div class="wiz-step-num">02</div>
+				<div>
+					<h2 class="wiz-step-title">Naskah & Pacing Cerita</h2>
+					<p class="wiz-step-desc">Tulis atau generate naskah naratif, lalu optimalkan gaya bicara stickman storytelling.</p>
+				</div>
+			</div>
+
+			<div class="wiz-card">
+				<div class="wiz-card-head">
+					<span class="wiz-card-title">📝 Naskah Video</span>
+					<div class="wiz-card-actions">
+						<button type="button" class="wiz-btn-sm wiz-btn-groq" onclick={() => showWhisperModal = true} title="Import 1 file rekaman audio lengkap">
+							<Mic size={12}/><span>🎙️ Import Audio Utuh</span>
+						</button>
+						<button type="button" class="wiz-btn-sm wiz-btn-accent" onclick={handleHumanize} disabled={isHumanizing || !script.trim()} title="Humanize: ubah gaya bahasa jadi santai & dramatis">
+							<Sparkles size={12}/><span>{isHumanizing ? 'Memproses...' : '✨ Humanize Naskah'}</span>
+						</button>
+						<button type="button" class="wiz-btn-sm wiz-btn-fire" onclick={() => showScriptModal = true}>
+							<Flame size={12}/><span>AI Script Generator</span>
+						</button>
+					</div>
+				</div>
+				{#if humanizeNotice}
+					<div class="wiz-notice"><Sparkles size={13}/><span>{humanizeNotice}</span></div>
+				{/if}
+				<textarea class="wiz-textarea" bind:value={script} placeholder="Tulis naskah atau klik 'AI Script Generator' untuk meracik naskah berbobot..." rows="10"></textarea>
+				<div class="wiz-script-stats">
+					<span class="wiz-stat-pill">📊 ~{estimatedScenes} Adegan</span>
+					<span class="wiz-stat-pill">📝 {wordCount} Kata</span>
+					<span class="wiz-format-hint">Format: <code>[Bab X: Judul | Deskripsi]</code></span>
+				</div>
+			</div>
+
+			<div class="wiz-step-actions">
+				<button class="wiz-btn-secondary" onclick={() => wizardStep = 1}><span>←</span><span>Format & Judul</span></button>
+				<button class="wiz-btn-primary" onclick={() => wizardStep = 3} disabled={!script.trim()}>
+					<span>Lanjut ke Pose & Karakter</span><span>→</span>
+				</button>
+			</div>
+		</div>
+		{/if}
+
+		<!-- ==================== STEP 3: POSE & KARAKTER ==================== -->
+		{#if wizardStep === 3}
+		<div class="wiz-step-content" id="step-3">
+			<div class="wiz-step-hero">
+				<div class="wiz-step-num">03</div>
+				<div>
+					<h2 class="wiz-step-title">Pose Karakter & Ilustrasi Sketsa</h2>
+					<p class="wiz-step-desc">Kurasi pose stickman, animasi masuk, dan gerak idle — DeepSeek AI sudah memilihkan pose awal untuk setiap adegan.</p>
+				</div>
+			</div>
+
+			{#if scenes.length > 0}
+				<div class="wiz-imported-audio-notice">
+					<Sparkles size={16} class="text-indigo-400" />
+					<span>🎉 <strong>{scenes.length} Adegan</strong> dari audio rekaman telah tersusun! Atur animasi pose di bawah ini, lalu klik <strong>Lanjut ke Papan & Audio (Step 4)</strong>.</span>
+				</div>
+			{/if}
+
+			<div class="wiz-grid-2">
+				<!-- Animasi Masuk Gambar -->
+				<div class="wiz-card">
+					<div class="wiz-card-head"><span class="wiz-card-title">✨ Animasi Masuk Gambar</span></div>
+					<div class="wiz-anim-grid">
+						{#each IMAGE_ANIM_OPTIONS as opt}
+							<button type="button" class="wiz-anim-pill" class:on={stickmanImageAnim === opt.id} onclick={() => stickmanImageAnim = opt.id}>{opt.label}</button>
+						{/each}
+					</div>
+					{#if scenes.length > 0}
+						<button type="button" class="wiz-apply-all" onclick={applyImageAnimToAll}>Terapkan ke Semua Adegan</button>
+					{/if}
+				</div>
+
+				<!-- Gerak Idle -->
+				<div class="wiz-card">
+					<div class="wiz-card-head"><span class="wiz-card-title">📳 Gerak Gambar (Idle Motion)</span></div>
+					<div class="wiz-anim-grid">
+						{#each IDLE_MOTION_OPTIONS as opt}
+							<button type="button" class="wiz-anim-pill" class:on={stickmanIdleMotion === opt.id} onclick={() => stickmanIdleMotion = opt.id}>{opt.label}</button>
+						{/each}
+					</div>
+					{#if scenes.length > 0}
+						<button type="button" class="wiz-apply-all" onclick={applyIdleMotionToAll}>Terapkan ke Semua Adegan</button>
+					{/if}
+				</div>
+
+				<!-- Posisi Teks -->
+				<div class="wiz-card">
+					<div class="wiz-card-head">
+						<span class="wiz-card-title">📐 Tata Letak Teks</span>
+						{#if scenes.length > 0}
+							<button type="button" class="wiz-btn-sm wiz-btn-accent" onclick={autoAlignAllScenes} title="Deteksi otomatis ruang kosong pada semua adegan">
+								<span>🎯 Auto Ruang Kosong</span>
 							</button>
+						{/if}
+					</div>
+					<div class="wiz-anim-grid">
+						{#each POS_OPTIONS as pos}
+							<button type="button" class="wiz-anim-pill" class:on={stickmanTextAlign === pos.id} onclick={() => setTextAlign(pos.id)}>{pos.label}</button>
+						{/each}
+					</div>
+					{#if scenes.length > 0}
+						<div class="wiz-align-actions">
+							<button type="button" class="wiz-apply-all" onclick={applyAlignToAll}>Terapkan Posisi Ini ke Semua</button>
+							<button type="button" class="wiz-apply-all wiz-apply-auto" onclick={autoAlignAllScenes}>🎯 Deteksi Ruang Kosong (Semua Adegan)</button>
 						</div>
-						<span class="format-hint">Format: <code>[Bab X: Judul | Deskripsi]</code></span>
+					{/if}
+				</div>
+
+				<!-- Bank Gambar -->
+				<div class="wiz-card">
+					<div class="wiz-card-head"><span class="wiz-card-title">🖼️ Bank Pose Stickman</span>
+						{#if scenes.length > 0}
+							<button type="button" class="wiz-btn-sm wiz-btn-accent" onclick={openImagePicker}>Ganti Gambar Adegan Ini</button>
+						{/if}
+					</div>
+					<div class="wiz-asset-search-row">
+						<input type="text" bind:value={imagePickerFilter} placeholder="🔍 Cari pose (uang, sedih, laptop, ide...)" class="wiz-search-input"/>
+						<div class="wiz-cat-pills">
+							<button type="button" class="wiz-cat-pill" class:active={selectedImageCategory==='all'} onclick={() => selectedImageCategory='all'}>✨ Semua</button>
+							{#each stickmanCategories as cat}
+								<button type="button" class="wiz-cat-pill" class:active={selectedImageCategory===cat.id} onclick={() => selectedImageCategory=cat.id}>{cat.label}</button>
+							{/each}
+						</div>
+					</div>
+					<div class="wiz-mini-asset-grid">
+						{#each filteredAssets.slice(0,24) as asset}
+							<button type="button" class="wiz-asset-thumb" class:selected={currentScene?.image === asset.url} onclick={() => applyAssetToScene(asset)} title={asset.title}>
+								<img src={asset.url} alt={asset.title} loading="lazy"/>
+								{#if currentScene?.image === asset.url}<span class="wiz-thumb-check">✓</span>{/if}
+							</button>
+						{/each}
+						{#if filteredAssets.length > 24}<p class="wiz-more-hint">+{filteredAssets.length - 24} lainnya — cari nama spesifik di atas</p>{/if}
 					</div>
 				</div>
 			</div>
 
-			<!-- Unified Audio & Voice Studio Card -->
-			<div class="audio-studio-card">
-				<div class="audio-card-header">
-					<div class="audio-title-wrap">
-						<span class="audio-card-title">🎙️ Audio & Voiceover Studio</span>
+			<div class="wiz-step-actions">
+				<button class="wiz-btn-secondary" onclick={() => wizardStep = 2}><span>←</span><span>Naskah</span></button>
+				<button class="wiz-btn-primary" onclick={() => wizardStep = 4}>
+					<span>Lanjut ke Papan & Audio</span><span>→</span>
+				</button>
+			</div>
+		</div>
+		{/if}
+
+		<!-- ==================== STEP 4: PAPAN & AUDIO ==================== -->
+		{#if wizardStep === 4}
+		<div class="wiz-step-content" id="step-4">
+			<div class="wiz-step-hero">
+				<div class="wiz-step-num">04</div>
+				<div>
+					<h2 class="wiz-step-title">Tema Papan Tulis, Tipografi & Audio</h2>
+					<p class="wiz-step-desc">Atur estetika kertas sketsa, font kapur, suara narator, dan musik latar.</p>
+				</div>
+			</div>
+
+			<div class="wiz-grid-2">
+				<!-- 6 Tema Papan -->
+				<div class="wiz-card">
+					<div class="wiz-card-head"><span class="wiz-card-title">🖼️ Tema Papan Tulis / Kertas</span></div>
+					<div class="wiz-bg-grid">
+						{#each BG_THEME_OPTIONS as tOpt}
+							<button type="button" class="wiz-bg-card" class:on={stickmanBgTheme === tOpt.id} onclick={() => setStickmanTheme(tOpt.id)} title={tOpt.desc}>
+								<span class="wiz-bg-icon">{tOpt.label.split(' ')[0]}</span>
+								<span class="wiz-bg-name">{tOpt.label.split(' ').slice(1).join(' ')}</span>
+								<span class="wiz-bg-desc">{tOpt.desc}</span>
+							</button>
+						{/each}
 					</div>
-					<!-- Compact Tab Navigation -->
-					<div class="audio-tab-nav">
-						<button
-							type="button"
-							class="audio-tab-btn"
-							class:active={activeAudioTab === 'voice'}
-							onclick={() => activeAudioTab = 'voice'}
-						>
-							<span>🎙️ Suara</span>
-							<span class="tab-indicator-badge">
-								{QUICK_VOICES.find(v => v.id === selectedVoiceId)?.name || 'Ardi'}
-							</span>
-						</button>
-						<button
-							type="button"
-							class="audio-tab-btn"
-							class:active={activeAudioTab === 'effect'}
-							onclick={() => activeAudioTab = 'effect'}
-						>
-							<span>🎛️ DSP Filter</span>
-							<span class="tab-indicator-badge">
-								{AUDIO_EFFECT_PRESETS.find(e => e.id === selectedAudioEffect)?.name.split(' (')[0] || 'Studio'}
-							</span>
-						</button>
-						<button
-							type="button"
-							class="audio-tab-btn"
-							class:active={activeAudioTab === 'bgm'}
-							onclick={() => activeAudioTab = 'bgm'}
-						>
-							<span>🎵 Backsound</span>
-							<span class="tab-indicator-badge">
-								{bgmVolume === 0 ? 'Mute' : `${Math.round(bgmVolume * 100)}%`}
-							</span>
-						</button>
+					<!-- Safe Area Padding -->
+					<div class="wiz-padding-row">
+						<span class="wiz-label">⭕ Safe Area Margin:</span>
+						<div class="wiz-anim-grid">
+							{#each VIDEO_PADDING_OPTIONS as pOpt}
+								<button type="button" class="wiz-anim-pill" class:on={stickmanVideoPadding === pOpt.id} onclick={() => stickmanVideoPadding = pOpt.id} title={pOpt.desc}>{pOpt.label}</button>
+							{/each}
+						</div>
 					</div>
 				</div>
 
-				<div class="audio-tab-content">
-					{#if activeAudioTab === 'voice'}
-						<div class="voice-cards-grid">
-							{#each QUICK_VOICES as v}
+				<!-- Tipografi -->
+				<div class="wiz-card">
+					<div class="wiz-card-head"><span class="wiz-card-title">✏️ Tipografi Kapur Tulis</span></div>
+					<!-- Font Family -->
+					<div class="wiz-font-row">
+						<span class="wiz-label">Jenis Font:</span>
+						<select bind:value={stickmanFontFamily} class="wiz-select">
+							{#each FONT_OPTIONS as f}<option value={f.value}>{f.label}</option>{/each}
+						</select>
+					</div>
+					<!-- Font Size Presets -->
+					<div class="wiz-font-row">
+						<span class="wiz-label">Ukuran: <strong>{currentScene?.fontSize || stickmanFontSize}px</strong></span>
+						<div class="wiz-anim-grid">
+							{#each FONT_SIZE_PRESETS as p}
+								<button type="button" class="wiz-anim-pill" class:on={Math.abs((currentScene?.fontSize || stickmanFontSize) - p.val) <= 3} onclick={() => setSceneFontSize(p.val)}>{p.label}</button>
+							{/each}
+						</div>
+					</div>
+					<!-- Dual Color -->
+					<div class="wiz-color-section">
+						<div class="wiz-color-row">
+							<span class="wiz-label">Warna Atas (Headline):</span>
+							<div class="wiz-color-dots">
+								{#each TOP_COLOR_PRESETS as c}
+									<button type="button" class="wiz-color-dot" class:on={(currentScene?.textColorTop || stickmanTextColorTop) === c} style="background:{c}" onclick={() => currentScene ? setSceneTextColorTop(c) : (stickmanTextColorTop = c)}></button>
+								{/each}
+								<input type="color" value={currentScene?.textColorTop || stickmanTextColorTop} oninput={(e) => currentScene ? setSceneTextColorTop(e.currentTarget.value) : (stickmanTextColorTop = e.currentTarget.value)} class="wiz-color-picker"/>
+							</div>
+						</div>
+						<div class="wiz-color-row">
+							<span class="wiz-label">Warna Bawah (Bodi):</span>
+							<div class="wiz-color-dots">
+								{#each BOTTOM_COLOR_PRESETS as c}
+									<button type="button" class="wiz-color-dot" class:on={(currentScene?.textColorBottom || stickmanTextColorBottom) === c} style="background:{c}" onclick={() => currentScene ? setSceneTextColorBottom(c) : (stickmanTextColorBottom = c)}></button>
+								{/each}
+								<input type="color" value={currentScene?.textColorBottom || stickmanTextColorBottom} oninput={(e) => currentScene ? setSceneTextColorBottom(e.currentTarget.value) : (stickmanTextColorBottom = e.currentTarget.value)} class="wiz-color-picker"/>
+							</div>
+						</div>
+					</div>
+					<!-- Text Animations -->
+					<div class="wiz-font-row">
+						<span class="wiz-label">Animasi Teks Masuk:</span>
+						<div class="wiz-anim-grid">
+							{#each ANIM_OPTIONS as a}
+								<button type="button" class="wiz-anim-pill" class:on={(currentScene?.textAnim || stickmanAnim) === a.id} onclick={() => currentScene ? setSceneAnim(a.id) : (stickmanAnim = a.id)}>{a.label}</button>
+							{/each}
+						</div>
+					</div>
+					<div class="wiz-font-row">
+						<span class="wiz-label">Efek Getar Teks:</span>
+						<div class="wiz-anim-grid">
+							{#each TEXT_IDLE_OPTIONS as t}
+								<button type="button" class="wiz-anim-pill" class:on={(currentScene?.textIdleMotion || stickmanTextIdleMotion) === t.id} onclick={() => currentScene ? setSceneTextIdleMotion(t.id) : (stickmanTextIdleMotion = t.id)}>{t.label}</button>
+							{/each}
+						</div>
+					</div>
+				</div>
+
+				<!-- Voiceover -->
+				<div class="wiz-card">
+					<div class="wiz-card-head">
+						<span class="wiz-card-title">🎙️ Karakter Suara Narator</span>
+						<div class="wiz-engine-tabs">
+							<button
+								type="button"
+								class="wiz-engine-tab"
+								class:active={selectedVoiceEngine === 'edge_tts'}
+								onclick={() => setVoiceEngine('edge_tts')}
+							>
+								<Mic size={13} />
+								<span>Edge TTS (Gratis)</span>
+							</button>
+							<button
+								type="button"
+								class="wiz-engine-tab gemini-tab"
+								class:active={selectedVoiceEngine === 'gemini_tts'}
+								onclick={() => setVoiceEngine('gemini_tts')}
+							>
+								<Sparkles size={13} />
+								<span>Gemini AI Voice (Gratis API)</span>
+								<span class="wiz-tab-badge">Baru</span>
+							</button>
+						</div>
+					</div>
+
+					{#if selectedVoiceEngine === 'gemini_tts'}
+						<!-- Gemini API Key configuration box -->
+						<div class="wiz-gemini-card">
+							<div class="wiz-gemini-header">
+								<div class="wiz-gemini-title">
+									<Key size={15} class="gemini-key-icon" />
+									<span>Google Gemini API Key</span>
+									{#if geminiApiKey && geminiApiKey.trim().length > 15}
+										<span class="wiz-key-badge saved"><Check size={11} /> Tersimpan</span>
+									{:else}
+										<span class="wiz-key-badge warning">Wajib Diisi</span>
+									{/if}
+								</div>
+								<a
+									href="https://aistudio.google.com/app/apikey"
+									target="_blank"
+									rel="noreferrer"
+									class="wiz-gemini-link"
+								>
+									<ExternalLink size={12} />
+									<span>Dapatkan API Key Gratis di Google AI Studio</span>
+								</a>
+							</div>
+
+							<div class="wiz-key-input-row">
+								<div class="wiz-key-input-wrap">
+									<input
+										type={showGeminiKey ? 'text' : 'password'}
+										class="wiz-key-input"
+										placeholder="Paste AI Studio API Key (AIzaSy...)"
+										value={geminiApiKey}
+										oninput={(e) => handleGeminiKeyChange(e.currentTarget.value)}
+									/>
+									<button
+										type="button"
+										class="wiz-key-toggle-btn"
+										onclick={() => showGeminiKey = !showGeminiKey}
+										title={showGeminiKey ? 'Sembunyikan' : 'Tampilkan'}
+									>
+										{#if showGeminiKey}<EyeOff size={14} />{:else}<Eye size={14} />{/if}
+									</button>
+								</div>
+							</div>
+							<div class="wiz-gemini-note">
+								✨ <strong>Model Gemini Flash Audio (gemini-3.8-flash):</strong> Suara sangat ekspresif & hidup untuk Stickman Studio. Gratis hingga 1.500 request per hari di Google AI Studio.
+							</div>
+						</div>
+
+						<!-- Gemini Voices List -->
+						<div class="wiz-voice-grid">
+							{#each GEMINI_TTS_VOICES as v}
 								<div
-									class="voice-card"
+									class="wiz-voice-card gemini-card"
 									class:active={selectedVoiceId === v.id}
 									onclick={() => selectedVoiceId = v.id}
 									role="button"
 									tabindex="0"
 									onkeydown={(e) => e.key === 'Enter' && (selectedVoiceId = v.id)}
-									title="{v.name} ({v.gender}, {v.lang}) — Klik untuk pilih"
 								>
-									<span class="voice-avatar">{v.emoji}</span>
-									<div class="voice-info">
-										<div class="voice-name-row">
-											<span class="voice-name">{v.name}</span>
-											<span class="voice-gender-pill">{v.gender.includes('Wanita') ? '♀ ' + v.gender : '♂ ' + v.gender}</span>
+									<span class="wiz-voice-avatar">{v.emoji}</span>
+									<div class="wiz-voice-info">
+										<div class="wiz-voice-title-row">
+											<span class="wiz-voice-name">{v.name.split(' (')[0]}</span>
+											<span class="wiz-gemini-pill">{v.category}</span>
 										</div>
-										<span class="voice-lang">{v.lang === 'ID' ? 'Bahasa Indonesia' : 'English (US)'}</span>
+										<span class="wiz-voice-desc">{v.description}</span>
+									</div>
+									<button
+										type="button"
+										class="wiz-play-preview"
+										class:playing={playingVoicePreviewId === v.id}
+										onclick={(e) => toggleVoicePreview(v, e)}
+										title="Tes Suara Karakter"
+									>
+										{playingVoicePreviewId === v.id ? '⏹' : '▶'}
+									</button>
+								</div>
+							{/each}
+						</div>
+					{:else}
+						<div class="wiz-voice-grid">
+							{#each QUICK_VOICES as v}
+								<div class="wiz-voice-card" class:active={selectedVoiceId === v.id} onclick={() => selectedVoiceId = v.id} role="button" tabindex="0" onkeydown={(e) => e.key==='Enter' && (selectedVoiceId=v.id)}>
+									<span class="wiz-voice-avatar">{v.emoji}</span>
+									<div class="wiz-voice-info">
+										<span class="wiz-voice-name">{v.name}</span>
+										<span class="wiz-voice-sub">{v.lang === 'ID' ? 'Bahasa Indonesia' : 'English (US)'}</span>
 									</div>
 									{#if v.sampleUrl}
-										<button
-											type="button"
-											class="chip-preview-play-btn"
-											class:playing={playingVoicePreviewId === v.id}
-											onclick={(e) => toggleVoicePreview(v, e)}
-											title={playingVoicePreviewId === v.id ? 'Stop sample' : 'Dengar contoh suara'}
-										>
-											{playingVoicePreviewId === v.id ? '⏹' : '▶'}
-										</button>
+										<button type="button" class="wiz-play-preview" class:playing={playingVoicePreviewId === v.id} onclick={(e) => toggleVoicePreview(v, e)}>{playingVoicePreviewId === v.id ? '⏹' : '▶'}</button>
 									{/if}
 								</div>
 							{/each}
 						</div>
-					{:else if activeAudioTab === 'effect'}
-						<div class="effect-tab-panel">
-							<div class="effect-chips-grid">
-								{#each AUDIO_EFFECT_PRESETS as eff}
-									<div
-										class="effect-card-chip"
-										class:active={selectedAudioEffect === eff.id}
-										onclick={() => selectedAudioEffect = eff.id}
-										title="{eff.name}: {eff.description}"
-										role="button"
-										tabindex="0"
-										onkeydown={(e) => e.key === 'Enter' && (selectedAudioEffect = eff.id)}
-									>
-										<span class="eff-emoji">{eff.emoji}</span>
-										<div class="eff-text">
-											<span class="eff-title">{eff.name.split(' (')[0]}</span>
-											{#if eff.tag}<span class="eff-tag-pill">{eff.tag}</span>{/if}
-										</div>
-										{#if eff.sampleUrl}
-											<button
-												type="button"
-												class="chip-preview-play-btn"
-												class:playing={playingEffectPreviewId === eff.id}
-												onclick={(e) => toggleEffectPreview(eff, e)}
-												title={playingEffectPreviewId === eff.id ? 'Stop preview' : 'Dengarkan contoh efek'}
-											>
-												{playingEffectPreviewId === eff.id ? '⏹' : '▶'}
-											</button>
-										{/if}
-									</div>
-								{/each}
+					{/if}
+					<!-- DSP Effects Preset -->
+					<div class="wiz-card-head" style="margin-top:14px;"><span class="wiz-card-title">🎛️ Filter Vokal DSP & Preset</span></div>
+					<div class="wiz-effect-grid">
+						{#each AUDIO_EFFECT_PRESETS as eff}
+							<div class="wiz-effect-chip" class:active={selectedAudioEffect === eff.id} onclick={() => selectAudioEffectPreset(eff)} role="button" tabindex="0" onkeydown={(e) => e.key==='Enter' && selectAudioEffectPreset(eff)} title="{eff.name}: {eff.description}">
+								<span class="wiz-eff-emoji">{eff.emoji}</span>
+								<span class="wiz-eff-name">{eff.name.split(' (')[0]}</span>
+								{#if eff.sampleUrl}<button type="button" class="wiz-play-preview" class:playing={playingEffectPreviewId === eff.id} onclick={(e) => toggleEffectPreview(eff, e)}>{playingEffectPreviewId === eff.id ? '⏹' : '▶'}</button>{/if}
 							</div>
-						</div>
-					{:else if activeAudioTab === 'bgm'}
-						<div class="bgm-tab-panel">
-							<div class="bgm-tracks-row">
-								{#each BGM_TRACKS as track}
-									<div
-										class="bgm-track-pill"
-										class:active={selectedBgmId === track.id}
-										onclick={() => selectedBgmId = track.id}
-										role="button"
-										tabindex="0"
-										onkeydown={(e) => e.key === 'Enter' && (selectedBgmId = track.id)}
-										title="{track.name} – {track.mood}"
-									>
-										{#if track.id !== 'none'}
-											<button
-												type="button"
-												class="bgm-mini-play"
-												class:playing={isPlayingBgmPreview && selectedBgmId === track.id}
-												onclick={(e) => { e.stopPropagation(); selectedBgmId = track.id; toggleBgmTrackPreview(track.id); }}
-												title={isPlayingBgmPreview && selectedBgmId === track.id ? "Stop Musik" : "Play & Dengarkan Musik Ini"}
-											>
-												{isPlayingBgmPreview && selectedBgmId === track.id ? '⏹' : '▶'}
-											</button>
-										{:else}
-											<span class="bgm-mute-icon">🔇</span>
-										{/if}
-										<span class="bgm-track-title">{track.name}</span>
-										{#if track.badge}
-											<span class="bgm-track-badge">{track.badge}</span>
-										{/if}
-									</div>
-								{/each}
-							</div>
+						{/each}
+					</div>
 
-							<div class="bgm-slider-container">
+					<!-- Custom Voice Tuner (Option A) -->
+					{#if selectedVoiceEngine === 'edge_tts'}
+						<div class="custom-voice-tuner-card">
+							<div class="tuner-header">
+								<div class="tuner-title-group">
+									<span class="tuner-icon">🎚️</span>
+									<div>
+										<strong class="tuner-title">Custom Voice Tuner (Kostum Suara Sendiri)</strong>
+										<span class="tuner-sub">Setel nada ngebass, kecepatan, dan equalizer agar karakter suaramu unik & khas</span>
+									</div>
+								</div>
 								<button
 									type="button"
-									class="btn-bgm-mute-toggle"
-									onclick={() => bgmVolume = bgmVolume > 0 ? 0 : 0.10}
-									title={bgmVolume === 0 ? "Bunyikan Musik" : "Mute Musik"}
+									class="btn-test-custom-voice"
+									class:testing={isTestingCustomVoice}
+									onclick={testCustomVoice}
+									title="Tes suara dengan setelan nada & kecepatan saat ini"
 								>
-									{bgmVolume === 0 ? '🔇' : '🔊'}
+									{#if isTestingCustomVoice}
+										<span>⏹ Berhenti</span>
+									{:else}
+										<span>▶ Tes Suara Kustom</span>
+									{/if}
 								</button>
-								<div class="bgm-slider-track">
+							</div>
+
+							<div class="tuner-sliders-grid">
+								<!-- Pitch / Nada Slider -->
+								<div class="tuner-slider-item">
+									<div class="tuner-slider-label-row">
+										<div class="tuner-label-with-tooltip">
+											<span class="slider-name">🎵 Nada / Pitch (Ngebass)</span>
+											<span class="slider-badge" class:bass-heavy={customPitchHz <= -12}>
+												{customPitchHz} Hz
+												{#if customPitchHz <= -24}
+													· Sub-Bass Bioskop
+												{:else if customPitchHz <= -12}
+													· Bariton Berat
+												{:else if customPitchHz <= -4}
+													· Empuk / Warm
+												{:else if customPitchHz === 0}
+													· Asli (0Hz)
+												{:else}
+													· Ceria / Ringan
+												{/if}
+											</span>
+										</div>
+										<div class="quick-preset-chips">
+											<button type="button" class="quick-chip" class:active={customPitchHz === 0} onclick={() => { customPitchHz = 0; selectedAudioEffect = 'custom'; }}>Normal (0Hz)</button>
+											<button type="button" class="quick-chip" class:active={customPitchHz === -14} onclick={() => { customPitchHz = -14; selectedAudioEffect = 'custom'; }}>Deep (-14Hz)</button>
+											<button type="button" class="quick-chip" class:active={customPitchHz === -26} onclick={() => { customPitchHz = -26; selectedAudioEffect = 'custom'; }}>Trailer (-26Hz)</button>
+										</div>
+									</div>
+									<input
+										type="range"
+										min="-35"
+										max="15"
+										step="1"
+										bind:value={customPitchHz}
+										oninput={() => selectedAudioEffect = 'custom'}
+										class="tuner-range-input"
+									/>
+									<div class="slider-ticks">
+										<span>-35Hz (Super Ngebass)</span>
+										<span>0Hz (Normal)</span>
+										<span>+15Hz (Tinggi)</span>
+									</div>
+								</div>
+
+								<!-- Speed / Tempo Slider -->
+								<div class="tuner-slider-item">
+									<div class="tuner-slider-label-row">
+										<div class="tuner-label-with-tooltip">
+											<span class="slider-name">⚡ Kecepatan Bicara (Speed Rate)</span>
+											<span class="slider-badge">
+												{customRatePct >= 0 ? `+${customRatePct}%` : `${customRatePct}%`}
+												{#if customRatePct >= 10}
+													· Pacing Cepat
+												{:else if customRatePct <= -8}
+													· Storytelling Santai
+												{:else}
+													· Natural
+												{/if}
+											</span>
+										</div>
+										<div class="quick-preset-chips">
+											<button type="button" class="quick-chip" class:active={customRatePct === -6} onclick={() => { customRatePct = -6; selectedAudioEffect = 'custom'; }}>0.9x Santai</button>
+											<button type="button" class="quick-chip" class:active={customRatePct === 0} onclick={() => { customRatePct = 0; selectedAudioEffect = 'custom'; }}>1.0x Normal</button>
+											<button type="button" class="quick-chip" class:active={customRatePct === 6} onclick={() => { customRatePct = 6; selectedAudioEffect = 'custom'; }}>1.1x Padat</button>
+										</div>
+									</div>
+									<input
+										type="range"
+										min="-20"
+										max="25"
+										step="1"
+										bind:value={customRatePct}
+										oninput={() => selectedAudioEffect = 'custom'}
+										class="tuner-range-input"
+									/>
+									<div class="slider-ticks">
+										<span>-20% (Dramatis)</span>
+										<span>0% (Standar)</span>
+										<span>+25% (Cepat)</span>
+									</div>
+								</div>
+
+								<!-- Bass Boost Slider -->
+								<div class="tuner-slider-item">
+									<div class="tuner-slider-label-row">
+										<div class="tuner-label-with-tooltip">
+											<span class="slider-name">🔊 Ketebalan Bass Dada (Equalizer DSP)</span>
+											<span class="slider-badge">
+												+{customBassDb} dB
+												{#if customBassDb >= 5}
+													· Punchy Tebal
+												{:else if customBassDb >= 2}
+													· Warm Studio
+												{:else}
+													· Flat
+												{/if}
+											</span>
+										</div>
+										<div class="quick-preset-chips">
+											<button type="button" class="quick-chip" class:active={customBassDb === 0} onclick={() => { customBassDb = 0; selectedAudioEffect = 'custom'; }}>Flat (0dB)</button>
+											<button type="button" class="quick-chip" class:active={customBassDb === 4} onclick={() => { customBassDb = 4; selectedAudioEffect = 'custom'; }}>Studio (+4dB)</button>
+											<button type="button" class="quick-chip" class:active={customBassDb === 7} onclick={() => { customBassDb = 7; selectedAudioEffect = 'custom'; }}>Heavy (+7dB)</button>
+										</div>
+									</div>
 									<input
 										type="range"
 										min="0"
-										max="0.30"
-										step="0.01"
-										value={bgmVolume}
-										oninput={handleBgmVolumeInput}
-										class="bgm-range-slider"
-										title="Geser untuk atur volume backsound"
+										max="8"
+										step="1"
+										bind:value={customBassDb}
+										oninput={() => selectedAudioEffect = 'custom'}
+										class="tuner-range-input"
 									/>
+									<div class="slider-ticks">
+										<span>0 dB (Alami)</span>
+										<span>+4 dB (Empuk Radio)</span>
+										<span>+8 dB (Bass Mantap)</span>
+									</div>
 								</div>
-								<span class="bgm-vol-val">{Math.round(bgmVolume * 100)}%</span>
-								<span class="vol-ideal-pill">{bgmVolume === 0 ? 'Muted' : bgmVolume <= 0.12 ? '⭐ Ideal' : 'Tinggi'}</span>
 							</div>
 						</div>
 					{/if}
 				</div>
+
+				<!-- BGM -->
+				<div class="wiz-card">
+					<div class="wiz-card-head"><span class="wiz-card-title">🎵 Backsound (BGM)</span></div>
+					<div class="wiz-bgm-tracks">
+						{#each BGM_TRACKS as track}
+							<div class="wiz-bgm-pill" class:active={selectedBgmId === track.id} onclick={() => selectedBgmId = track.id} role="button" tabindex="0" onkeydown={(e) => e.key==='Enter' && (selectedBgmId=track.id)}>
+								{#if track.id !== 'none'}
+									<button type="button" class="wiz-bgm-play" class:playing={isPlayingBgmPreview && selectedBgmId===track.id} onclick={(e) => { e.stopPropagation(); selectedBgmId=track.id; toggleBgmTrackPreview(track.id); }}>{isPlayingBgmPreview && selectedBgmId===track.id ? '⏹' : '▶'}</button>
+								{:else}<span>🔇</span>{/if}
+								<span class="wiz-bgm-name">{track.name}</span>
+								{#if track.badge}<span class="wiz-bgm-badge">{track.badge}</span>{/if}
+							</div>
+						{/each}
+					</div>
+					<div class="wiz-bgm-vol-row">
+						<button type="button" class="wiz-vol-toggle" onclick={() => bgmVolume = bgmVolume > 0 ? 0 : 0.10}>{bgmVolume === 0 ? '🔇' : '🔊'}</button>
+						<input type="range" min="0" max="0.30" step="0.01" value={bgmVolume} oninput={handleBgmVolumeInput} class="wiz-vol-slider"/>
+						<span class="wiz-vol-val">{Math.round(bgmVolume * 100)}%</span>
+						<span class="wiz-vol-hint">{bgmVolume === 0 ? 'Muted' : bgmVolume <= 0.12 ? '⭐ Ideal' : 'Tinggi'}</span>
+					</div>
+				</div>
 			</div>
 
-			<div class="action-buttons-row">
-				<button class="btn btn-primary generate-btn" onclick={generateStickmanVideo} disabled={isGenerating}>
-					<Wand2 size={18} /><span>{isGenerating ? 'Memproses Naskah & Animasi...' : '✨ Generate Stickman Video'}</span>
-				</button>
-				{#if scenes.length > 0}
-					<button
-						type="button"
-						class="btn btn-secondary regen-all-btn"
-						onclick={regenerateAllVoiceovers}
-						disabled={isRegeneratingVoice || isGenerating}
-						title="Terapkan suara vokal dan filter terpilih ke semua adegan naskah"
-					>
-						<RefreshCw size={15} class={isRegeneratingVoice ? 'spin' : ''} />
-						<span>{isRegeneratingVoice ? 'Menerapkan Suara...' : '🎙️ Terapkan ke Semua Suara'}</span>
+			<div class="wiz-step-actions">
+				<button class="wiz-btn-secondary" onclick={() => wizardStep = 3}><span>←</span><span>Pose & Karakter</span></button>
+				{#if scenes.length > 0 && scenes[0]?.voiceAudioUrl}
+					<button class="wiz-btn-primary" onclick={applyStylesAndOpenPlayer}>
+						<Play size={16}/><span>Terapkan Gaya & Buka Studio Player →</span>
+					</button>
+				{:else}
+					<button class="wiz-btn-primary" onclick={async () => { await generateStickmanVideo(); wizardStep = 5; }} disabled={!script.trim() || isGenerating}>
+						{#if isGenerating}<RefreshCw size={16} class="spin"/><span>Memproses...</span>{:else}<Wand2 size={16}/><span>Generate Voiceover & Buka Studio Player →</span>{/if}
 					</button>
 				{/if}
 			</div>
@@ -1770,539 +2456,265 @@
 				logs={genProgress.logs}
 				onDismiss={() => { genProgress.logs = []; genProgress.active = false; }}
 			/>
-		</section>
+		</div>
+		{/if}
 
-		<section class="preview-panel glass-panel">
-			<!-- Studio Monitor Frame -->
-			<div class="canvas-wrapper" class:canvas-empty={!currentScene} class:is-shorts={isShorts}>
-				<!-- Monitor Top Status Header -->
-				<div class="monitor-top-bar">
-					<div class="monitor-status">
-						<span class="status-dot" class:live={!!currentScene}></span>
-						<span class="status-label">{currentScene ? (isShorts ? 'LIVE PREVIEW • 9:16' : 'LIVE PREVIEW • 1080p') : 'MONITOR STANDBY'}</span>
-					</div>
-					<div class="monitor-meta">
-						<button
-							type="button"
-							class="aspect-toggle-btn"
-							class:shorts-active={isShorts}
-							onclick={toggleShorts}
-							title={isShorts ? 'Beralih ke mode Landscape 16:9' : 'Beralih ke mode Shorts 9:16 (TikTok / YouTube Shorts)'}
-						>
-							{#if isShorts}
-								<span>▮ 9:16</span><span class="shorts-badge">SHORTS</span>
-							{:else}
-								<span>▬ 16:9</span>
-							{/if}
-						</button>
-						{#if currentScene}
-							<span class="scene-counter-badge">Adegan {activeSceneIndex + 1} / {scenes.length}</span>
-							<span class="pacing-badge" title="Transisi visual alami berdasarkan alur kalimat utuh">🌿 Natural Flow</span>
-							{#if currentScene.chapter}
-								<span class="scene-chapter-badge" class:hook-badge={currentScene.chapter.isHook}>
-									{currentScene.chapter.tag || 'BAB'}: {currentScene.chapter.title || ''}
-								</span>
-							{/if}
-						{:else}
-							<span class="aspect-badge">{isShorts ? '9:16 Shorts • 30 FPS' : '16:9 Full HD • 30 FPS'}</span>
-							<span class="pacing-badge">🌿 Natural Flow</span>
-						{/if}
-					</div>
-				</div>
-
-				{#if currentScene}
-					{@const _curAlign = currentScene.textAlign || stickmanTextAlign}
-					{@const _isMiddle = _curAlign === 'middle'}
-					{@const _effImgAnim = getEffectiveImageAnimClass(currentScene, activeSceneIndex)}
-					<div bind:this={canvasEl} bind:clientHeight={canvasHeight} class="stickman-canvas theme-{stickmanBgTheme}" style="{getCanvasContainerStyle(stickmanBgTheme)}">
-						<div class="canvas-viewport" style="inset: {stickmanVideoPadding}%;">
-							{#key `${currentScene.image}-${activeSceneIndex}-${currentScene.imageAnim || stickmanImageAnim}-${currentScene.idleMotion || stickmanIdleMotion}-${currentScene.textSide}-${stickmanBgTheme}`}
-								<div class="stickman-entrance-wrapper anim-img-{_effImgAnim} side-{(currentScene.textSide || currentScene.layoutSide || 'right')}">
-									<div
-										class="stickman-bg-layer idle-motion-{(currentScene?.idleMotion || stickmanIdleMotion || 'shake')}"
-										style="{getStickmanBgLayerStyle(currentScene.image, stickmanBgTheme)}"
-									></div>
-								</div>
-							{/key}
-							{#key `${activeSceneIndex}-${currentScene.keyPoint}-${currentScene.textAnim || stickmanAnim}`}
-								<div
-									class="text-overlay {(currentScene.textSide || currentScene.layoutSide)} anim-{(currentScene.textAnim || stickmanAnim)} align-{_curAlign}"
-									style="{getOverlayStyle(currentScene)} cursor: {drag.active ? 'grabbing' : 'grab'};"
-									onpointerdown={onTextPointerDown}
-									role="presentation"
-									title="Drag untuk geser — klik textarea di bawah untuk edit bebas (Enter = baris baru)"
-								>
-									<div class="two-lines free-mode text-idle-{(currentScene?.textIdleMotion || stickmanTextIdleMotion || 'shake')}" style="font-family: {stickmanFontFamily}; align-items: {_curAlign === 'right' ? 'flex-end' : _curAlign === 'center' || _curAlign === 'middle' ? 'center' : 'flex-start'}; text-align: {_curAlign === 'right' ? 'right' : _curAlign === 'center' || _curAlign === 'middle' ? 'center' : 'left'};">
-										{#each getEditorLines(currentScene.keyPoint) as line, idx}
-											{@const isTop = idx === 0}
-											{@const rawCol = isTop ? (currentScene.textColorTop || stickmanTextColorTop) : (currentScene.textColorBottom || stickmanTextColorBottom)}
-											{@const col = (stickmanBgTheme === 'chalkboard' && (rawCol === '#111827' || rawCol === '#000000')) ? '#FFFFFF' : (stickmanBgTheme === 'chalkboard' && rawCol?.toLowerCase() === '#dc2626') ? '#F87171' : rawCol}
-											<span class="line anim-target" style="color: {col}; font-size: {getDisplayFontSize(currentScene.keyPoint, currentScene)}px; text-shadow: none;">{line}</span>
-										{/each}
-									</div>
-								</div>
-							{/key}
-							<button class="flip-btn" onclick={flipCurrentTextSide} title="Pindah teks ke sisi lain (kiri/kanan)">
-								<span>↔</span> Flip teks
-							</button>
-							<button class="auto-align-btn" onclick={autoAlignCurrentScene} title="Deteksi otomatis posisi gambar agar teks tidak menumpuk">
-								<span>🎯</span> Auto Posisi
-							</button>
-							<div class="canvas-fs-pill" title="Ubah Ukuran Huruf Langsung di Layar">
-								<button type="button" class="c-fs-btn" onclick={() => changeFontSize(-4)} title="Perkecil Ukuran Huruf (A-)">A-</button>
-								<span class="c-fs-val">{currentScene?.fontSize || stickmanFontSize}px</span>
-								<button type="button" class="c-fs-btn" onclick={() => changeFontSize(4)} title="Perbesar Ukuran Huruf (A+)">A+</button>
-							</div>
-							<button class="change-img-btn" onclick={openImagePicker} title="Ganti gambar adegan ini">
-								<span>🖼️</span> Ganti Gambar
-							</button>
-						</div>
-					</div>
-				{:else}
-					<div class="studio-empty-monitor">
-						<div class="empty-glow-circle">
-							<Film size={34} class="text-indigo" />
-						</div>
-						<h4 class="empty-monitor-title">{isShorts ? '📱 Shorts 9:16 Monitor' : 'Studio Canvas Monitor'}</h4>
-						<p class="empty-monitor-desc">
-							{#if isShorts}
-								Mode <strong>Shorts 9:16 Vertikal</strong> aktif. Video akan diproduksi dalam format potret 1080×1920 (TikTok, Reels, YouTube Shorts).
-							{:else}
-								Pilih topik di panel kiri atau buat naskah dengan AI, lalu klik <strong>"Generate Stickman Video"</strong> untuk melihat preview animasi adegan di sini.
-							{/if}
-						</p>
-						<div class="empty-monitor-features">
-							<div class="feat-pill"><Sparkles size={12} /><span>{isShorts ? '9:16 Portrait' : 'Bab & Hook Retensi'}</span></div>
-							<div class="feat-pill"><Mic size={12} /><span>Voiceover DSP + BGM</span></div>
-							<div class="feat-pill"><Layers size={12} /><span>{isShorts ? 'Auto Fill-Crop' : 'Full Custom Visual'}</span></div>
-						</div>
-					</div>
-				{/if}
+		<!-- ==================== STEP 5: PREVIEW & RENDER ==================== -->
+		{#if wizardStep === 5}
+		<div class="wiz-step-content wiz-step5-layout" id="step-5">
+			<div class="wiz-step-hero">
+				<div class="wiz-step-num">05</div>
+				<div>
+					<h2 class="wiz-step-title">Live Canvas Player & Render</h2>
+					<p class="wiz-step-desc">Tinjau animasi whiteboard secara real-time, sesuaikan, dan ekspor video 1080p.</p>
+			</div>
 			</div>
 
-			<!-- Controls Available When Scenes Exist -->
-			{#if scenes.length > 0}
-				{#if scenes.length > 1}
-					<div class="slide-nav">
-						<button
-							class="slide-nav-btn"
-							onclick={() => { if (activeSceneIndex > 0) selectScene(activeSceneIndex - 1); }}
-							disabled={activeSceneIndex === 0}
-							title="Adegan sebelumnya"
-						>&#8592;</button>
-
-						<div class="slide-dots">
-							{#each scenes as _, i}
-								<button
-									class="slide-dot"
-									class:active={i === activeSceneIndex}
-									onclick={() => selectScene(i)}
-									title="Adegan {i + 1}"
-								></button>
-							{/each}
+			<div class="wiz-preview-render">
+				<!-- Left: Player -->
+				<div class="wiz-player-col">
+					<!-- Canvas Monitor -->
+					<div class="canvas-wrapper" class:canvas-empty={!currentScene} class:is-shorts={isShorts}>
+						<div class="monitor-top-bar">
+							<div class="monitor-status">
+								<span class="status-dot" class:live={!!currentScene}></span>
+								<span class="status-label">{currentScene ? (isShorts ? 'LIVE PREVIEW • 9:16' : 'LIVE PREVIEW • 1080p') : 'MONITOR STANDBY'}</span>
+							</div>
+							<div class="monitor-meta">
+								<button type="button" class="aspect-toggle-btn" class:shorts-active={isShorts} onclick={toggleShorts} title={isShorts ? 'Beralih ke 16:9' : 'Beralih ke 9:16 Shorts'}>
+									{#if isShorts}<span>▮ 9:16</span><span class="shorts-badge">SHORTS</span>{:else}<span>▬ 16:9</span>{/if}
+								</button>
+								{#if currentScene}
+									<span class="scene-counter-badge">Adegan {activeSceneIndex + 1} / {scenes.length}</span>
+									<span class="pacing-badge">🌿 Natural Flow</span>
+								{/if}
+							</div>
 						</div>
 
-						<span class="slide-counter">{activeSceneIndex + 1} / {scenes.length}</span>
-
-						<button
-							class="slide-nav-btn"
-							onclick={() => { if (activeSceneIndex < scenes.length - 1) selectScene(activeSceneIndex + 1); }}
-							disabled={activeSceneIndex === scenes.length - 1}
-							title="Adegan berikutnya"
-						>&#8594;</button>
-					</div>
-
-					<!-- Scene Filmstrip with Chapter Labels -->
-					<div class="scene-filmstrip-wrap">
-						<div class="scene-filmstrip">
-							{#each scenes as sc, i}
-								<div class="filmstrip-item-group">
-									{#if sc.chapter}
-										<div class="chapter-label" class:hook-label={sc.chapter.isHook}>
-											{#if sc.chapter.tag}<span class="chapter-tag">{sc.chapter.tag}</span>{/if}
-											<span class="chapter-title">{sc.chapter.title || ''}</span>
+						{#if currentScene}
+							{@const _curAlign = currentScene.textAlign || stickmanTextAlign}
+							{@const _effImgAnim = getEffectiveImageAnimClass(currentScene, activeSceneIndex)}
+							<div bind:this={canvasEl} bind:clientHeight={canvasHeight} class="stickman-canvas theme-{stickmanBgTheme}" style="{getCanvasContainerStyle(stickmanBgTheme)}">
+								<div class="canvas-viewport" style="inset: {stickmanVideoPadding}%;">
+									{#key `${currentScene.image}-${activeSceneIndex}-${currentScene.imageAnim || stickmanImageAnim}-${currentScene.idleMotion || stickmanIdleMotion}-${currentScene.textSide}-${stickmanBgTheme}`}
+										<div class="stickman-entrance-wrapper anim-img-{_effImgAnim} side-{(currentScene.textSide || currentScene.layoutSide || 'right')}">
+											<div class="stickman-bg-layer idle-motion-{(currentScene?.idleMotion || stickmanIdleMotion || 'shake')}" style="{getStickmanBgLayerStyle(currentScene.image, stickmanBgTheme)}"></div>
 										</div>
-									{/if}
-									<button
-										type="button"
-										class="filmstrip-thumb"
-										class:active={i === activeSceneIndex}
-										class:has-chapter={!!sc.chapter}
-										class:is-hook={sc.chapter?.isHook}
-										onclick={() => selectScene(i)}
-										title="Adegan {i + 1}{sc.chapter ? ': ' + (sc.chapter.title || '') : ''}"
-									>
-										{#if sc.image}
-											<img src={sc.image} alt="Scene {i+1}" class="thumb-img" />
-										{:else}
-											<div class="thumb-placeholder">🎨</div>
-										{/if}
-										<span class="thumb-num">{i + 1}</span>
-										{#if sc.keyPoint}
-											<span class="thumb-kp">{sc.keyPoint.split('\n')[0].slice(0, 18)}</span>
-										{/if}
-									</button>
+									{/key}
+									{#key `${activeSceneIndex}-${currentScene.keyPoint}-${currentScene.textAnim || stickmanAnim}`}
+										<div class="text-overlay {(currentScene.textSide || currentScene.layoutSide)} anim-{(currentScene.textAnim || stickmanAnim)} align-{_curAlign}" style="{getOverlayStyle(currentScene)} cursor: {drag.active ? 'grabbing' : 'grab'};" onpointerdown={onTextPointerDown} role="presentation" title="Drag untuk geser">
+											<div class="two-lines free-mode text-idle-{(currentScene?.textIdleMotion || stickmanTextIdleMotion || 'shake')}" style="font-family: {stickmanFontFamily}; align-items: {_curAlign === 'right' ? 'flex-end' : _curAlign === 'center' || _curAlign === 'middle' ? 'center' : 'flex-start'}; text-align: {_curAlign === 'right' ? 'right' : _curAlign === 'center' || _curAlign === 'middle' ? 'center' : 'left'};">
+												{#each getEditorLines(currentScene.keyPoint) as line, idx}
+													{@const isTop = idx === 0}
+													{@const rawCol = isTop ? (currentScene.textColorTop || stickmanTextColorTop) : (currentScene.textColorBottom || stickmanTextColorBottom)}
+													{@const col = (stickmanBgTheme === 'chalkboard' && (rawCol === '#111827' || rawCol === '#000000')) ? '#FFFFFF' : (stickmanBgTheme === 'chalkboard' && rawCol?.toLowerCase() === '#dc2626') ? '#F87171' : rawCol}
+													<span class="line anim-target" style="color: {col}; font-size: {getDisplayFontSize(currentScene.keyPoint, currentScene)}px; text-shadow: none;">{line}</span>
+												{/each}
+											</div>
+										</div>
+									{/key}
+									<button class="flip-btn" onclick={flipCurrentTextSide} title="Pindah teks ke sisi lain"><span>↔</span> Flip teks</button>
+									<button class="auto-align-btn" onclick={autoAlignCurrentScene} title="Deteksi otomatis posisi kosong"><span>🎯</span> Auto Posisi</button>
+									<div class="canvas-fs-pill">
+										<button type="button" class="c-fs-btn" onclick={() => changeFontSize(-4)}>A-</button>
+										<span class="c-fs-val">{currentScene?.fontSize || stickmanFontSize}px</span>
+										<button type="button" class="c-fs-btn" onclick={() => changeFontSize(4)}>A+</button>
+									</div>
+									<button class="change-img-btn" onclick={openImagePicker}><span>🖼️</span> Ganti Gambar</button>
 								</div>
-							{/each}
-						</div>
+							</div>
+						{:else}
+							<div class="studio-empty-monitor">
+								<div class="empty-glow-circle"><Film size={34} class="text-indigo" /></div>
+								<h4 class="empty-monitor-title">{isShorts ? '📱 Shorts 9:16 Monitor' : 'Studio Canvas Monitor'}</h4>
+								<p class="empty-monitor-desc">Kembali ke Step 4 dan klik <strong>"Generate Voiceover"</strong> untuk melihat preview animasi di sini.</p>
+							</div>
+						{/if}
 					</div>
-				{/if}
 
-				<!-- Player Controls -->
-				<div class="player-controls">
-					<button class="ctrl-btn ctrl-play-btn" onclick={togglePlay}>
-						{#if isPlaying}<Pause size={16} />{:else}<Play size={16} />{/if}
-						<span>{isPlaying ? 'Pause' : 'Play Narasi'}</span>
-					</button>
-					<button class="ctrl-btn" onclick={() => { if (scenes.length) selectScene((activeSceneIndex + 1) % scenes.length); }}>
-						<span>Next →</span>
-					</button>
-					<button class="ctrl-btn" onclick={flipCurrentTextSide} title="Pindah teks ke sisi kosong lain">
-						<span>↔ Flip Sisi</span>
-					</button>
-					<button class="ctrl-btn" onclick={autoAlignCurrentScene} title="Deteksi otomatis posisi kosong gambar adegan ini">
-						<span>🎯 Auto Sisi</span>
-					</button>
-					<button
-						type="button"
-						class="ctrl-btn btn-split-scene"
-						onclick={splitCurrentScene}
-						disabled={!currentScene || (currentScene.narration || '').split(/\s+/).filter(Boolean).length < 5}
-						title="Bagi adegan ini jadi 2 adegan (durasi 5-7 detik) agar gambar berganti lebih cepat"
-					>
-						<span>✂️ Split Adegan</span>
-					</button>
-					<button
-						type="button"
-						class="ctrl-btn btn-random-dup"
-						onclick={randomizeDuplicateSceneImages}
-						disabled={isRandomizingDuplicates || !scenes.length}
-						title="Ganti semua adegan yang menggunakan gambar sama dengan gambar random unik"
-					>
-						<span>🎲 {isRandomizingDuplicates ? 'Mengacak...' : 'Ganti Gambar Duplikat'}</span>
-					</button>
-					<button
-						type="button"
-						class="ctrl-btn"
-						class:active-toggle={autoAdvancePlay}
-						onclick={() => autoAdvancePlay = !autoAdvancePlay}
-						title={autoAdvancePlay ? 'Auto-Next Aktif: Otomatis lanjut & ganti gambar saat adegan selesai' : 'Auto-Next Nonaktif: Hanya putar adegan ini'}
-					>
-						<span>{autoAdvancePlay ? '🔁 Auto-Next ON' : '⏹️ Auto-Next OFF'}</span>
-					</button>
-					<button
-						type="button"
-						class="ctrl-btn"
-						onclick={() => regenerateVoiceoverForScene(activeSceneIndex)}
-						disabled={isRegeneratingVoice}
-						title="Regenerate voiceover adegan ini dengan karakter vokal & filter aktif"
-					>
-						<Mic size={14} />
-						<span>{isRegeneratingVoice ? 'Memproses...' : '🎙️ Suara'}</span>
-					</button>
-					<div class="quick-fs-control" title="Ubah ukuran huruf adegan ini">
-						<button type="button" class="ctrl-btn quick-fs-btn" onclick={() => changeFontSize(-4)} title="Perkecil huruf (A-)">A-</button>
-						<span class="quick-fs-val">{currentScene?.fontSize || stickmanFontSize}px</span>
-						<button type="button" class="ctrl-btn quick-fs-btn" onclick={() => changeFontSize(4)} title="Perbesar huruf (A+)">A+</button>
-					</div>
-					<span class="hint">Auto: {(currentScene?.textSide || currentScene?.layoutSide) === 'left' ? 'kiri' : 'kanan'}</span>
-				</div>
-				<audio bind:this={audioElA} preload="auto" onended={() => onVoiceAudioEnded('A')}></audio>
-				<audio bind:this={audioElB} preload="auto" onended={() => onVoiceAudioEnded('B')}></audio>
-
-				{#if currentScene}
-					<div class="free-editor">
-						<span class="style-label">✏️ Edit Teks Adegan #{activeSceneIndex + 1} (Baris 1 warna atas, Baris 2 warna bawah)</span>
-						<textarea class="free-textarea" rows="2" placeholder="Ketik teks 2 baris — Enter untuk baris baru" value={currentScene.keyPoint} oninput={(e) => updateCurrentSceneProp('keyPoint', e.currentTarget.value.slice(0, 140))}></textarea>
-					</div>
-				{/if}
-
-				<!-- Structured Scene Styling Controls -->
-				<div class="scene-style-cards">
-					<!-- Typography Card -->
-					<div class="style-card">
-						<div class="style-card-title">
-							<span>✏️ Tipografi & Warna Teks</span>
-							<button type="button" class="transform-btn auto-all-btn" onclick={autoAlignAllScenes} title="Deteksi otomatis posisi kosong semua gambar agar teks tidak menumpuk">🎯 Auto Posisi Semua Scene</button>
-						</div>
-						<div class="style-card-content">
-							<div class="style-row">
-								<span class="style-label">Rata:</span>
-								<div class="anim-pills">
-									{#each POS_OPTIONS as pos}
-										<button type="button" class="anim-pill" class:on={(currentScene?.textAlign || stickmanTextAlign) === pos.id} onclick={() => currentScene ? setSceneAlign(pos.id) : (stickmanTextAlign = pos.id)}>{pos.label}</button>
+					<!-- Player Controls -->
+					{#if scenes.length > 0}
+						{#if scenes.length > 1}
+							<div class="slide-nav">
+								<button class="slide-nav-btn" onclick={() => { if (activeSceneIndex > 0) selectScene(activeSceneIndex - 1); }} disabled={activeSceneIndex === 0}>&#8592;</button>
+								<div class="slide-dots">
+									{#each scenes as _, i}
+										<button class="slide-dot" class:active={i === activeSceneIndex} onclick={() => selectScene(i)} title="Adegan {i + 1}"></button>
 									{/each}
 								</div>
-								<button class="transform-btn" onclick={applyAlignToAll} title="Terapkan perataan teks ke semua scene">Semua</button>
+								<span class="slide-counter">{activeSceneIndex + 1} / {scenes.length}</span>
+								<button class="slide-nav-btn" onclick={() => { if (activeSceneIndex < scenes.length - 1) selectScene(activeSceneIndex + 1); }} disabled={activeSceneIndex === scenes.length - 1}>&#8594;</button>
 							</div>
-
-							<div class="style-row-split">
-								<div class="style-row">
-									<span class="style-label">Warna Atas:</span>
-									<div class="color-dots">
-										{#each TOP_COLOR_PRESETS as c}
-											<button type="button" class="color-dot" class:on={(currentScene?.textColorTop || stickmanTextColorTop) === c} style="background: {c}; border-color: {c === '#FFFFFF' ? '#cbd5e1' : c};" onclick={() => currentScene ? setSceneTextColorTop(c) : (stickmanTextColorTop = c)} aria-label="Warna {c}"></button>
-										{/each}
-										<input type="color" value={currentScene?.textColorTop || stickmanTextColorTop} oninput={(e) => currentScene ? setSceneTextColorTop(e.currentTarget.value) : (stickmanTextColorTop = e.currentTarget.value)} class="color-picker" title="Custom warna baris 1" />
-									</div>
-									<button class="transform-btn" onclick={applyTextColorTopToAll} title="Terapkan ke semua scene">Semua</button>
-								</div>
-								<div class="style-row">
-									<span class="style-label">Warna Bawah:</span>
-									<div class="color-dots">
-										{#each BOTTOM_COLOR_PRESETS as c}
-											<button type="button" class="color-dot" class:on={(currentScene?.textColorBottom || stickmanTextColorBottom) === c} style="background: {c}; border-color: {c === '#FFFFFF' ? '#cbd5e1' : c};" onclick={() => currentScene ? setSceneTextColorBottom(c) : (stickmanTextColorBottom = c)} aria-label="Warna {c}"></button>
-										{/each}
-										<input type="color" value={currentScene?.textColorBottom || stickmanTextColorBottom} oninput={(e) => currentScene ? setSceneTextColorBottom(e.currentTarget.value) : (stickmanTextColorBottom = e.currentTarget.value)} class="color-picker" title="Custom warna baris 2" />
-									</div>
-									<button class="transform-btn" onclick={applyTextColorBottomToAll} title="Terapkan ke semua scene">Semua</button>
-								</div>
-							</div>
-
-							<div class="style-row font-size-control-group">
-								<div class="fs-header-row">
-									<span class="style-label fs-main-label">🔤 Ukuran Huruf: <strong class="fs-badge">{currentScene?.fontSize || stickmanFontSize}px</strong></span>
-									<button type="button" class="transform-btn fs-apply-all-btn" onclick={applyFontSizeToAll} title="Terapkan ukuran font ke semua scene">Terapkan ke Semua Scene</button>
-								</div>
-
-								<div class="fs-slider-row">
-									<button type="button" class="fs-step-btn" onclick={() => changeFontSize(-4)} title="Perkecil (-4px)">➖</button>
-									<input
-										type="range"
-										min="24"
-										max="120"
-										step="2"
-										value={currentScene?.fontSize || stickmanFontSize}
-										oninput={(e) => setSceneFontSize(Number(e.currentTarget.value))}
-										class="size-range fs-slider"
-									/>
-									<button type="button" class="fs-step-btn" onclick={() => changeFontSize(4)} title="Perbesar (+4px)">➕</button>
-								</div>
-
-								<div class="fs-presets-row">
-									<span class="fs-preset-label">Pilihan Cepat:</span>
-									<div class="fs-presets-list">
-										{#each FONT_SIZE_PRESETS as p}
-											<button
-												type="button"
-												class="fs-preset-pill"
-												class:on={Math.abs((currentScene?.fontSize || stickmanFontSize) - p.val) <= 3}
-												onclick={() => setSceneFontSize(p.val)}
-											>
-												{p.label}
+							<div class="scene-filmstrip-wrap">
+								<div class="scene-filmstrip">
+									{#each scenes as sc, i}
+										<div class="filmstrip-item-group">
+											{#if sc.chapter}<div class="chapter-label" class:hook-label={sc.chapter.isHook}>{#if sc.chapter.tag}<span class="chapter-tag">{sc.chapter.tag}</span>{/if}<span class="chapter-title">{sc.chapter.title || ''}</span></div>{/if}
+											<button type="button" class="filmstrip-thumb" class:active={i === activeSceneIndex} class:has-chapter={!!sc.chapter} class:is-hook={sc.chapter?.isHook} onclick={() => selectScene(i)} title="Adegan {i + 1}">
+												{#if sc.image}<img src={sc.image} alt="Scene {i+1}" class="thumb-img" />{:else}<div class="thumb-placeholder">🎨</div>{/if}
+												<span class="thumb-num">{i + 1}</span>
+												{#if sc.keyPoint}<span class="thumb-kp">{sc.keyPoint.split('\n')[0].slice(0, 18)}</span>{/if}
 											</button>
-										{/each}
-									</div>
-								</div>
-							</div>
-
-							<div class="style-row">
-								<span class="style-label font-label">Jenis Font:</span>
-								<select bind:value={stickmanFontFamily} class="font-select">
-									{#each FONT_OPTIONS as f}<option value={f.value}>{f.label}</option>{/each}
-								</select>
-							</div>
-						</div>
-					</div>
-
-					<!-- Animation & Effects Card -->
-					<div class="style-card">
-						<div class="style-card-title">🎬 Animasi & Safe Area</div>
-						<div class="style-card-content">
-							<div class="style-row">
-								<span class="style-label">Masuk Teks:</span>
-								<div class="anim-pills">
-									{#each ANIM_OPTIONS as a}
-										<button type="button" class="anim-pill" class:on={(currentScene?.textAnim || stickmanAnim) === a.id} onclick={() => currentScene ? setSceneAnim(a.id) : (stickmanAnim = a.id)}>{a.label}</button>
+										</div>
 									{/each}
 								</div>
-								<button class="transform-btn" onclick={applyAnimToAll} title="Terapkan ke semua scene">Semua</button>
 							</div>
+						{/if}
+						<div class="player-controls">
+							<button class="ctrl-btn ctrl-play-btn" onclick={togglePlay}>
+								{#if isPlaying}<Pause size={16}/>{:else}<Play size={16}/>{/if}
+								<span>{isPlaying ? 'Pause' : 'Play Narasi'}</span>
+							</button>
+							<button class="ctrl-btn" onclick={() => { if (scenes.length) selectScene((activeSceneIndex + 1) % scenes.length); }}><span>Next →</span></button>
+							<button class="ctrl-btn" onclick={flipCurrentTextSide}><span>↔ Flip Sisi</span></button>
+							<button class="ctrl-btn" onclick={autoAlignCurrentScene}><span>🎯 Auto Sisi</span></button>
+							<button type="button" class="ctrl-btn btn-split-scene" onclick={splitCurrentScene} disabled={!currentScene || (currentScene.narration || '').split(/\s+/).filter(Boolean).length < 5}><span>✂️ Split Adegan</span></button>
+							<button type="button" class="ctrl-btn btn-random-dup" onclick={randomizeDuplicateSceneImages} disabled={isRandomizingDuplicates || !scenes.length}><span>🎲 {isRandomizingDuplicates ? 'Mengacak...' : 'Ganti Gambar Duplikat'}</span></button>
+							<button type="button" class="ctrl-btn" class:active-toggle={autoAdvancePlay} onclick={() => autoAdvancePlay = !autoAdvancePlay}><span>{autoAdvancePlay ? '🔁 Auto-Next ON' : '⏹️ Auto-Next OFF'}</span></button>
+							<button type="button" class="ctrl-btn" onclick={() => regenerateVoiceoverForScene(activeSceneIndex)} disabled={isRegeneratingVoice}><Mic size={14}/><span>{isRegeneratingVoice ? 'Memproses...' : `🎙️ Suara (${selectedVoiceEngine === 'gemini_tts' ? selectedVoiceId.replace('gemini-', '') : 'Edge'})`}</span></button>
+							<div class="quick-fs-control">
+								<button type="button" class="ctrl-btn quick-fs-btn" onclick={() => changeFontSize(-4)}>A-</button>
+								<span class="quick-fs-val">{currentScene?.fontSize || stickmanFontSize}px</span>
+								<button type="button" class="ctrl-btn quick-fs-btn" onclick={() => changeFontSize(4)}>A+</button>
+							</div>
+						</div>
+						<audio bind:this={audioElA} preload="auto" onended={() => onVoiceAudioEnded('A')}></audio>
+						<audio bind:this={audioElB} preload="auto" onended={() => onVoiceAudioEnded('B')}></audio>
 
-							<div class="style-row">
-								<span class="style-label">Gerak Gambar:</span>
-								<div class="anim-pills">
-									{#each IDLE_MOTION_OPTIONS as idleOpt}
-										<button type="button" class="anim-pill" class:on={(currentScene?.idleMotion || stickmanIdleMotion) === idleOpt.id} onclick={() => currentScene ? setSceneIdleMotion(idleOpt.id) : (stickmanIdleMotion = idleOpt.id)}>{idleOpt.label}</button>
-									{/each}
+						{#if currentScene}
+							<div class="free-editor">
+								<span class="style-label">✏️ Edit Teks Adegan #{activeSceneIndex + 1}</span>
+								<textarea class="free-textarea" rows="2" placeholder="Ketik teks 2 baris — Enter untuk baris baru" value={currentScene.keyPoint} oninput={(e) => updateCurrentSceneProp('keyPoint', e.currentTarget.value.slice(0, 140))}></textarea>
+							</div>
+							<!-- Transform sliders -->
+							<div class="transform-actions">
+								<div class="slider-row">
+									<span class="style-label">Geser X: {(currentScene.textOffsetX || 0).toFixed(1)}%</span>
+									<input class="range-input" type="range" min="-35" max="35" step="0.5" value={currentScene.textOffsetX || 0} oninput={(e) => updateCurrentSceneProp('textOffsetX', Number(e.currentTarget.value))}/>
+									<span class="style-label">Y: {(currentScene.textOffsetY || 0).toFixed(1)}%</span>
+									<input class="range-input" type="range" min="-28" max="28" step="0.5" value={currentScene.textOffsetY || 0} oninput={(e) => updateCurrentSceneProp('textOffsetY', Number(e.currentTarget.value))}/>
 								</div>
-								<button class="transform-btn" onclick={applyIdleMotionToAll} title="Terapkan ke semua scene">Semua</button>
-							</div>
-
-							<div class="style-row">
-								<span class="style-label">Safe Margin:</span>
-								<div class="anim-pills">
-									{#each VIDEO_PADDING_OPTIONS as pOpt}
-										<button
-											type="button"
-											class="anim-pill"
-											class:on={stickmanVideoPadding === pOpt.id}
-											onclick={() => stickmanVideoPadding = pOpt.id}
-											title={pOpt.desc}
-										>
-											{pOpt.label}
-										</button>
-									{/each}
+								<div class="slider-row">
+									<span class="style-label">Rotate {(currentScene.textRotate ?? 0)}°</span>
+									<input class="range-input" type="range" min="-18" max="18" step="0.5" value={currentScene.textRotate ?? 0} oninput={(e) => updateCurrentSceneProp('textRotate', Number(e.currentTarget.value))}/>
+									<span class="style-label">Scale {(currentScene.textScale ?? 1).toFixed(2)}x</span>
+									<input class="range-input" type="range" min="0.7" max="1.6" step="0.02" value={currentScene.textScale ?? 1} oninput={(e) => updateCurrentSceneProp('textScale', Number(e.currentTarget.value))}/>
+									<button class="transform-btn" onclick={resetTransform}>Reset</button>
 								</div>
-								<span class="hint-text" style="font-size: 0.72rem; color: var(--text-3); margin-left: 6px;">Margin aman YouTube</span>
 							</div>
-
-							<div class="style-row">
-								<span class="style-label">Tema Kanvas:</span>
-								<div class="anim-pills">
-									{#each BG_THEME_OPTIONS as tOpt}
-										<button
-											type="button"
-											class="anim-pill"
-											class:on={stickmanBgTheme === tOpt.id}
-											onclick={() => setStickmanTheme(tOpt.id)}
-											title={tOpt.desc}
-										>
-											{tOpt.label}
-										</button>
-									{/each}
-								</div>
-								<span class="hint-text" style="font-size: 0.72rem; color: var(--text-3); margin-left: 6px;">Warna kertas & dark mode</span>
-							</div>
-						</div>
-					</div>
-				</div>
-
-				{#if currentScene}
-					<div class="transform-actions">
-						<div class="slider-row">
-							<span class="style-label">Geser X: {(currentScene.textOffsetX || 0).toFixed(1)}%</span>
-							<input class="range-input" type="range" min="-35" max="35" step="0.5" value={currentScene.textOffsetX || 0} oninput={(e)=>updateCurrentSceneProp('textOffsetX', Number(e.currentTarget.value))} />
-							<span class="style-label">Y: {(currentScene.textOffsetY || 0).toFixed(1)}%</span>
-							<input class="range-input" type="range" min="-28" max="28" step="0.5" value={currentScene.textOffsetY || 0} oninput={(e)=>updateCurrentSceneProp('textOffsetY', Number(e.currentTarget.value))} />
-						</div>
-						<div class="slider-row">
-							<span class="style-label">Rotate {(currentScene.textRotate ?? 0)}°</span>
-							<input class="range-input" type="range" min="-18" max="18" step="0.5" value={currentScene.textRotate ?? 0} oninput={(e)=>updateCurrentSceneProp('textRotate', Number(e.currentTarget.value))} />
-							<span class="style-label">Scale {(currentScene.textScale ?? 1).toFixed(2)}x</span>
-							<input class="range-input" type="range" min="0.7" max="1.6" step="0.02" value={currentScene.textScale ?? 1} oninput={(e)=>updateCurrentSceneProp('textScale', Number(e.currentTarget.value))} />
-							<button class="transform-btn" onclick={resetTransform}>Reset</button>
-						</div>
-					</div>
-				{/if}
-
-				<!-- Render MP4 Card -->
-				<div class="render-card">
-					<div class="render-head">
-						<div class="render-title">
-							<Film size={15} />
-							{#if isShorts}
-								<span>Render Shorts 9:16 (1080×1920)</span>
-							{:else}
-								<span>Render Video Stickman 16:9 Full HD</span>
-							{/if}
-						</div>
-						<div class="quality-row">
-							{#if isShorts}
-								<button type="button" class="q-btn" class:on={renderQuality==='1080p'} onclick={() => renderQuality='1080p'} disabled={isRendering}>1080p Shorts</button>
-								<button type="button" class="q-btn" class:on={renderQuality==='720p'} onclick={() => renderQuality='720p'} disabled={isRendering}>720p Shorts</button>
-							{:else}
-								<button type="button" class="q-btn" class:on={renderQuality==='1080p'} onclick={() => renderQuality='1080p'} disabled={isRendering}>1080p (FHD)</button>
-								<button type="button" class="q-btn" class:on={renderQuality==='720p'} onclick={() => renderQuality='720p'} disabled={isRendering}>720p</button>
-							{/if}
-						</div>
-					</div>
-					{#if downloadUrl}
-						<a href={downloadUrl} download={downloadFilename} class="btn btn-primary download-link" target="_blank"><Download size={14} /><span>Download Video MP4</span></a>
-					{:else}
-						<button class="btn btn-primary render-btn" onclick={startStickmanRender} disabled={isRendering}>
-							{#if isRendering}<RefreshCw size={14} class="spin" /><span>{renderStep || 'Rendering...'} {renderProgress}%</span>{:else}<Film size={14} /><span>{isShorts ? '🎬 Export Shorts (9:16)' : 'Render Video Stickman'}</span>{/if}
-						</button>
+						{/if}
 					{/if}
-					{#if isRendering || renderProgress>0}
-						<div class="progress-track"><div class="progress-fill" style="width: {renderProgress}%"></div></div>
-						<div class="progress-label">{renderProgress}% • {renderStep}</div>
+				</div>
+
+				<!-- Right: Render + Scene Controls -->
+				<div class="wiz-render-col">
+					<!-- Generation Progress -->
+					<GenerationProgressConsole
+						isGenerating={isGenerating}
+						progress={genProgress.percent}
+						currentStep={genProgress.currentStep}
+						currentScene={genProgress.currentScene}
+						totalScenes={genProgress.totalScenes}
+						activeQuery={genProgress.activeQuery}
+						activeNarration={genProgress.activeNarration}
+						stats={genProgress.stats}
+						logs={genProgress.logs}
+						onDismiss={() => { genProgress.logs = []; genProgress.active = false; }}
+					/>
+
+					<!-- Render Card -->
+					<div class="render-card">
+						<div class="render-head">
+							<div class="render-title"><Film size={15}/>{#if isShorts}<span>Render Shorts 9:16 (1080×1920)</span>{:else}<span>Render Video Stickman 16:9 Full HD</span>{/if}</div>
+							<div class="quality-row">
+								{#if isShorts}
+									<button type="button" class="q-btn" class:on={renderQuality==='1080p'} onclick={() => renderQuality='1080p'} disabled={isRendering}>1080p Shorts</button>
+									<button type="button" class="q-btn" class:on={renderQuality==='720p'} onclick={() => renderQuality='720p'} disabled={isRendering}>720p Shorts</button>
+								{:else}
+									<button type="button" class="q-btn" class:on={renderQuality==='1080p'} onclick={() => renderQuality='1080p'} disabled={isRendering}>1080p (FHD)</button>
+									<button type="button" class="q-btn" class:on={renderQuality==='720p'} onclick={() => renderQuality='720p'} disabled={isRendering}>720p</button>
+								{/if}
+							</div>
+						</div>
+						{#if downloadUrl}
+							<a href={downloadUrl} download={downloadFilename} class="btn btn-primary download-link" target="_blank"><Download size={14}/><span>Download Video MP4</span></a>
+						{:else}
+							<button class="btn btn-primary render-btn" onclick={startStickmanRender} disabled={isRendering || !scenes.length}>
+								{#if isRendering}<RefreshCw size={14} class="spin"/><span>{renderStep || 'Rendering...'} {renderProgress}%</span>{:else}<Film size={14}/><span>🚀 {isShorts ? 'Export Shorts (9:16)' : 'Render & Download Video Stickman (MP4)'}</span>{/if}
+							</button>
+						{/if}
+						{#if isRendering || renderProgress > 0}
+							<div class="progress-track"><div class="progress-fill" style="width: {renderProgress}%"></div></div>
+							<div class="progress-label">{renderProgress}% • {renderStep}</div>
+						{/if}
+						{#if renderError}<div class="error-box">{renderError}</div>{/if}
+						{#if downloadUrl}<div class="success-box">Video siap — klik Download</div>{/if}
+						<p class="render-hint">Video di-mix otomatis: gambar stickman, subtitle, voiceover, dan backsound.</p>
+					</div>
+
+					<!-- Regen Voiceover & Import Audio -->
+					{#if scenes.length > 0}
+						<div class="step5-audio-actions">
+							<button type="button" class="btn btn-secondary regen-all-btn" onclick={regenerateAllVoiceovers} disabled={isRegeneratingVoice || isGenerating}>
+								<RefreshCw size={15} class={isRegeneratingVoice ? 'spin' : ''}/>
+								<span>{isRegeneratingVoice ? 'Menerapkan Suara...' : '🎙️ Regenerate Semua Voiceover'}</span>
+							</button>
+							<button type="button" class="btn btn-secondary regen-all-btn groq-import-btn" onclick={() => showWhisperModal = true}>
+								<Mic size={15}/>
+								<span>🎙️ Ganti dari 1 Audio Utuh (Whisper AI)</span>
+							</button>
+						</div>
 					{/if}
-					{#if renderError}<div class="error-box">{renderError}</div>{/if}
-					{#if downloadUrl}<div class="success-box">Video siap — klik Download</div>{/if}
-					<p class="render-hint">Video akan di-mix otomatis dengan gambar stickman full, subtitle poin penting, voiceover, dan backsound.</p>
 				</div>
-			{:else}
-				<!-- Workflow Guide When No Scenes Yet -->
-				<div class="studio-guide-card">
-					<div class="guide-card-head">
-						<Sparkles size={16} class="text-amber" />
-						<span class="guide-card-title">Alur Kerja Cepat Stickman Studio</span>
-					</div>
-					<div class="guide-steps-list">
-						<div class="guide-step-item">
-							<span class="step-num">1</span>
-							<div class="step-desc">
-								<strong>Tentukan Judul / Topik</strong>
-								<small>Ketik topik atau klik <em>"🎲 Ide Cepat"</em> / <em>"🔥 Riset 10 Opsi"</em> untuk ide berbobot.</small>
-							</div>
-						</div>
-						<div class="guide-step-item">
-							<span class="step-num">2</span>
-							<div class="step-desc">
-								<strong>Racik Naskah Viral</strong>
-								<small>Klik <em>"✨ AI Script Generator Viral"</em> untuk memecah naskah per adegan & per bab.</small>
-							</div>
-						</div>
-						<div class="guide-step-item">
-							<span class="step-num">3</span>
-							<div class="step-desc">
-								<strong>Pilih Suara & Musik</strong>
-								<small>Pilih karakter vokal (Ardi, Gadis, dll.), efek mastering DSP, dan musik latar.</small>
-							</div>
-						</div>
-						<div class="guide-step-item highlight-step">
-							<span class="step-num">4</span>
-							<div class="step-desc">
-								<strong>Generate & Review</strong>
-								<small>Klik <em>"✨ Generate Stickman Video"</em> — preview animasi & kontrol adegan akan muncul di sini!</small>
-							</div>
-						</div>
-					</div>
-				</div>
-			{/if}
-		</section>
+			</div>
+
+			<div class="wiz-step-actions" style="margin-top:16px">
+				<button class="wiz-btn-secondary" onclick={() => wizardStep = 4}><span>←</span><span>Kembali & Sesuaikan Gaya / Audio</span></button>
+			</div>
+		</div>
+		{/if}
+
 	</main>
 
+	<!-- ============================================================ -->
 	<!-- Image Picker Modal -->
+	<!-- ============================================================ -->
 	{#if showImagePicker}
 		<div class="img-picker-backdrop" onclick={(e) => { if (e.target === e.currentTarget) showImagePicker = false; }} role="presentation">
 			<div class="img-picker-modal">
+				<!-- Header -->
 				<div class="img-picker-header">
 					<div class="img-picker-title">
-						<span>🖼️</span>
+						<span class="picker-icon-badge">🖼️</span>
 						<div>
 							<strong>Ganti Gambar Adegan {activeSceneIndex + 1}</strong>
-							<small>Pilih dari koleksi stickman atau upload gambar kamu sendiri</small>
+							<small>Pilih dari koleksi stickman atau upload gambar kustom</small>
 						</div>
 					</div>
-					<button class="img-picker-close" onclick={() => showImagePicker = false} title="Tutup">✕</button>
+					<button class="img-picker-close" onclick={() => showImagePicker = false} title="Tutup modal (Esc)">✕</button>
 				</div>
 
+				<!-- Toolbar -->
 				<div class="img-picker-toolbar">
-					<input
-						type="text"
-						bind:value={imagePickerFilter}
-						placeholder="🔍 Cari gambar dwibahasa (uang, sedih, laptop, tidur, ide, crypto, coin, dll)..."
-						class="img-picker-search"
-					/>
-					<button
-						type="button"
-						class="btn-upload-img"
-						onclick={() => imageUploadInputEl?.click()}
-						title="Upload gambar dari komputer kamu (.png, .jpg, .webp)"
-					>
+					<div class="img-picker-search-wrap">
+						<span class="search-icon">🔍</span>
+						<input
+							type="text"
+							bind:value={imagePickerFilter}
+							placeholder="Cari gambar stickman (uang, sedih, laptop, ide, sukses...)"
+							class="img-picker-search"
+						/>
+						{#if imagePickerFilter}
+							<button type="button" class="btn-clear-search" onclick={() => imagePickerFilter = ''} title="Hapus pencarian">✕</button>
+						{/if}
+					</div>
+					<button type="button" class="btn-upload-img" onclick={() => imageUploadInputEl?.click()} title="Upload gambar dari komputer">
 						📁 Upload Gambar
 					</button>
-					<input
-						bind:this={imageUploadInputEl}
-						type="file"
-						accept="image/png,image/jpeg,image/webp,image/gif"
-						style="display:none;"
-						onchange={handleImageFileUpload}
-					/>
+					<input bind:this={imageUploadInputEl} type="file" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none;" onchange={handleImageFileUpload}/>
 				</div>
 
+				<!-- Categories -->
 				<div class="img-picker-cats">
 					<button
 						type="button"
@@ -2324,49 +2736,164 @@
 					{/each}
 				</div>
 
+				<!-- Count, Scene Indicator & Size Switcher -->
 				<div class="img-picker-count">
-					<span>{filteredAssets.length} gambar stickman ditemukan</span>
-					{#if imagePickerFilter || selectedImageCategory !== 'all'}
-						<button
-							type="button"
-							class="btn-reset-filter"
-							onclick={() => { imagePickerFilter = ''; selectedImageCategory = 'all'; }}
-						>
-							↺ Reset filter
-						</button>
+					<div class="img-picker-count-left">
+						<span class="count-badge"><strong>{filteredAssets.length}</strong> pose stickman ditemukan</span>
+						{#if currentScene?.image}
+							<div class="current-scene-indicator" title="Gambar aktif pada adegan saat ini">
+								<span class="current-label">Saat ini:</span>
+								<img src={currentScene.image} alt="Saat ini" class="current-thumb"/>
+								<span class="current-title">{currentScene.imageTitle || 'Gambar Aktif'}</span>
+							</div>
+						{/if}
+					</div>
+
+					<div class="img-picker-count-right">
+						<div class="picker-size-toggle" title="Ubah ukuran tampilan gambar">
+							<span class="size-label">Tampilan:</span>
+							<button
+								type="button"
+								class="size-btn"
+								class:active={pickerGridSize === 'large'}
+								onclick={() => pickerGridSize = 'large'}
+								title="Tampilan Penuh & Besar (Jelas Sekilas)"
+							>
+								🖼️ Besar
+							</button>
+							<button
+								type="button"
+								class="size-btn"
+								class:active={pickerGridSize === 'medium'}
+								onclick={() => pickerGridSize = 'medium'}
+								title="Tampilan Sedang"
+							>
+								🔲 Sedang
+							</button>
+							<button
+								type="button"
+								class="size-btn"
+								class:active={pickerGridSize === 'compact'}
+								onclick={() => pickerGridSize = 'compact'}
+								title="Tampilan Kompak"
+							>
+								▦ Kompak
+							</button>
+						</div>
+
+						{#if imagePickerFilter || selectedImageCategory !== 'all'}
+							<button type="button" class="btn-reset-filter" onclick={() => { imagePickerFilter = ''; selectedImageCategory = 'all'; }}>
+								↺ Reset filter
+							</button>
+						{/if}
+					</div>
+				</div>
+
+				<!-- Image Grid -->
+				<div class="img-picker-grid size-{pickerGridSize}">
+					{#if filteredAssets.length === 0}
+						<div class="img-picker-empty">
+							<span class="empty-icon">🔍</span>
+							<p>Tidak ada gambar dengan kata kunci <strong>"{imagePickerFilter}"</strong></p>
+							<small>Coba kata kunci lain atau upload gambar kustom dari komputer</small>
+							<button type="button" class="btn-reset-empty" onclick={() => { imagePickerFilter = ''; selectedImageCategory = 'all'; }}>
+								↺ Tampilkan Semua ({availableAssets.length}) Gambar
+							</button>
+						</div>
+					{:else}
+						{#each displayedAssets as asset (asset.id || asset.url)}
+							<div
+								class="img-pick-card"
+								class:selected={currentScene?.image === asset.url}
+								role="button"
+								tabindex="0"
+								onclick={() => applyAssetToScene(asset)}
+								onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); applyAssetToScene(asset); } }}
+								title="{asset.title || asset.slug} (Klik untuk pasang ke adegan)"
+							>
+								<div class="pick-card-img-wrap">
+									<img src={asset.url} alt={asset.title || asset.slug} class="pick-card-img" loading="lazy"/>
+									{#if currentScene?.image === asset.url}
+										<div class="pick-card-check">✓ Terpilih</div>
+									{/if}
+									<button
+										type="button"
+										class="btn-quick-zoom"
+										onclick={(e) => { e.stopPropagation(); previewAsset = asset; }}
+										title="Perbesar gambar untuk melihat detail"
+									>
+										🔍
+									</button>
+									<div class="card-select-overlay">
+										<span class="select-overlay-text">✓ Pilih Pose Ini</span>
+									</div>
+								</div>
+								<div class="pick-card-info">
+									<div class="pick-card-title-row">
+										<span class="pick-card-label">{asset.title || asset.slug}</span>
+										{#if asset.layoutSide}
+											<span class="pick-card-side-badge" title="Posisi gambar {asset.layoutSide === 'left' ? 'kiri' : 'kanan'}">
+												{asset.layoutSide === 'left' ? '👈 Kiri' : '👉 Kanan'}
+											</span>
+										{/if}
+									</div>
+									{#if asset.tagsId?.length || asset.keywords?.length}
+										<div class="pick-card-tags">
+											{#each (asset.tagsId || asset.keywords || []).slice(0, pickerGridSize === 'large' ? 4 : 2) as tag}
+												<span class="tag-pill">#{tag}</span>
+											{/each}
+										</div>
+									{/if}
+								</div>
+							</div>
+						{/each}
+
+						{#if filteredAssets.length > imagePickerLimit}
+							<div class="img-picker-load-more">
+								<button type="button" class="btn-load-more-assets" onclick={loadMoreAssets}>
+									<span>⬇️ Muat Lebih Banyak ({filteredAssets.length - imagePickerLimit} gambar tersisa)</span>
+								</button>
+							</div>
+						{/if}
 					{/if}
 				</div>
 
-				<div class="img-picker-grid">
-					{#if filteredAssets.length === 0}
-						<div class="img-picker-empty">
-							<span>🔍</span>
-							<p>Tidak ada gambar dengan kata kunci <strong>"{imagePickerFilter}"</strong></p>
-							<small>Coba kata lain atau upload gambar kamu sendiri</small>
-						</div>
-					{:else}
-						{#each filteredAssets as asset}
-							<button
-								type="button"
-								class="img-pick-card"
-								class:selected={currentScene?.image === asset.url}
-								onclick={() => applyAssetToScene(asset)}
-								title="{asset.title || asset.slug}"
-							>
-								<div class="pick-card-img-wrap">
-									<img src={asset.url} alt={asset.title || asset.slug} class="pick-card-img" loading="lazy" />
-									{#if currentScene?.image === asset.url}
-										<div class="pick-card-check">✓</div>
+				<!-- Full High-Res Lightbox Modal -->
+				{#if previewAsset}
+					<div class="asset-lightbox-backdrop" onclick={() => previewAsset = null} role="presentation">
+						<div class="asset-lightbox-modal" onclick={(e) => e.stopPropagation()} role="presentation">
+							<div class="lightbox-header">
+								<div class="lightbox-title-wrap">
+									<strong class="lightbox-title">{previewAsset.title || previewAsset.slug}</strong>
+									{#if previewAsset.layoutSide}
+										<span class="lightbox-side-badge">
+											{previewAsset.layoutSide === 'left' ? '👈 Karakter di Sisi Kiri (Teks Kanan)' : '👉 Karakter di Sisi Kanan (Teks Kiri)'}
+										</span>
 									{/if}
 								</div>
-								<span class="pick-card-label">{(asset.title || asset.slug || '').slice(0, 28)}</span>
-								{#if asset.keywords?.length}
-									<span class="pick-card-keywords">{asset.keywords.slice(0, 3).join(', ')}</span>
+								<button class="lightbox-close-btn" onclick={() => previewAsset = null} title="Tutup">✕</button>
+							</div>
+							<div class="lightbox-img-wrap">
+								<img src={previewAsset.url} alt={previewAsset.title || previewAsset.slug} class="lightbox-img-full"/>
+							</div>
+							<div class="lightbox-footer">
+								{#if previewAsset.tagsId?.length}
+									<div class="lightbox-tags">
+										{#each previewAsset.tagsId.slice(0, 10) as tag}
+											<span class="lightbox-tag">#{tag}</span>
+										{/each}
+									</div>
 								{/if}
-							</button>
-						{/each}
-					{/if}
-				</div>
+								<div class="lightbox-actions">
+									<button type="button" class="btn-lightbox-cancel" onclick={() => previewAsset = null}>Tutup Preview</button>
+									<button type="button" class="btn-lightbox-select" onclick={() => { applyAssetToScene(previewAsset); previewAsset = null; }}>
+										✓ Pasang Gambar Ini ke Adegan {activeSceneIndex + 1}
+									</button>
+								</div>
+							</div>
+						</div>
+					</div>
+				{/if}
 			</div>
 		</div>
 	{/if}
@@ -2382,19 +2909,1085 @@
 		isOpen={showTitleModal}
 		initialTopic={videoTitle}
 		onSelectTitle={(t) => { videoTitle = t; showTitleModal = false; }}
-		onSelectTitleForScript={(t, openScript = true) => {
-			videoTitle = t;
-			showTitleModal = false;
-			if (openScript) {
-				showScriptModal = true;
-			}
-		}}
+		onSelectTitleForScript={(t, openScript = true) => { videoTitle = t; showTitleModal = false; if (openScript) { showScriptModal = true; } }}
 		onClose={() => showTitleModal = false}
 	/>
-</div>
 
+	<WhisperAudioModal
+		isOpen={showWhisperModal}
+		onSuccess={handleWhisperImportSuccess}
+		onClose={() => showWhisperModal = false}
+	/>
+</div>
 <style>
+	/* ═══════════════════════════════════════════════════════════
+	   WIZARD REDESIGN — Stickman Studio 5-Step Stepper
+	═══════════════════════════════════════════════════════════ */
 	.stickman-studio { min-height: 100vh; background: var(--bg-base); color: var(--text); display: flex; flex-direction: column; }
+
+	/* ── Wizard Header ──────────────────────────── */
+	.wiz-header {
+		position: sticky;
+		top: 0;
+		z-index: 100;
+		background: rgba(10, 13, 26, 0.92);
+		backdrop-filter: blur(20px) saturate(1.4);
+		-webkit-backdrop-filter: blur(20px) saturate(1.4);
+		border-bottom: 1px solid rgba(255,255,255,0.07);
+		box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+	}
+	.wiz-header-inner {
+		max-width: 1440px;
+		margin: 0 auto;
+		padding: 12px 24px;
+		display: flex;
+		align-items: center;
+		gap: 24px;
+		width: 100%;
+		box-sizing: border-box;
+	}
+	.wiz-brand { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+	.wiz-back-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 36px; height: 36px;
+		border-radius: 10px;
+		background: rgba(255,255,255,0.06);
+		border: 1px solid rgba(255,255,255,0.1);
+		color: var(--text-2);
+		transition: background 0.2s, color 0.2s;
+	}
+	.wiz-back-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+	.wiz-title-block { display: flex; flex-direction: column; gap: 2px; }
+	.wiz-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		font-size: 0.68rem;
+		font-weight: 700;
+		color: #a5b4fc;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+	}
+	.wiz-title {
+		font-size: 1.1rem;
+		font-weight: 800;
+		margin: 0;
+		line-height: 1.2;
+		color: #f1f5f9;
+	}
+	.wiz-gradient {
+		background: linear-gradient(90deg, #818cf8, #c084fc, #f472b6);
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		background-clip: text;
+	}
+
+	/* ── Step Bar ──────────────────────────────── */
+	.wiz-stepbar {
+		display: flex;
+		align-items: center;
+		flex: 1;
+		gap: 0;
+		min-width: 0;
+	}
+	.wiz-step {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		background: none;
+		border: none;
+		cursor: pointer;
+		padding: 6px 8px;
+		border-radius: 10px;
+		transition: background 0.18s;
+		flex-shrink: 0;
+		position: relative;
+	}
+	.wiz-step:not(:disabled):hover { background: rgba(255,255,255,0.05); }
+	.wiz-step:disabled { cursor: not-allowed; opacity: 0.45; }
+	.wiz-step-dot {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px; height: 28px;
+		border-radius: 50%;
+		background: rgba(255,255,255,0.07);
+		border: 1.5px solid rgba(255,255,255,0.15);
+		font-size: 0.72rem;
+		font-weight: 800;
+		color: var(--text-2);
+		transition: all 0.22s;
+		flex-shrink: 0;
+	}
+	.wiz-step.active .wiz-step-dot {
+		background: linear-gradient(135deg, #6366f1, #8b5cf6);
+		border-color: #6366f1;
+		color: #fff;
+		box-shadow: 0 0 0 3px rgba(99,102,241,0.28), 0 4px 12px rgba(99,102,241,0.35);
+	}
+	.wiz-step.done .wiz-step-dot {
+		background: linear-gradient(135deg, #10b981, #059669);
+		border-color: #10b981;
+		color: #fff;
+		box-shadow: 0 0 0 2px rgba(16,185,129,0.25);
+	}
+	.wiz-step-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: var(--text-2);
+		white-space: nowrap;
+	}
+	.wiz-step.active .wiz-step-label { color: #e0e7ff; }
+	.wiz-step.done .wiz-step-label { color: #6ee7b7; }
+	.wiz-step-line {
+		flex: 1;
+		height: 1.5px;
+		background: rgba(255,255,255,0.1);
+		margin: 0 4px;
+		min-width: 16px;
+		max-width: 40px;
+	}
+
+	/* ── Aspect Toggle ─────────────────────────── */
+	.wiz-aspect-toggle { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+	.asp-pill {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		padding: 5px 12px;
+		border-radius: 20px;
+		border: 1.5px solid rgba(255,255,255,0.12);
+		background: rgba(255,255,255,0.04);
+		color: var(--text-2);
+		font-size: 0.75rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.18s;
+	}
+	.asp-pill:hover { background: rgba(255,255,255,0.08); color: #fff; }
+	.asp-pill.active {
+		background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.2));
+		border-color: #6366f1;
+		color: #c7d2fe;
+		box-shadow: 0 0 0 2px rgba(99,102,241,0.2);
+	}
+	.asp-txt { font-size: 0.72rem; }
+	.asp-badge {
+		background: linear-gradient(90deg, #f59e0b, #ef4444);
+		color: #fff;
+		font-size: 0.56rem;
+		font-weight: 800;
+		padding: 1px 5px;
+		border-radius: 4px;
+		letter-spacing: 0.06em;
+	}
+
+	/* ── Header Whisper Import ──────────────────── */
+	.wiz-header-whisper { display: flex; align-items: center; }
+	.wiz-btn-groq-header {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 12px;
+		border-radius: 20px;
+		background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(99, 102, 241, 0.15));
+		border: 1.5px solid rgba(16, 185, 129, 0.35);
+		color: #e2e8f0;
+		font-size: 0.75rem;
+		font-weight: 700;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+	.wiz-btn-groq-header:hover {
+		background: linear-gradient(135deg, rgba(16, 185, 129, 0.28), rgba(99, 102, 241, 0.28));
+		border-color: #34d399;
+		color: #fff;
+		transform: translateY(-1px);
+		box-shadow: 0 4px 14px rgba(16, 185, 129, 0.25);
+	}
+	.header-groq-badge {
+		font-size: 0.58rem;
+		font-weight: 800;
+		background: #10b981;
+		color: #042f1a;
+		padding: 1px 5px;
+		border-radius: 4px;
+		letter-spacing: 0.06em;
+	}
+
+	/* ── Quick Audio Banner (Step 1) ────────────── */
+	.wiz-audio-banner {
+		background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(99, 102, 241, 0.08));
+		border: 1.5px solid rgba(16, 185, 129, 0.25);
+		border-radius: 16px;
+		padding: 18px 22px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 20px;
+	}
+	.wiz-audio-banner-left {
+		display: flex;
+		align-items: center;
+		gap: 16px;
+	}
+	.wiz-audio-icon {
+		width: 44px;
+		height: 44px;
+		border-radius: 12px;
+		background: rgba(16, 185, 129, 0.15);
+		border: 1px solid rgba(16, 185, 129, 0.35);
+		color: #34d399;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+	.wiz-audio-banner-title {
+		font-size: 0.95rem;
+		font-weight: 700;
+		color: #f1f5f9;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin-bottom: 3px;
+	}
+	.wiz-badge-groq {
+		font-size: 0.65rem;
+		font-weight: 800;
+		padding: 2px 6px;
+		border-radius: 5px;
+		background: rgba(16, 185, 129, 0.2);
+		color: #6ee7b7;
+		border: 1px solid rgba(16, 185, 129, 0.4);
+	}
+	.wiz-audio-banner-desc {
+		font-size: 0.78rem;
+		color: #94a3b8;
+		line-height: 1.4;
+	}
+	.wiz-audio-banner-btn {
+		background: linear-gradient(135deg, #059669, #10b981);
+		color: #fff;
+		border: none;
+		border-radius: 10px;
+		padding: 10px 18px;
+		font-size: 0.84rem;
+		font-weight: 700;
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		white-space: nowrap;
+		box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+		transition: all 0.2s ease;
+		flex-shrink: 0;
+	}
+	.wiz-audio-banner-btn:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 6px 18px rgba(16, 185, 129, 0.45);
+		filter: brightness(1.08);
+	}
+
+	.wiz-btn-groq {
+		background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(5, 150, 105, 0.12));
+		border-color: rgba(16, 185, 129, 0.35);
+		color: #6ee7b7;
+	}
+	.wiz-btn-groq:hover:not(:disabled) {
+		background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(5, 150, 105, 0.22));
+		border-color: #10b981;
+		color: #fff;
+	}
+
+	.wiz-imported-audio-notice {
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(16, 185, 129, 0.1));
+		border: 1px solid rgba(99, 102, 241, 0.35);
+		border-radius: 12px;
+		padding: 12px 18px;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		color: #e0e7ff;
+		font-size: 0.88rem;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+	}
+
+	.step5-audio-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.groq-import-btn {
+		border-color: rgba(16, 185, 129, 0.35) !important;
+		color: #a7f3d0 !important;
+	}
+	.groq-import-btn:hover {
+		border-color: #34d399 !important;
+		background: rgba(16, 185, 129, 0.15) !important;
+	}
+
+	/* ── Main Content ──────────────────────────── */
+	.wiz-main {
+		flex: 1;
+		max-width: 1200px;
+		margin: 0 auto;
+		width: 100%;
+		padding: 32px 24px;
+		box-sizing: border-box;
+	}
+	.wiz-step-content {
+		display: flex;
+		flex-direction: column;
+		gap: 20px;
+		animation: wizFadeIn 0.32s ease;
+	}
+	@keyframes wizFadeIn {
+		from { opacity: 0; transform: translateY(10px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+
+	/* Step Hero Header */
+	.wiz-step-hero {
+		display: flex;
+		align-items: center;
+		gap: 18px;
+		padding: 22px 28px;
+		background: linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.06));
+		border: 1px solid rgba(99,102,241,0.2);
+		border-radius: 16px;
+	}
+	.wiz-step-num {
+		font-size: 2.5rem;
+		font-weight: 900;
+		background: linear-gradient(135deg, #6366f1, #c084fc);
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		background-clip: text;
+		line-height: 1;
+		flex-shrink: 0;
+		letter-spacing: -0.04em;
+	}
+	.wiz-step-title { font-size: 1.35rem; font-weight: 800; margin: 0 0 4px; color: #f1f5f9; }
+	.wiz-step-desc { font-size: 0.85rem; color: var(--text-2); margin: 0; }
+
+	/* Grid Layout */
+	.wiz-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; }
+
+	/* Step 5 special layout */
+	.wiz-preview-render {
+		display: grid;
+		grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr);
+		gap: 20px;
+		align-items: start;
+	}
+	.wiz-player-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+	.wiz-render-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+	/* Card */
+	.wiz-card {
+		background: rgba(255,255,255,0.03);
+		border: 1px solid rgba(255,255,255,0.07);
+		border-radius: 14px;
+		padding: 18px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		backdrop-filter: blur(8px);
+	}
+	.wiz-card-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		flexwrap: wrap;
+	}
+	.wiz-card-title {
+		font-size: 0.85rem;
+		font-weight: 700;
+		color: #c7d2fe;
+	}
+	.wiz-card-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+	/* Inputs */
+	.wiz-input, .wiz-textarea, .wiz-select, .wiz-search-input {
+		width: 100%;
+		background: rgba(255,255,255,0.05);
+		border: 1.5px solid rgba(255,255,255,0.1);
+		border-radius: 10px;
+		color: var(--text);
+		padding: 10px 14px;
+		font-size: 0.88rem;
+		box-sizing: border-box;
+		transition: border-color 0.18s, background 0.18s;
+	}
+	.wiz-input:focus, .wiz-textarea:focus, .wiz-select:focus, .wiz-search-input:focus {
+		border-color: #6366f1;
+		background: rgba(99,102,241,0.07);
+		outline: none;
+	}
+	.wiz-textarea { resize: vertical; font-family: inherit; line-height: 1.6; }
+	.wiz-select { cursor: pointer; }
+
+	/* Buttons */
+	.wiz-btn-sm {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 5px 12px;
+		border-radius: 8px;
+		font-size: 0.76rem;
+		font-weight: 600;
+		cursor: pointer;
+		border: 1px solid transparent;
+		transition: all 0.18s;
+	}
+	.wiz-btn-accent {
+		background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.15));
+		border-color: rgba(99,102,241,0.4);
+		color: #a5b4fc;
+	}
+	.wiz-btn-accent:hover:not(:disabled) { background: linear-gradient(135deg, rgba(99,102,241,0.35), rgba(139,92,246,0.28)); border-color: #6366f1; color: #c7d2fe; }
+	.wiz-btn-fire {
+		background: linear-gradient(135deg, rgba(239,68,68,0.18), rgba(249,115,22,0.12));
+		border-color: rgba(239,68,68,0.35);
+		color: #fca5a5;
+	}
+	.wiz-btn-fire:hover:not(:disabled) { background: linear-gradient(135deg, rgba(239,68,68,0.3), rgba(249,115,22,0.22)); border-color: #ef4444; }
+
+	.wiz-btn-primary {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		padding: 12px 28px;
+		border-radius: 12px;
+		border: none;
+		background: linear-gradient(135deg, #6366f1, #8b5cf6);
+		color: #fff;
+		font-size: 0.9rem;
+		font-weight: 700;
+		cursor: pointer;
+		transition: all 0.2s;
+		box-shadow: 0 4px 20px rgba(99,102,241,0.35);
+	}
+	.wiz-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(99,102,241,0.5); filter: brightness(1.1); }
+	.wiz-btn-primary:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+	.wiz-btn-secondary {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 10px 20px;
+		border-radius: 12px;
+		border: 1.5px solid rgba(255,255,255,0.12);
+		background: rgba(255,255,255,0.05);
+		color: var(--text-2);
+		font-size: 0.88rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.18s;
+	}
+	.wiz-btn-secondary:hover { background: rgba(255,255,255,0.1); color: #fff; border-color: rgba(255,255,255,0.2); }
+
+	.wiz-step-actions {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 10px;
+		padding-top: 8px;
+	}
+
+	/* Notice */
+	.wiz-notice {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 9px 14px;
+		background: rgba(16,185,129,0.12);
+		border: 1px solid rgba(16,185,129,0.25);
+		border-radius: 8px;
+		font-size: 0.8rem;
+		color: #6ee7b7;
+	}
+	.wiz-script-stats { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+	.wiz-stat-pill { padding: 3px 10px; background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.2); border-radius: 20px; font-size: 0.74rem; color: #a5b4fc; }
+	.wiz-format-hint { font-size: 0.72rem; color: var(--text-3); }
+	.wiz-char-count { font-size: 0.72rem; color: var(--text-3); }
+
+	/* Niche Chips */
+	.wiz-niche-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+	.wiz-chips-label { font-size: 0.72rem; color: var(--text-3); flex-shrink: 0; }
+	.wiz-niche-chip {
+		padding: 4px 10px;
+		border-radius: 20px;
+		border: 1px solid rgba(255,255,255,0.1);
+		background: rgba(255,255,255,0.04);
+		color: var(--text-2);
+		font-size: 0.73rem;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+	.wiz-niche-chip:hover { background: rgba(99,102,241,0.15); border-color: #6366f1; color: #c7d2fe; }
+
+	/* Preset Pills */
+	.wiz-preset-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+	.wiz-preset-lang { display: flex; gap: 4px; }
+	.wiz-lang-btn { padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: var(--text-2); font-size: 0.72rem; cursor: pointer; transition: all 0.15s; }
+	.wiz-lang-btn.active { background: rgba(99,102,241,0.2); border-color: #6366f1; color: #a5b4fc; }
+	.wiz-preset-pill { padding: 5px 12px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: var(--text-2); font-size: 0.74rem; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.15s; }
+	.wiz-preset-pill.active { background: rgba(99,102,241,0.2); border-color: #6366f1; color: #c7d2fe; }
+	.wiz-preset-pill:hover { background: rgba(255,255,255,0.08); }
+	.wiz-flag { font-size: 0.64rem; font-weight: 800; background: rgba(255,255,255,0.15); padding: 1px 5px; border-radius: 4px; }
+
+	/* Animation Pills */
+	.wiz-anim-grid { display: flex; gap: 6px; flex-wrap: wrap; }
+	.wiz-anim-pill {
+		padding: 5px 12px;
+		border-radius: 8px;
+		border: 1.5px solid rgba(255,255,255,0.1);
+		background: rgba(255,255,255,0.04);
+		color: var(--text-2);
+		font-size: 0.76rem;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+	.wiz-anim-pill:hover { background: rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.4); color: #c7d2fe; }
+	.wiz-anim-pill.on { background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.18)); border-color: #6366f1; color: #c7d2fe; }
+	.wiz-apply-all { padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(16,185,129,0.3); background: rgba(16,185,129,0.08); color: #6ee7b7; font-size: 0.74rem; cursor: pointer; transition: all 0.15s; align-self: flex-start; }
+	.wiz-apply-all:hover { background: rgba(16,185,129,0.18); }
+	.wiz-align-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+	.wiz-apply-auto {
+		background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(99, 102, 241, 0.18)) !important;
+		border-color: rgba(16, 185, 129, 0.45) !important;
+		color: #a7f3d0 !important;
+		font-weight: 700 !important;
+	}
+	.wiz-apply-auto:hover {
+		background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(99, 102, 241, 0.3)) !important;
+		border-color: #34d399 !important;
+		color: #fff !important;
+	}
+
+	/* BG Themes Grid */
+	.wiz-bg-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+	.wiz-bg-card {
+		padding: 10px;
+		border-radius: 10px;
+		border: 1.5px solid rgba(255,255,255,0.08);
+		background: rgba(255,255,255,0.03);
+		cursor: pointer;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 3px;
+		transition: all 0.18s;
+		text-align: left;
+	}
+	.wiz-bg-card:hover { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.15); }
+	.wiz-bg-card.on { background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.12)); border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.2); }
+	.wiz-bg-icon { font-size: 1.2rem; }
+	.wiz-bg-name { font-size: 0.78rem; font-weight: 700; color: var(--text); }
+	.wiz-bg-desc { font-size: 0.66rem; color: var(--text-3); line-height: 1.3; }
+
+	/* Padding row */
+	.wiz-padding-row { display: flex; flex-direction: column; gap: 6px; }
+	.wiz-label { font-size: 0.78rem; color: var(--text-2); font-weight: 600; }
+
+	/* Font rows */
+	.wiz-font-row { display: flex; flex-direction: column; gap: 6px; }
+
+	/* Color section */
+	.wiz-color-section { display: flex; flex-direction: column; gap: 8px; }
+	.wiz-color-row { display: flex; flex-direction: column; gap: 5px; }
+	.wiz-color-dots { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+	.wiz-color-dot {
+		width: 22px; height: 22px;
+		border-radius: 50%;
+		border: 2px solid transparent;
+		cursor: pointer;
+		transition: transform 0.15s, box-shadow 0.15s;
+	}
+	.wiz-color-dot:hover { transform: scale(1.2); }
+	.wiz-color-dot.on { transform: scale(1.25); box-shadow: 0 0 0 2px rgba(255,255,255,0.5), 0 0 0 4px rgba(99,102,241,0.4); }
+	.wiz-color-picker { width: 28px; height: 28px; border-radius: 50%; border: none; cursor: pointer; padding: 0; background: none; }
+
+	/* Voice grid */
+	.wiz-voice-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+	.wiz-voice-card {
+		padding: 10px 12px;
+		border-radius: 10px;
+		border: 1.5px solid rgba(255,255,255,0.08);
+		background: rgba(255,255,255,0.03);
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		transition: all 0.18s;
+	}
+	.wiz-voice-card:hover { background: rgba(255,255,255,0.07); }
+	.wiz-voice-card.active { background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.12)); border-color: #6366f1; }
+	.wiz-voice-avatar { font-size: 1.4rem; flex-shrink: 0; }
+	.wiz-voice-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+	.wiz-voice-name { font-size: 0.8rem; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.wiz-voice-sub { font-size: 0.68rem; color: var(--text-3); }
+	.wiz-play-preview {
+		width: 26px; height: 26px;
+		border-radius: 50%;
+		border: 1px solid rgba(255,255,255,0.15);
+		background: rgba(255,255,255,0.07);
+		color: var(--text-2);
+		font-size: 0.72rem;
+		cursor: pointer;
+		transition: all 0.15s;
+		flex-shrink: 0;
+	}
+	.wiz-play-preview:hover { background: rgba(99,102,241,0.2); color: #c7d2fe; }
+	.wiz-play-preview.playing { background: rgba(239,68,68,0.2); border-color: #ef4444; color: #fca5a5; }
+	/* Voice Engine Tabs */
+	.wiz-engine-tabs {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		background: rgba(255, 255, 255, 0.05);
+		padding: 3px;
+		border-radius: 10px;
+		border: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.wiz-engine-tab {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 12px;
+		border-radius: 7px;
+		border: 1px solid transparent;
+		background: transparent;
+		color: var(--text-2);
+		font-size: 0.74rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.18s ease;
+	}
+	.wiz-engine-tab:hover {
+		color: var(--text);
+		background: rgba(255, 255, 255, 0.06);
+	}
+	.wiz-engine-tab.active {
+		background: rgba(255, 255, 255, 0.12);
+		color: #fff;
+		border-color: rgba(255, 255, 255, 0.2);
+	}
+	.wiz-engine-tab.gemini-tab.active {
+		background: linear-gradient(135deg, rgba(147, 51, 234, 0.35), rgba(59, 130, 246, 0.3));
+		border-color: rgba(168, 85, 247, 0.5);
+		color: #e9d5ff;
+		box-shadow: 0 0 12px rgba(168, 85, 247, 0.25);
+	}
+	.wiz-tab-badge {
+		font-size: 0.62rem;
+		padding: 1px 6px;
+		border-radius: 12px;
+		background: linear-gradient(135deg, #a855f7, #6366f1);
+		color: #fff;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.3px;
+	}
+
+	/* Gemini API Key Box */
+	.wiz-gemini-card {
+		background: linear-gradient(135deg, rgba(88, 28, 135, 0.15), rgba(30, 58, 138, 0.12));
+		border: 1px solid rgba(168, 85, 247, 0.28);
+		border-radius: 12px;
+		padding: 14px 16px;
+		margin-bottom: 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.wiz-gemini-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+	.wiz-gemini-title {
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		font-size: 0.8rem;
+		font-weight: 700;
+		color: #f3e8ff;
+	}
+	.gemini-key-icon {
+		color: #c084fc;
+	}
+	.wiz-key-badge {
+		font-size: 0.65rem;
+		padding: 2px 7px;
+		border-radius: 6px;
+		font-weight: 600;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.wiz-key-badge.saved {
+		background: rgba(34, 197, 94, 0.2);
+		color: #86efac;
+		border: 1px solid rgba(34, 197, 94, 0.4);
+	}
+	.wiz-key-badge.warning {
+		background: rgba(245, 158, 11, 0.2);
+		color: #fde68a;
+		border: 1px solid rgba(245, 158, 11, 0.4);
+	}
+	.wiz-gemini-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		font-size: 0.72rem;
+		color: #c084fc;
+		text-decoration: none;
+		transition: color 0.15s;
+	}
+	.wiz-gemini-link:hover {
+		color: #e9d5ff;
+		text-decoration: underline;
+	}
+	.wiz-key-input-row {
+		display: flex;
+		gap: 8px;
+	}
+	.wiz-key-input-wrap {
+		position: relative;
+		flex: 1;
+		display: flex;
+		align-items: center;
+	}
+	.wiz-key-input {
+		width: 100%;
+		background: rgba(0, 0, 0, 0.35);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 8px;
+		padding: 8px 36px 8px 12px;
+		color: #fff;
+		font-size: 0.78rem;
+		font-family: monospace;
+		outline: none;
+		transition: border-color 0.18s;
+	}
+	.wiz-key-input:focus {
+		border-color: #a855f7;
+		box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.25);
+	}
+	.wiz-key-toggle-btn {
+		position: absolute;
+		right: 8px;
+		background: none;
+		border: none;
+		color: var(--text-3);
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 4px;
+		border-radius: 4px;
+		transition: color 0.15s;
+	}
+	.wiz-key-toggle-btn:hover {
+		color: #fff;
+	}
+	.wiz-gemini-note {
+		font-size: 0.7rem;
+		color: rgba(233, 213, 255, 0.8);
+		line-height: 1.4;
+	}
+
+	/* Gemini Card Variants */
+	.wiz-voice-card.gemini-card {
+		border-color: rgba(168, 85, 247, 0.18);
+		background: rgba(168, 85, 247, 0.04);
+	}
+	.wiz-voice-card.gemini-card:hover {
+		background: rgba(168, 85, 247, 0.09);
+		border-color: rgba(168, 85, 247, 0.35);
+	}
+	.wiz-voice-card.gemini-card.active {
+		background: linear-gradient(135deg, rgba(147, 51, 234, 0.25), rgba(59, 130, 246, 0.18));
+		border-color: #a855f7;
+		box-shadow: 0 0 14px rgba(168, 85, 247, 0.25);
+	}
+	.wiz-voice-title-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.wiz-gemini-pill {
+		font-size: 0.6rem;
+		padding: 1px 6px;
+		border-radius: 10px;
+		background: rgba(168, 85, 247, 0.2);
+		color: #d8b4fe;
+		font-weight: 600;
+	}
+	.wiz-voice-desc {
+		font-size: 0.66rem;
+		color: var(--text-3);
+		line-height: 1.3;
+		margin-top: 2px;
+	}
+
+	/* Effect grid */
+	.wiz-effect-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+	.wiz-effect-chip {
+		padding: 8px 10px;
+		border-radius: 10px;
+		border: 1.5px solid rgba(255,255,255,0.08);
+		background: rgba(255,255,255,0.03);
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		transition: all 0.18s;
+	}
+	.wiz-effect-chip:hover { background: rgba(255,255,255,0.07); }
+	.wiz-effect-chip.active { background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.12)); border-color: #6366f1; }
+	.wiz-eff-emoji { font-size: 1.1rem; flex-shrink: 0; }
+	.wiz-eff-name { font-size: 0.74rem; font-weight: 600; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+	/* ── Custom Voice Tuner (Option A) ────────────────────────── */
+	.custom-voice-tuner-card {
+		margin-top: 14px;
+		padding: 16px 18px;
+		background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(11, 17, 32, 0.9));
+		border: 1px solid rgba(99, 102, 241, 0.25);
+		border-radius: 14px;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+	}
+	.tuner-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 12px;
+		flex-wrap: wrap;
+		padding-bottom: 12px;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+	}
+	.tuner-title-group {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+	.tuner-icon {
+		font-size: 1.35rem;
+		width: 34px;
+		height: 34px;
+		border-radius: 8px;
+		background: rgba(99, 102, 241, 0.15);
+		border: 1px solid rgba(99, 102, 241, 0.3);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+	.tuner-title {
+		font-size: 0.88rem;
+		font-weight: 700;
+		color: #f8fafc;
+		display: block;
+	}
+	.tuner-sub {
+		font-size: 0.72rem;
+		color: #94a3b8;
+		display: block;
+	}
+	.btn-test-custom-voice {
+		padding: 7px 15px;
+		background: linear-flex;
+		background: linear-gradient(135deg, #6366f1, #4f46e5);
+		border: 1px solid #818cf8;
+		border-radius: 8px;
+		color: #ffffff;
+		font-size: 0.76rem;
+		font-weight: 700;
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		transition: all 0.18s ease;
+		box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+	}
+	.btn-test-custom-voice:hover {
+		background: linear-gradient(135deg, #4f46e5, #4338ca);
+		transform: translateY(-1px);
+		box-shadow: 0 6px 16px rgba(99, 102, 241, 0.45);
+	}
+	.btn-test-custom-voice.testing {
+		background: linear-gradient(135deg, #ef4444, #dc2626);
+		border-color: #f87171;
+		box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
+		animation: pulseTesting 1s infinite alternate;
+	}
+	@keyframes pulseTesting {
+		from { opacity: 0.85; transform: scale(0.98); }
+		to { opacity: 1; transform: scale(1.02); }
+	}
+	.tuner-sliders-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+		gap: 14px;
+	}
+	.tuner-slider-item {
+		background: rgba(0, 0, 0, 0.3);
+		border: 1px solid rgba(255, 255, 255, 0.06);
+		border-radius: 10px;
+		padding: 12px 14px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.tuner-slider-label-row {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.tuner-label-with-tooltip {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.slider-name {
+		font-size: 0.74rem;
+		font-weight: 600;
+		color: #e2e8f0;
+	}
+	.slider-badge {
+		font-size: 0.68rem;
+		font-weight: 700;
+		padding: 2px 8px;
+		border-radius: 999px;
+		background: rgba(99, 102, 241, 0.15);
+		border: 1px solid rgba(99, 102, 241, 0.3);
+		color: #c7d2fe;
+	}
+	.slider-badge.bass-heavy {
+		background: rgba(16, 185, 129, 0.15);
+		border-color: rgba(16, 185, 129, 0.4);
+		color: #6ee7b7;
+	}
+	.quick-preset-chips {
+		display: flex;
+		gap: 4px;
+		flex-wrap: wrap;
+	}
+	.quick-chip {
+		padding: 2px 7px;
+		font-size: 0.64rem;
+		border-radius: 4px;
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		color: #94a3b8;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.quick-chip:hover {
+		background: rgba(255, 255, 255, 0.1);
+		color: #f1f5f9;
+	}
+	.quick-chip.active {
+		background: rgba(99, 102, 241, 0.25);
+		border-color: #6366f1;
+		color: #c7d2fe;
+		font-weight: 600;
+	}
+	.tuner-range-input {
+		width: 100%;
+		height: 6px;
+		background: #1e293b;
+		border-radius: 999px;
+		outline: none;
+		-webkit-appearance: none;
+		appearance: none;
+		cursor: pointer;
+		margin: 4px 0 2px;
+	}
+	.tuner-range-input::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		appearance: none;
+		width: 16px;
+		height: 16px;
+		border-radius: 50%;
+		background: #818cf8;
+		border: 2px solid #ffffff;
+		box-shadow: 0 0 8px rgba(99, 102, 241, 0.6);
+		cursor: pointer;
+		transition: transform 0.12s ease;
+	}
+	.tuner-range-input::-webkit-slider-thumb:hover {
+		transform: scale(1.2);
+	}
+	.slider-ticks {
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.62rem;
+		color: #64748b;
+	}
+
+	/* BGM */
+	.wiz-bgm-tracks { display: flex; gap: 6px; flex-wrap: wrap; }
+	.wiz-bgm-pill {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 12px;
+		border-radius: 20px;
+		border: 1.5px solid rgba(255,255,255,0.08);
+		background: rgba(255,255,255,0.03);
+		cursor: pointer;
+		transition: all 0.15s;
+		font-size: 0.78rem;
+	}
+	.wiz-bgm-pill:hover { background: rgba(255,255,255,0.08); }
+	.wiz-bgm-pill.active { background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.12)); border-color: #6366f1; color: #c7d2fe; }
+	.wiz-bgm-play { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.07); font-size: 0.66rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+	.wiz-bgm-play.playing { background: rgba(239,68,68,0.25); border-color: #ef4444; }
+	.wiz-bgm-name { font-size: 0.78rem; font-weight: 600; }
+	.wiz-bgm-badge { font-size: 0.6rem; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: rgba(99,102,241,0.2); color: #a5b4fc; }
+	.wiz-bgm-vol-row { display: flex; align-items: center; gap: 8px; }
+	.wiz-vol-toggle { width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+	.wiz-vol-toggle:hover { background: rgba(255,255,255,0.12); }
+	.wiz-vol-slider { flex: 1; accent-color: #6366f1; }
+	.wiz-vol-val { font-size: 0.76rem; font-weight: 600; color: var(--text); min-width: 32px; text-align: center; }
+	.wiz-vol-hint { font-size: 0.68rem; color: var(--text-3); }
+
+	/* Asset gallery */
+	.wiz-asset-search-row { display: flex; flex-direction: column; gap: 8px; }
+	.wiz-cat-pills { display: flex; gap: 5px; flex-wrap: wrap; }
+	.wiz-cat-pill { padding: 4px 10px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: var(--text-2); font-size: 0.72rem; cursor: pointer; transition: all 0.15s; }
+	.wiz-cat-pill.active { background: rgba(99,102,241,0.2); border-color: #6366f1; color: #c7d2fe; }
+	.wiz-mini-asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; max-height: 280px; overflow-y: auto; }
+	.wiz-asset-thumb {
+		aspect-ratio: 1;
+		border-radius: 8px;
+		overflow: hidden;
+		border: 2px solid rgba(255,255,255,0.08);
+		cursor: pointer;
+		position: relative;
+		transition: border-color 0.15s, transform 0.15s;
+		padding: 0;
+	}
+	.wiz-asset-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+	.wiz-asset-thumb:hover { border-color: rgba(99,102,241,0.6); transform: scale(1.04); }
+	.wiz-asset-thumb.selected { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.4); }
+	.wiz-thumb-check { position: absolute; top: 2px; right: 2px; background: #6366f1; color: #fff; font-size: 0.62rem; width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; }
+	.wiz-more-hint { font-size: 0.72rem; color: var(--text-3); text-align: center; padding: 8px; }
+
+	/* ── Legacy styles (studio-header for old reference, now replaced) ── */
 	.studio-header { padding: 16px 24px; display: flex; align-items: center; gap: 18px; border-bottom: 1px solid var(--line); background: var(--bg-surface); }
 	.title-wrap h2 { font-size: 1.15rem; font-weight: 800; margin: 0 0 2px; }
 	.title-wrap p { font-size: 0.78rem; color: var(--text-2); margin: 0; }
@@ -2676,12 +4269,15 @@
 		transform: translateY(-1px);
 	}
 
-	/* Image Picker Modal */
+	/* ═══════════════════════════════════════════════════════════
+	   Image Picker Modal (Spacious, Uncropped 16:9 Previews)
+	═══════════════════════════════════════════════════════════ */
 	.img-picker-backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgba(4,7,18,0.80);
-		backdrop-filter: blur(8px);
+		background: rgba(3, 6, 16, 0.88);
+		backdrop-filter: blur(14px);
+		-webkit-backdrop-filter: blur(14px);
 		z-index: 10000;
 		display: flex;
 		align-items: center;
@@ -2690,215 +4286,728 @@
 	}
 	.img-picker-modal {
 		width: 100%;
-		max-width: 900px;
-		max-height: 88vh;
-		background: #0d1424;
-		border: 1px solid rgba(255,255,255,0.1);
-		border-radius: 16px;
+		max-width: 1240px;
+		height: 90vh;
+		max-height: 920px;
+		background: #090e1c;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 22px;
 		display: flex;
 		flex-direction: column;
-		box-shadow: 0 24px 64px rgba(0,0,0,0.65), 0 0 40px rgba(99,102,241,0.1);
+		box-shadow: 0 32px 80px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(99, 102, 241, 0.2);
 		overflow: hidden;
-		animation: pickerFadeIn 0.2s ease-out;
+		animation: pickerFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+		position: relative;
 	}
 	@keyframes pickerFadeIn {
-		from { opacity: 0; transform: scale(0.97) translateY(10px); }
+		from { opacity: 0; transform: scale(0.96) translateY(14px); }
 		to { opacity: 1; transform: scale(1) translateY(0); }
 	}
+
+	/* Modal Header */
 	.img-picker-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding: 16px 20px;
-		border-bottom: 1px solid rgba(255,255,255,0.08);
-		background: rgba(255,255,255,0.02);
+		padding: 18px 24px;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+		background: rgba(255, 255, 255, 0.02);
+		flex-shrink: 0;
 	}
 	.img-picker-title {
 		display: flex;
 		align-items: center;
-		gap: 12px;
-		font-size: 1.1rem;
+		gap: 14px;
 	}
-	.img-picker-title > span { font-size: 1.4rem; }
-	.img-picker-title strong { font-size: 0.95rem; color: #f8fafc; display: block; }
-	.img-picker-title small { font-size: 0.72rem; color: #94a3b8; }
+	.picker-icon-badge {
+		width: 40px;
+		height: 40px;
+		border-radius: 12px;
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(79, 70, 229, 0.15));
+		border: 1px solid rgba(99, 102, 241, 0.4);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 1.35rem;
+		flex-shrink: 0;
+	}
+	.img-picker-title strong {
+		font-size: 1.1rem;
+		color: #f8fafc;
+		display: block;
+		font-weight: 700;
+		letter-spacing: -0.01em;
+	}
+	.img-picker-title small {
+		font-size: 0.78rem;
+		color: #94a3b8;
+	}
 	.img-picker-close {
-		width: 32px; height: 32px;
-		border-radius: 8px;
-		background: transparent;
-		border: 1px solid rgba(255,255,255,0.1);
+		width: 36px;
+		height: 36px;
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid rgba(255, 255, 255, 0.1);
 		color: #94a3b8;
 		cursor: pointer;
-		font-size: 0.9rem;
-		display: flex; align-items: center; justify-content: center;
-		transition: background 0.15s;
+		font-size: 0.95rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.15s ease;
 	}
-	.img-picker-close:hover { background: rgba(255,255,255,0.08); color: #f8fafc; }
+	.img-picker-close:hover {
+		background: rgba(239, 68, 68, 0.18);
+		border-color: rgba(239, 68, 68, 0.4);
+		color: #fca5a5;
+		transform: scale(1.05);
+	}
+
+	/* Toolbar: Search & Upload */
 	.img-picker-toolbar {
 		display: flex;
-		gap: 10px;
-		padding: 14px 20px;
-		border-bottom: 1px solid rgba(255,255,255,0.06);
+		gap: 12px;
+		padding: 12px 24px;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+		align-items: center;
+		background: rgba(0, 0, 0, 0.18);
+		flex-shrink: 0;
+	}
+	.img-picker-search-wrap {
+		flex: 1;
+		position: relative;
+		display: flex;
 		align-items: center;
 	}
-	.img-picker-search {
-		flex: 1;
-		padding: 8px 12px;
-		background: rgba(0,0,0,0.3);
-		border: 1px solid rgba(255,255,255,0.1);
-		border-radius: 8px;
-		color: #f8fafc;
-		font-size: 0.83rem;
-		outline: none;
+	.img-picker-search-wrap .search-icon {
+		position: absolute;
+		left: 14px;
+		font-size: 0.9rem;
+		opacity: 0.7;
+		pointer-events: none;
 	}
-	.img-picker-search:focus { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.2); }
+	.img-picker-search {
+		width: 100%;
+		padding: 10px 38px 10px 38px;
+		background: rgba(0, 0, 0, 0.45);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 10px;
+		color: #f8fafc;
+		font-size: 0.85rem;
+		outline: none;
+		transition: all 0.18s ease;
+	}
+	.img-picker-search:focus {
+		border-color: #6366f1;
+		background: rgba(0, 0, 0, 0.6);
+		box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+	}
+	.btn-clear-search {
+		position: absolute;
+		right: 12px;
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.12);
+		border: none;
+		color: #cbd5e1;
+		font-size: 0.7rem;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: background 0.15s;
+	}
+	.btn-clear-search:hover {
+		background: rgba(255, 255, 255, 0.25);
+		color: #ffffff;
+	}
 	.btn-upload-img {
-		padding: 8px 14px;
-		background: rgba(99,102,241,0.18);
-		border: 1px solid rgba(99,102,241,0.4);
-		border-radius: 8px;
-		color: #a5b4fc;
-		font-size: 0.8rem;
+		padding: 10px 16px;
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(79, 70, 229, 0.2));
+		border: 1px solid rgba(99, 102, 241, 0.5);
+		border-radius: 10px;
+		color: #c7d2fe;
+		font-size: 0.82rem;
 		font-weight: 600;
 		cursor: pointer;
 		white-space: nowrap;
-		transition: background 0.18s;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		transition: all 0.18s ease;
 	}
-	.btn-upload-img:hover { background: rgba(99,102,241,0.32); color: #e0e7ff; }
+	.btn-upload-img:hover {
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.4), rgba(79, 70, 229, 0.35));
+		border-color: #818cf8;
+		color: #ffffff;
+		transform: translateY(-1px);
+		box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
+	}
+
+	/* Categories */
 	.img-picker-cats {
 		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		padding: 8px 20px;
-		border-bottom: 1px solid rgba(255,255,255,0.05);
-		background: rgba(0,0,0,0.18);
+		gap: 8px;
+		padding: 10px 24px;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+		background: rgba(0, 0, 0, 0.22);
+		overflow-x: auto;
+		scrollbar-width: thin;
+		flex-shrink: 0;
 	}
 	.cat-pill {
 		font-size: 0.74rem;
 		font-weight: 600;
-		padding: 4px 10px;
+		padding: 6px 12px;
 		border-radius: 999px;
-		background: rgba(255,255,255,0.04);
+		background: rgba(255, 255, 255, 0.04);
 		color: #94a3b8;
-		border: 1px solid rgba(255,255,255,0.08);
+		border: 1px solid rgba(255, 255, 255, 0.08);
 		cursor: pointer;
 		transition: all 0.15s ease;
 		white-space: nowrap;
+		flex-shrink: 0;
 	}
 	.cat-pill:hover {
-		background: rgba(255,255,255,0.09);
-		border-color: rgba(99,102,241,0.4);
+		background: rgba(255, 255, 255, 0.09);
+		border-color: rgba(99, 102, 241, 0.4);
 		color: #f1f5f9;
 	}
 	.cat-pill.active {
-		background: #6366f1;
+		background: linear-gradient(135deg, #6366f1, #4f46e5);
 		color: #ffffff;
-		border-color: #6366f1;
-		box-shadow: 0 2px 8px rgba(99,102,241,0.3);
+		border-color: #818cf8;
+		box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
 	}
+
+	/* Count, Scene Preview & Size Switcher Bar */
 	.img-picker-count {
-		padding: 8px 20px 4px;
-		font-size: 0.75rem;
-		color: #64748b;
+		padding: 10px 24px;
+		font-size: 0.76rem;
+		color: #94a3b8;
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+		background: rgba(255, 255, 255, 0.015);
+		flex-shrink: 0;
+		gap: 16px;
+		flex-wrap: wrap;
+	}
+	.img-picker-count-left {
+		display: flex;
+		align-items: center;
+		gap: 16px;
+		flex-wrap: wrap;
+	}
+	.count-badge strong {
+		color: #f8fafc;
+	}
+	.current-scene-indicator {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		padding: 3px 10px 3px 6px;
+		background: rgba(99, 102, 241, 0.12);
+		border: 1px solid rgba(99, 102, 241, 0.25);
+		border-radius: 999px;
+	}
+	.current-label {
+		font-size: 0.68rem;
+		color: #a5b4fc;
+		font-weight: 600;
+	}
+	.current-thumb {
+		width: 24px;
+		height: 16px;
+		border-radius: 3px;
+		object-fit: cover;
+		background: #000;
+	}
+	.current-title {
+		font-size: 0.68rem;
+		color: #e2e8f0;
+		max-width: 160px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.img-picker-count-right {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+	}
+	.picker-size-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		background: rgba(0, 0, 0, 0.35);
+		padding: 3px 4px;
+		border-radius: 8px;
+		border: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.size-label {
+		font-size: 0.68rem;
+		color: #64748b;
+		padding: 0 4px;
+		font-weight: 600;
+	}
+	.size-btn {
+		padding: 3px 8px;
+		font-size: 0.7rem;
+		font-weight: 600;
+		border-radius: 6px;
+		color: #94a3b8;
+		background: transparent;
+		border: none;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.size-btn:hover {
+		color: #f1f5f9;
+		background: rgba(255, 255, 255, 0.06);
+	}
+	.size-btn.active {
+		background: #6366f1;
+		color: #ffffff;
+		box-shadow: 0 1px 6px rgba(99, 102, 241, 0.35);
 	}
 	.btn-reset-filter {
 		background: transparent;
 		border: none;
 		color: #818cf8;
-		font-size: 0.73rem;
+		font-size: 0.74rem;
 		cursor: pointer;
 		padding: 0;
 		text-decoration: underline;
+		font-weight: 500;
 	}
-	.btn-reset-filter:hover { color: #a5b4fc; }
+	.btn-reset-filter:hover { color: #c7d2fe; }
+
+	/* Image Grid & Size Presets */
 	.img-picker-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-		gap: 10px;
-		padding: 14px 20px 20px;
+		padding: 20px 24px 28px;
 		overflow-y: auto;
 		flex: 1;
+		min-height: 0;
+		align-content: start;
 	}
+	/* Default Large: 280px minimum width, generous 16:9 full view */
+	.img-picker-grid.size-large {
+		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+		gap: 16px;
+	}
+	.img-picker-grid.size-medium {
+		grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+		gap: 14px;
+	}
+	.img-picker-grid.size-compact {
+		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+		gap: 10px;
+	}
+
 	.img-picker-empty {
 		grid-column: 1 / -1;
 		text-align: center;
-		padding: 40px;
+		padding: 60px 20px;
 		color: #64748b;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 8px;
+		gap: 10px;
 	}
-	.img-picker-empty span { font-size: 2rem; }
-	.img-picker-empty p { margin: 0; font-size: 0.85rem; color: #94a3b8; }
-	.img-picker-empty small { font-size: 0.72rem; }
+	.empty-icon { font-size: 2.5rem; }
+	.img-picker-empty p { margin: 0; font-size: 0.95rem; color: #cbd5e1; }
+	.img-picker-empty small { font-size: 0.78rem; color: #64748b; }
+	.btn-reset-empty {
+		margin-top: 8px;
+		padding: 8px 16px;
+		background: rgba(99, 102, 241, 0.2);
+		border: 1px solid rgba(99, 102, 241, 0.4);
+		border-radius: 8px;
+		color: #a5b4fc;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+	.btn-reset-empty:hover {
+		background: rgba(99, 102, 241, 0.35);
+		color: #ffffff;
+	}
+
+	/* Card Elements (Full Image Preview & Responsive Layout) */
 	.img-pick-card {
 		display: flex;
 		flex-direction: column;
-		gap: 5px;
-		padding: 0;
-		background: rgba(255,255,255,0.03);
-		border: 2px solid rgba(255,255,255,0.08);
-		border-radius: 10px;
+		width: 100%;
+		box-sizing: border-box;
+		background: #0d1527;
+		border: 1.5px solid rgba(255, 255, 255, 0.08);
+		border-radius: 14px;
 		overflow: hidden;
 		cursor: pointer;
-		transition: border-color 0.18s, transform 0.15s, box-shadow 0.18s;
 		text-align: left;
+		padding: 0;
+		transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+		position: relative;
+		user-select: none;
 	}
 	.img-pick-card:hover {
-		border-color: rgba(99,102,241,0.55);
-		transform: translateY(-2px);
-		box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+		border-color: #6366f1;
+		transform: translateY(-3px);
+		box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55), 0 0 18px rgba(99, 102, 241, 0.3);
+		background: #111a31;
 	}
 	.img-pick-card.selected {
 		border-color: #6366f1;
-		box-shadow: 0 0 0 2px rgba(99,102,241,0.35);
+		box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.7), 0 8px 24px rgba(99, 102, 241, 0.35);
+		background: rgba(99, 102, 241, 0.12);
 	}
+
+	/* Full Image Container: 16:9 Aspect Ratio */
 	.pick-card-img-wrap {
 		width: 100%;
-		aspect-ratio: 16/9;
+		aspect-ratio: 16 / 9;
 		position: relative;
 		overflow: hidden;
-		background: #0a0e1a;
-	}
-	.pick-card-img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		display: block;
-		transition: transform 0.22s;
-	}
-	.img-pick-card:hover .pick-card-img { transform: scale(1.05); }
-	.pick-card-check {
-		position: absolute;
-		top: 5px; right: 5px;
-		width: 22px; height: 22px;
-		background: #6366f1;
-		border-radius: 50%;
-		color: #fff;
-		font-size: 0.75rem;
-		font-weight: 800;
+		background: radial-gradient(circle at center, #10192e 0%, #050812 100%);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+		flex-shrink: 0;
+	}
+	/* Responsive minimum heights per preset to guarantee zero collapse */
+	.size-large .pick-card-img-wrap { min-height: 155px; }
+	.size-medium .pick-card-img-wrap { min-height: 110px; }
+	.size-compact .pick-card-img-wrap { min-height: 78px; }
+
+	/* object-fit: contain shows 100% of the stickman illustration without ANY cropping */
+	.pick-card-img {
+		width: 100%;
+		height: 100%;
+		object-fit: contain;
+		display: block;
+		transition: transform 0.22s ease;
+	}
+	.img-pick-card:hover .pick-card-img {
+		transform: scale(1.04);
+	}
+
+	/* Selected Badge */
+	.pick-card-check {
+		position: absolute;
+		top: 8px;
+		left: 8px;
+		padding: 3px 8px;
+		background: #6366f1;
+		border: 1px solid rgba(255, 255, 255, 0.4);
+		border-radius: 999px;
+		color: #ffffff;
+		font-size: 0.68rem;
+		font-weight: 800;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+		z-index: 3;
+	}
+
+	/* Quick Zoom Button */
+	.btn-quick-zoom {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		width: 28px;
+		height: 28px;
+		border-radius: 8px;
+		background: rgba(0, 0, 0, 0.6);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		color: #e2e8f0;
+		font-size: 0.78rem;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		opacity: 0;
+		transition: all 0.15s ease;
+		backdrop-filter: blur(4px);
+		z-index: 4;
+	}
+	.img-pick-card:hover .btn-quick-zoom {
+		opacity: 1;
+	}
+	.btn-quick-zoom:hover {
+		background: #6366f1;
+		border-color: #818cf8;
+		transform: scale(1.1);
+		color: #ffffff;
+	}
+
+	/* Card Select Overlay on Hover */
+	.card-select-overlay {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		padding: 8px;
+		background: linear-gradient(to top, rgba(9, 14, 28, 0.95), transparent);
+		display: flex;
+		justify-content: center;
+		opacity: 0;
+		transition: opacity 0.18s ease;
+		pointer-events: none;
+		z-index: 2;
+	}
+	.img-pick-card:hover .card-select-overlay {
+		opacity: 1;
+	}
+	.select-overlay-text {
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: #c7d2fe;
+		background: rgba(99, 102, 241, 0.35);
+		border: 1px solid rgba(99, 102, 241, 0.5);
+		padding: 2px 10px;
+		border-radius: 999px;
+	}
+
+	/* Info & Metadata Footer */
+	.pick-card-info {
+		padding: 10px 12px 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		background: rgba(10, 16, 30, 0.96);
+		flex: 1;
+		border-top: 1px solid rgba(255, 255, 255, 0.05);
+	}
+	.size-compact .pick-card-info {
+		padding: 6px 8px 8px;
+		gap: 3px;
+	}
+	.pick-card-title-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 6px;
 	}
 	.pick-card-label {
-		padding: 4px 6px 0;
-		font-size: 0.65rem;
-		color: #cbd5e1;
+		font-size: 0.78rem;
 		font-weight: 600;
-		line-height: 1.2;
-		word-break: break-word;
-	}
-	.pick-card-keywords {
-		padding: 0 6px 6px;
-		font-size: 0.58rem;
-		color: #64748b;
+		color: #f1f5f9;
 		line-height: 1.3;
+		text-transform: capitalize;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		flex: 1;
+	}
+	.size-large .pick-card-label {
+		font-size: 0.84rem;
+		font-weight: 700;
+	}
+	.size-compact .pick-card-label {
+		font-size: 0.68rem;
+	}
+	.pick-card-side-badge {
+		font-size: 0.6rem;
+		font-weight: 600;
+		color: #94a3b8;
+		background: rgba(255, 255, 255, 0.06);
+		padding: 2px 6px;
+		border-radius: 4px;
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+	.pick-card-tags {
+		display: flex;
+		gap: 4px;
+		flex-wrap: wrap;
+	}
+	.tag-pill {
+		font-size: 0.62rem;
+		color: #818cf8;
+		background: rgba(99, 102, 241, 0.1);
+		padding: 1px 6px;
+		border-radius: 4px;
+		white-space: nowrap;
+	}
+
+	/* Load More Button */
+	.img-picker-load-more {
+		grid-column: 1 / -1;
+		display: flex;
+		justify-content: center;
+		padding: 18px 0 10px;
+	}
+	.btn-load-more-assets {
+		padding: 11px 26px;
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(79, 70, 229, 0.15));
+		border: 1px solid rgba(99, 102, 241, 0.4);
+		border-radius: 999px;
+		color: #c7d2fe;
+		font-size: 0.84rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.18s ease;
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.btn-load-more-assets:hover {
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(79, 70, 229, 0.3));
+		border-color: #818cf8;
+		color: #ffffff;
+		transform: translateY(-2px);
+		box-shadow: 0 6px 20px rgba(99, 102, 241, 0.3);
+	}
+
+	/* ═══════════════════════════════════════════════════════════
+	   Full High-Res Lightbox Modal (For Crystal Clear Inspection)
+	═══════════════════════════════════════════════════════════ */
+	.asset-lightbox-backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgba(2, 4, 10, 0.92);
+		backdrop-filter: blur(16px);
+		-webkit-backdrop-filter: blur(16px);
+		z-index: 10010;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 24px;
+		animation: pickerFadeIn 0.18s ease-out;
+	}
+	.asset-lightbox-modal {
+		width: 100%;
+		max-width: 900px;
+		background: #0b1120;
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		border-radius: 20px;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+		box-shadow: 0 32px 80px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(99, 102, 241, 0.3);
+	}
+	.lightbox-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 16px 22px;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+		background: rgba(255, 255, 255, 0.02);
+	}
+	.lightbox-title-wrap {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+	.lightbox-title {
+		font-size: 1.05rem;
+		color: #f8fafc;
+		font-weight: 700;
+		text-transform: capitalize;
+	}
+	.lightbox-side-badge {
+		font-size: 0.72rem;
+		color: #c7d2fe;
+		background: rgba(99, 102, 241, 0.2);
+		border: 1px solid rgba(99, 102, 241, 0.4);
+		padding: 2px 8px;
+		border-radius: 6px;
+	}
+	.lightbox-close-btn {
+		width: 32px;
+		height: 32px;
+		border-radius: 8px;
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		color: #94a3b8;
+		cursor: pointer;
+		font-size: 0.9rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.15s ease;
+	}
+	.lightbox-close-btn:hover {
+		background: rgba(239, 68, 68, 0.2);
+		color: #fca5a5;
+	}
+	.lightbox-img-wrap {
+		width: 100%;
+		aspect-ratio: 16 / 9;
+		max-height: 520px;
+		background: radial-gradient(circle at center, #111a31 0%, #030610 100%);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		overflow: hidden;
+	}
+	.lightbox-img-full {
+		width: 100%;
+		height: 100%;
+		object-fit: contain;
+		display: block;
+	}
+	.lightbox-footer {
+		padding: 16px 22px;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+		background: rgba(255, 255, 255, 0.02);
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+		flex-wrap: wrap;
+	}
+	.lightbox-tags {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+	.lightbox-tag {
+		font-size: 0.72rem;
+		color: #818cf8;
+		background: rgba(99, 102, 241, 0.12);
+		padding: 2px 8px;
+		border-radius: 6px;
+	}
+	.lightbox-actions {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin-left: auto;
+	}
+	.btn-lightbox-cancel {
+		padding: 9px 16px;
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 8px;
+		color: #cbd5e1;
+		font-size: 0.82rem;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+	.btn-lightbox-cancel:hover {
+		background: rgba(255, 255, 255, 0.1);
+		color: #ffffff;
+	}
+	.btn-lightbox-select {
+		padding: 9px 20px;
+		background: linear-gradient(135deg, #6366f1, #4f46e5);
+		border: 1px solid #818cf8;
+		border-radius: 8px;
+		color: #ffffff;
+		font-size: 0.82rem;
+		font-weight: 700;
+		cursor: pointer;
+		transition: all 0.18s ease;
+		box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+	}
+	.btn-lightbox-select:hover {
+		background: linear-gradient(135deg, #4f46e5, #4338ca);
+		transform: translateY(-1px);
+		box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
 	}
 
 	/* Card 1: Video Title Card */

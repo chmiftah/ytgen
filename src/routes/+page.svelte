@@ -1,466 +1,605 @@
 <script>
-	import { Play, Sparkles, Wand2, Zap, Film, ArrowRight, Share2, FileText, Stamp, Smartphone } from 'lucide-svelte';
+	import { Wand2, Film, FileText, Zap, Smartphone, Video, ArrowUpRight, Layers, Sparkles } from 'lucide-svelte';
+
+	const tools = [
+		{
+			id: 'script_director',
+			href: '/script-director',
+			label: 'Script Director',
+			tag: '7–10m ✦ Baru',
+			tagColor: 'violet',
+			description: 'Diskusi ide topik bersama AI Director → naskah bersambung 80–100 scene + prompt visual 2D konsisten.',
+			icon: Sparkles,
+			accent: '#8b5cf6',
+			bg: 'rgba(139,92,246,0.08)',
+			border: 'rgba(139,92,246,0.22)',
+			featured: true,
+		},
+		{
+			id: 'cinematic',
+			href: '/studio',
+			label: 'Cinematic Studio',
+			tag: '16:9',
+			tagColor: 'indigo',
+			description: 'Naskah → footage sinematik Pexels + voiceover neural. Subtitle bergaya viral pop.',
+			icon: Wand2,
+			accent: '#6366f1',
+			bg: 'rgba(99,102,241,0.06)',
+			border: 'rgba(99,102,241,0.15)',
+		},
+		{
+			id: 'stickman',
+			href: '/stickman-studio',
+			label: 'Stickman Studio',
+			tag: '16:9',
+			tagColor: 'amber',
+			description: 'Animasi stickman 2D yang bergerak mengikuti narasi. Efek ledakan & komedi.',
+			icon: Film,
+			accent: '#f59e0b',
+			bg: 'rgba(245,158,11,0.06)',
+			border: 'rgba(245,158,11,0.15)',
+		},
+		{
+			id: 'docu',
+			href: '/docu-studio',
+			label: 'Docu-Style Studio',
+			tag: '16:9',
+			tagColor: 'red',
+			description: 'Estetika dokumenter investigatif — polaroid, cap "CLASSIFIED", paper texture, kolase Vox.',
+			icon: FileText,
+			accent: '#ef4444',
+			bg: 'rgba(239,68,68,0.06)',
+			border: 'rgba(239,68,68,0.15)',
+		},
+		{
+			id: 'typography',
+			href: '/typography-studio',
+			label: 'Dan Koe Typography',
+			tag: '16:9',
+			tagColor: 'yellow',
+			description: 'Tipografi kinetik filosofis — charcoal bg, glowing keywords, diagram mental model.',
+			icon: Zap,
+			accent: '#eab308',
+			bg: 'rgba(234,179,8,0.06)',
+			border: 'rgba(234,179,8,0.15)',
+		},
+		{
+			id: 'editor',
+			href: '/video-editor',
+			label: 'Image → Video',
+			tag: 'Editor',
+			tagColor: 'sky',
+			description: 'Gabungkan foto/gambar jadi video. Timeline drag & drop, atur durasi, sinkron musik.',
+			icon: Video,
+			accent: '#38bdf8',
+			bg: 'rgba(56,189,248,0.06)',
+			border: 'rgba(56,189,248,0.15)',
+		},
+		{
+			id: 'shorts',
+			href: '/shorts-studio',
+			label: 'Shorts Generator',
+			tag: '9:16 ✦ Baru',
+			tagColor: 'violet',
+			description: 'AI buat naskah → klip Giphy → voiceover ElevenLabs → subtitle viral. 30–40 detik.',
+			icon: Smartphone,
+			accent: '#a78bfa',
+			bg: 'rgba(167,139,250,0.07)',
+			border: 'rgba(167,139,250,0.2)',
+			featured: true,
+		},
+	];
+
+	const tagStyles = {
+		indigo: { bg: 'rgba(99,102,241,0.15)',  color: '#a5b4fc' },
+		amber:  { bg: 'rgba(245,158,11,0.15)',  color: '#fcd34d' },
+		red:    { bg: 'rgba(239,68,68,0.15)',   color: '#fca5a5' },
+		yellow: { bg: 'rgba(234,179,8,0.15)',   color: '#fde047' },
+		sky:    { bg: 'rgba(56,189,248,0.15)',  color: '#7dd3fc' },
+		violet: { bg: 'rgba(167,139,250,0.18)', color: '#c4b5fd' },
+	};
 </script>
 
-<div class="landing-page">
-	<!-- Hero Section -->
-	<header class="hero">
-		<nav class="container">
-			<div class="logo">
-				<Zap size={24} color="var(--primary)" fill="var(--primary)" />
-				<span>AI Video Studio</span>
-			</div>
-			<div class="nav-links">
-				<a href="/studio" class="github-link">
-					<Share2 size={18} />
-					<span>Open Studio</span>
-				</a>
-			</div>
-		</nav>
+<svelte:head>
+	<title>AI Video Studio — 6 Mode Produksi Video YouTube</title>
+	<meta name="description" content="Buat video YouTube Long (16:9) atau Shorts (9:16): Cinematic, Stickman, Documentary, Typography, Image-to-Video, dan Giphy Shorts." />
+</svelte:head>
 
-		<div class="hero-content container">
-			<div class="hero-text">
-				<div class="badge">
-					<Sparkles size={14} />
-					<span>5 In 1 Video Engine</span>
-				</div>
-				<h1>Produksi Video YouTube <span class="gradient-text">Dalam Hitungan Menit</span></h1>
-				<p>Ubah naskah menjadi video YouTube Long (16:9) atau Shorts (9:16) viral: footage sinematik, animasi stickman, kolase dokumenter Vox, motion typography ala Dan Koe, atau <strong>Shorts dari Giphy Clips</strong>.</p>
-				
-				<div class="hero-actions">
-					<a href="/studio" class="btn btn-primary btn-lg">
-						<Wand2 size={20} />
-						<span>Cinematic Studio</span>
-					</a>
-					<a href="/stickman-studio" class="btn btn-accent btn-lg">
-						<Film size={20} />
-						<span>Stickman Studio</span>
-					</a>
-					<a href="/docu-studio" class="btn btn-docu btn-lg">
-						<FileText size={20} />
-						<span>Docu-Style Studio</span>
-					</a>
-					<a href="/typography-studio" class="btn btn-typo btn-lg">
-						<Zap size={20} />
-						<span>Dan Koe Typography</span>
-					</a>
-					<a href="/video-editor" class="btn btn-editor btn-lg">
-						<Film size={20} />
-						<span>Video Editor (Image to Video)</span>
-					</a>
-					<a href="/shorts-studio" class="btn btn-shorts btn-lg">
-						<Smartphone size={20} />
-						<span>✨ Shorts Generator (Giphy)</span>
-					</a>
-				</div>
+<div class="page">
+	<!-- Nav -->
+	<nav>
+		<div class="logo">
+			<div class="logo-icon">
+				<Layers size={16} />
 			</div>
-			<div class="hero-visual">
-				<div class="preview-card glass-panel">
-					<div class="preview-header">
-						<div class="dots"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div>
-						<div class="url-bar">ai-studio.sh/editor</div>
-					</div>
-					<div class="preview-img">
-						<div class="play-overlay">
-							<div class="play-btn"><Play size={32} fill="white" /></div>
-						</div>
-					</div>
-				</div>
-			</div>
+			<span>AI Video Studio</span>
+		</div>
+		<div class="nav-right">
+			<a href="/shorts-studio" class="nav-pill featured-pill">
+				<Smartphone size={13} />
+				Shorts Generator
+			</a>
+			<a href="/studio" class="nav-pill">
+				Buka Studio
+				<ArrowUpRight size={13} />
+			</a>
+		</div>
+	</nav>
+
+	<!-- Hero -->
+	<header class="hero">
+		<div class="hero-label">
+			<span class="dot-pulse"></span>
+			<span>6 studio mode &middot; AI-powered &middot; Runs local</span>
+		</div>
+		<h1>
+			Produksi Video YouTube<br>
+			<span class="hl">dari Naskah ke Render</span>
+		</h1>
+		<p class="hero-sub">
+			Satu platform, enam mode produksi. Pilih style, masukkan topik,<br class="br-desk">
+			dan AI handle semuanya — naskah, footage, voiceover, subtitle, render.
+		</p>
+
+		<div class="mode-pills">
+			{#each tools as t}
+				<a href={t.href} class="mode-pill" class:featured-mode={t.featured} style="--c: {t.accent}">
+					{t.label}
+				</a>
+			{/each}
 		</div>
 	</header>
 
-	<!-- Features Section -->
-	<section id="features" class="features container">
-		<div class="section-header">
-			<h2>Semua yang Anda Butuhkan <span class="gradient-text">Jadi Satu</span></h2>
-			<p>Gak perlu lagi pindah-pindah tab. AI Studio menghandle seluruh alur produksi video Anda.</p>
+	<!-- Tool Grid -->
+	<main class="tools-section">
+		<div class="section-meta">
+			<h2>Pilih Studio</h2>
+			<span class="count">{tools.length} tools</span>
 		</div>
 
-		<div class="features-grid">
-			<div class="feature-card glass-panel">
-				<div class="feature-icon"><Wand2 size={24} /></div>
-				<h3>Script Analyzer</h3>
-				<p>AI menganalisis naskah Anda, membaginya menjadi adegan sinematik, dan menyarankan visual yang tepat.</p>
-			</div>
-			<div class="feature-card glass-panel">
-				<div class="feature-icon"><Film size={24} /></div>
-				<h3>Cinematic Video AI</h3>
-				<p>Integrasi Pexels & bank footage lokal untuk menyajikan visual 4K yang sinkron dengan narasi Anda.</p>
-			</div>
-			<div class="feature-card glass-panel">
-				<div class="feature-icon"><Zap size={24} /></div>
-				<h3>Neural Voiceover</h3>
-				<p>Suara AI alami dari Microsoft Edge TTS & ElevenLabs yang memberikan emosi pada setiap kata.</p>
-			</div>
-			<div class="feature-card glass-panel">
-				<div class="feature-icon"><Sparkles size={24} /></div>
-				<h3>Animated Subtitles</h3>
-				<p>Subtitle bergaya "Viral Pop" atau "Cinematic" yang otomatis sinkron dengan jeda nafas narator.</p>
-			</div>
-			<div class="feature-card glass-panel">
-				<div class="feature-icon"><FileText size={24} /></div>
-				<h3>Docu-Style & Vox Collage</h3>
-				<p>Estetika dokumenter investigatif dengan tekstur kertas, polaroid, selotip, stempel classified, dan tipografi arsip.</p>
-			</div>
-			<div class="feature-card glass-panel">
-				<div class="feature-icon"><Zap size={24} /></div>
-				<h3>Motion Typography (Dan Koe)</h3>
-				<p>Tipografi kinetik filosofis dengan latar charcoal/matte black, accent glowing keywords, dan diagram mental model.</p>
-			</div>
-			<div class="feature-card glass-panel">
-				<div class="feature-icon"><Film size={24} /></div>
-				<h3>Image to Video Timeline Editor</h3>
-				<p>Gabungkan kumpulan foto/gambar menjadi video utuh. Auto-import berurutan nomor, atur durasi per gambar dengan drag timeline, dan sinkronkan audio musik latar.</p>
-			</div>
-			<div class="feature-card glass-panel feature-card-shorts">
-				<div class="feature-icon feature-icon-shorts"><Smartphone size={24} /></div>
-				<h3>✨ Shorts Generator (Giphy Clips)</h3>
-				<p>Buat YouTube Shorts/Reels viral 30–40 detik: pilih tema (Dark Psychology, Fakta Unik, Stoikisme), AI generate naskah per adegan + query Giphy otomatis, blurred backdrop 9:16, neural voiceover, subtitle bergaya TikTok viral pop.</p>
-			</div>
+		<div class="tools-grid">
+			{#each tools as tool}
+				{@const ts = tagStyles[tool.tagColor]}
+				<a
+					href={tool.href}
+					class="tool-card"
+					class:featured-card={tool.featured}
+					style="--accent: {tool.accent}; --bg: {tool.bg}; --border: {tool.border};"
+				>
+					<div class="card-top">
+						<div class="card-icon">
+							<svelte:component this={tool.icon} size={18} />
+						</div>
+						<span class="card-tag" style="background: {ts.bg}; color: {ts.color};">{tool.tag}</span>
+					</div>
+					<div class="card-body">
+						<h3>{tool.label}</h3>
+						<p>{tool.description}</p>
+					</div>
+					<div class="card-footer">
+						<span class="open-link">
+							Buka <ArrowUpRight size={13} />
+						</span>
+					</div>
+					{#if tool.featured}
+						<div class="featured-glow"></div>
+					{/if}
+				</a>
+			{/each}
 		</div>
-	</section>
+	</main>
 
 	<!-- Footer -->
-	<footer class="footer container">
-		<div class="footer-top">
-			<div class="logo">
-				<Zap size={20} color="var(--primary)" fill="var(--primary)" />
-				<span>AI Video Studio</span>
+	<footer>
+		<div class="footer-inner">
+			<div class="footer-left">
+				<div class="logo small">
+					<div class="logo-icon small-icon">
+						<Layers size={12} />
+					</div>
+					<span>AI Video Studio</span>
+				</div>
+				<span class="footer-sep">&middot;</span>
+				<span class="footer-note">Made for creators. Runs local.</span>
 			</div>
-			<div class="footer-links">
-				<a href="/studio">Mulai Buat</a>
-				<a href="https://github.com/anomalyco/opencode">Feedback</a>
-				<a href="/studio">API Settings</a>
+			<div class="footer-right">
+				<a href="/studio">Cinematic</a>
+				<a href="/shorts-studio">Shorts</a>
+				<a href="/docu-studio">Docu</a>
+				<a href="/typography-studio">Typography</a>
 			</div>
-		</div>
-		<div class="footer-bottom">
-			<p>&copy; 2026 AI Video Generator Studio. All rights reserved.</p>
 		</div>
 	</footer>
 </div>
 
 <style>
-	.landing-page {
-		color: var(--text);
-		overflow-x: hidden;
+	:global(body) {
+		background: #09090f;
 	}
 
-	.container {
-		max-width: 1200px;
-		margin: 0 auto;
-		padding: 0 24px;
+	.page {
+		min-height: 100vh;
+		background: #09090f;
+		color: #e8e8f0;
+		font-family: 'Inter', system-ui, -apple-system, sans-serif;
+		display: flex;
+		flex-direction: column;
 	}
 
-	/* Hero */
-	.hero {
-		padding: 40px 0 100px;
-		background: radial-gradient(circle at 80% 20%, rgba(99, 102, 241, 0.08) 0%, transparent 40%),
-		            radial-gradient(circle at 20% 80%, rgba(6, 182, 212, 0.08) 0%, transparent 40%);
-	}
-
+	/* ─── Nav ─── */
 	nav {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 80px;
+		padding: 20px 40px;
+		border-bottom: 1px solid rgba(255,255,255,0.05);
+		position: sticky;
+		top: 0;
+		z-index: 50;
+		background: rgba(9,9,15,0.88);
+		backdrop-filter: blur(14px);
+		-webkit-backdrop-filter: blur(14px);
 	}
 
 	.logo {
 		display: flex;
 		align-items: center;
-		gap: 12px;
-		font-weight: 800;
-		font-size: 1.25rem;
+		gap: 10px;
+		font-weight: 700;
+		font-size: 0.95rem;
 		letter-spacing: -0.02em;
+		color: #e8e8f0;
+		text-decoration: none;
 	}
 
-	.github-link {
+	.logo-icon {
+		width: 28px;
+		height: 28px;
+		background: linear-gradient(135deg, #6366f1, #8b5cf6);
+		border-radius: 7px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: white;
+		flex-shrink: 0;
+	}
+
+	.nav-right {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		color: var(--text-2);
-		font-size: 0.9rem;
-		font-weight: 500;
-		transition: color 0.2s;
 	}
 
-	.github-link:hover { color: var(--text); }
-
-	.hero-content {
-		display: grid;
-		grid-template-columns: 1.1fr 0.9fr;
-		gap: 60px;
+	.nav-pill {
+		display: inline-flex;
 		align-items: center;
+		gap: 5px;
+		padding: 7px 14px;
+		border-radius: 99px;
+		font-size: 0.8rem;
+		font-weight: 600;
+		background: rgba(255,255,255,0.05);
+		border: 1px solid rgba(255,255,255,0.08);
+		color: rgba(232,232,240,0.65);
+		text-decoration: none;
+		transition: all 0.18s;
 	}
 
-	.badge {
+	.nav-pill:hover {
+		background: rgba(255,255,255,0.09);
+		color: #e8e8f0;
+		border-color: rgba(255,255,255,0.13);
+	}
+
+	.featured-pill {
+		background: rgba(167,139,250,0.11);
+		border-color: rgba(167,139,250,0.22);
+		color: #c4b5fd;
+	}
+	.featured-pill:hover {
+		background: rgba(167,139,250,0.18);
+		color: #e9d5ff;
+	}
+
+	/* ─── Hero ─── */
+	.hero {
+		padding: 88px 40px 72px;
+		max-width: 880px;
+		margin: 0 auto;
+		text-align: center;
+		width: 100%;
+		box-sizing: border-box;
+	}
+
+	.hero-label {
 		display: inline-flex;
 		align-items: center;
 		gap: 8px;
-		padding: 6px 12px;
-		background: rgba(99, 102, 241, 0.1);
-		border: 1px solid rgba(99, 102, 241, 0.2);
-		border-radius: var(--r-full);
-		font-size: 0.8rem;
-		font-weight: 600;
-		color: #a5b4fc;
-		margin-bottom: 24px;
+		font-size: 0.72rem;
+		font-weight: 500;
+		color: rgba(232,232,240,0.35);
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		margin-bottom: 28px;
+	}
+
+	.dot-pulse {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: #a78bfa;
+		flex-shrink: 0;
+		animation: pulse 2.2s ease-in-out infinite;
+	}
+
+	@keyframes pulse {
+		0%, 100% { opacity: 1; transform: scale(1); }
+		50%       { opacity: 0.3; transform: scale(0.65); }
 	}
 
 	h1 {
-		font-size: clamp(2.5rem, 5vw, 3.75rem);
-		line-height: 1.1;
+		font-size: clamp(2.2rem, 5.5vw, 3.75rem);
 		font-weight: 800;
-		margin-bottom: 24px;
-		letter-spacing: -0.04em;
+		line-height: 1.07;
+		letter-spacing: -0.045em;
+		margin-bottom: 22px;
+		color: #f0f0f8;
 	}
 
-	.gradient-text {
-		background: linear-gradient(to right, var(--primary), var(--accent-cyan));
+	.hl {
+		background: linear-gradient(95deg, #818cf8 0%, #a78bfa 45%, #c084fc 100%);
 		-webkit-background-clip: text;
 		-webkit-text-fill-color: transparent;
+		background-clip: text;
 	}
 
-	.hero-text p {
-		font-size: 1.15rem;
-		color: var(--text-2);
-		line-height: 1.6;
-		margin-bottom: 40px;
-		max-width: 540px;
+	.hero-sub {
+		font-size: 1rem;
+		line-height: 1.7;
+		color: rgba(232,232,240,0.42);
+		max-width: 560px;
+		margin: 0 auto 40px;
 	}
 
-	.hero-actions {
+	.br-desk { display: none; }
+	@media (min-width: 700px) { .br-desk { display: inline; } }
+
+	.mode-pills {
 		display: flex;
-		gap: 16px;
 		flex-wrap: wrap;
+		justify-content: center;
+		gap: 7px;
 	}
 
-	.btn-docu {
-		background: #991b1b;
-		color: #ffffff;
-		border: 1px solid #ef4444;
-	}
-	.btn-docu:hover {
-		background: #dc2626;
-		transform: translateY(-2px);
-		box-shadow: 0 8px 24px rgba(239, 68, 68, 0.35);
-	}
-
-	.btn-typo {
-		background: #111116;
-		color: #f59e0b;
-		border: 1px solid rgba(245, 158, 11, 0.4);
-	}
-	.btn-typo:hover {
-		background: #1b1b22;
-		border-color: #f59e0b;
-		color: #fbbf24;
-		transform: translateY(-2px);
-		box-shadow: 0 8px 24px rgba(245, 158, 11, 0.25);
+	.mode-pill {
+		display: inline-flex;
+		align-items: center;
+		padding: 6px 13px;
+		border-radius: 99px;
+		font-size: 0.78rem;
+		font-weight: 600;
+		background: rgba(255,255,255,0.04);
+		border: 1px solid rgba(255,255,255,0.07);
+		color: rgba(232,232,240,0.5);
+		text-decoration: none;
+		transition: all 0.18s;
+		letter-spacing: -0.01em;
 	}
 
-	.btn-editor {
-		background: #0f172a;
-		color: #38bdf8;
-		border: 1px solid rgba(56, 189, 248, 0.4);
-	}
-	.btn-editor:hover {
-		background: #1e293b;
-		border-color: #38bdf8;
-		color: #7dd3fc;
-		transform: translateY(-2px);
-		box-shadow: 0 8px 24px rgba(56, 189, 248, 0.25);
+	.mode-pill:hover {
+		border-color: color-mix(in srgb, var(--c) 30%, transparent);
+		color: var(--c);
+		background: color-mix(in srgb, var(--c) 8%, transparent);
 	}
 
-	.btn-shorts {
-		background: linear-gradient(135deg, #2d1b69, #4c1d95);
+	.featured-mode {
+		background: rgba(167,139,250,0.09);
+		border-color: rgba(167,139,250,0.22);
 		color: #c4b5fd;
-		border: 1px solid rgba(167, 139, 250, 0.5);
-		position: relative;
-		overflow: hidden;
 	}
-	.btn-shorts::before {
-		content: '';
-		position: absolute;
-		inset: 0;
-		background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.15), transparent);
-		transform: translateX(-100%);
-		transition: transform 0.5s;
-	}
-	.btn-shorts:hover::before { transform: translateX(100%); }
-	.btn-shorts:hover {
-		background: linear-gradient(135deg, #3d2b79, #5b21b6);
-		border-color: #a78bfa;
+	.featured-mode:hover {
+		background: rgba(167,139,250,0.16);
 		color: #e9d5ff;
-		transform: translateY(-2px);
-		box-shadow: 0 8px 30px rgba(167, 139, 250, 0.4);
 	}
 
-	.feature-card-shorts {
-		background: linear-gradient(135deg, rgba(167, 139, 250, 0.06), rgba(236, 72, 153, 0.04));
-		border-color: rgba(167, 139, 250, 0.2) !important;
-	}
-	.feature-icon-shorts {
-		color: #a78bfa !important;
-		background: rgba(167, 139, 250, 0.1) !important;
-	}
-
-	.hero-visual {
-		position: relative;
-	}
-
-	.preview-card {
-		border-radius: var(--r-lg);
-		overflow: hidden;
-		transform: perspective(1000px) rotateY(-10deg) rotateX(5deg);
-		box-shadow: 0 40px 80px rgba(0,0,0,0.4);
-	}
-
-	.preview-header {
-		padding: 12px;
-		background: #1e293b;
-		display: flex;
-		align-items: center;
-		gap: 16px;
-	}
-
-	.dots { display: flex; gap: 6px; }
-	.dot { width: 8px; height: 8px; border-radius: 50%; }
-	.dot.red { background: #ef4444; }
-	.dot.yellow { background: #f59e0b; }
-	.dot.green { background: #10b981; }
-
-	.url-bar {
-		background: #0f172a;
-		padding: 4px 12px;
-		border-radius: 4px;
-		font-family: var(--font-mono);
-		font-size: 0.7rem;
-		color: var(--text-3);
+	/* ─── Tools section ─── */
+	.tools-section {
 		flex: 1;
+		padding: 0 40px 80px;
+		max-width: 1100px;
+		margin: 0 auto;
+		width: 100%;
+		box-sizing: border-box;
 	}
 
-	.preview-img {
-		aspect-ratio: 16/9;
-		background: linear-gradient(45deg, #1e293b, #0f172a);
+	.section-meta {
 		display: flex;
 		align-items: center;
-		justify-content: center;
+		gap: 10px;
+		margin-bottom: 20px;
+	}
+
+	.section-meta h2 {
+		font-size: 0.88rem;
+		font-weight: 700;
+		letter-spacing: -0.01em;
+		color: rgba(232,232,240,0.55);
+	}
+
+	.count {
+		font-size: 0.72rem;
+		font-weight: 600;
+		padding: 2px 8px;
+		background: rgba(255,255,255,0.05);
+		border: 1px solid rgba(255,255,255,0.07);
+		border-radius: 99px;
+		color: rgba(232,232,240,0.3);
+	}
+
+	.tools-grid {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 12px;
+	}
+
+	/* ─── Tool card ─── */
+	.tool-card {
+		display: flex;
+		flex-direction: column;
+		padding: 22px;
+		border-radius: 14px;
+		background: var(--bg);
+		border: 1px solid var(--border);
+		text-decoration: none;
+		color: inherit;
 		position: relative;
+		overflow: hidden;
+		transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+		min-height: 195px;
 	}
 
-	.play-overlay {
-		width: 80px;
-		height: 80px;
-		background: var(--primary);
-		border-radius: 50%;
+	.tool-card:hover {
+		border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+		transform: translateY(-3px);
+		box-shadow: 0 14px 44px rgba(0,0,0,0.3);
+	}
+
+	.featured-glow {
+		position: absolute;
+		top: -40px;
+		right: -40px;
+		width: 140px;
+		height: 140px;
+		background: radial-gradient(circle, rgba(167,139,250,0.1) 0%, transparent 70%);
+		pointer-events: none;
+	}
+
+	.card-top {
 		display: flex;
-		align-items: center;
-		justify-content: center;
-		box-shadow: 0 0 30px var(--primary);
-	}
-
-	/* Features */
-	.features {
-		padding: 100px 0;
-	}
-
-	.section-header {
-		text-align: center;
-		margin-bottom: 60px;
-	}
-
-	.section-header h2 {
-		font-size: 2.25rem;
-		font-weight: 800;
+		justify-content: space-between;
+		align-items: flex-start;
 		margin-bottom: 16px;
 	}
 
-	.section-header p {
-		color: var(--text-2);
-		max-width: 600px;
-		margin: 0 auto;
-	}
-
-	.features-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-		gap: 24px;
-	}
-
-	.feature-card {
-		padding: 32px;
-		border-radius: var(--r-xl);
-		transition: transform 0.3s;
-	}
-
-	.feature-card:hover {
-		transform: translateY(-10px);
-	}
-
-	.feature-icon {
-		width: 48px;
-		height: 48px;
-		background: rgba(99, 102, 241, 0.1);
-		color: var(--primary);
-		border-radius: 12px;
+	.card-icon {
+		width: 34px;
+		height: 34px;
+		background: color-mix(in srgb, var(--accent) 13%, transparent);
+		color: var(--accent);
+		border-radius: 9px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		margin-bottom: 24px;
+		flex-shrink: 0;
 	}
 
-	.feature-card h3 {
-		font-size: 1.25rem;
+	.card-tag {
+		font-size: 0.68rem;
 		font-weight: 700;
-		margin-bottom: 12px;
+		padding: 3px 8px;
+		border-radius: 99px;
+		letter-spacing: 0.01em;
+		white-space: nowrap;
 	}
 
-	.feature-card p {
-		color: var(--text-2);
-		font-size: 0.95rem;
-		line-height: 1.6;
+	.card-body { flex: 1; }
+
+	.card-body h3 {
+		font-size: 0.97rem;
+		font-weight: 700;
+		letter-spacing: -0.025em;
+		margin-bottom: 7px;
+		color: #f0f0f8;
 	}
 
-	/* Footer */
-	.footer {
-		padding: 80px 0 40px;
-		border-top: 1px solid var(--line);
+	.card-body p {
+		font-size: 0.8rem;
+		line-height: 1.55;
+		color: rgba(232,232,240,0.4);
 	}
 
-	.footer-top {
+	.card-footer {
+		margin-top: 18px;
+		padding-top: 14px;
+		border-top: 1px solid rgba(255,255,255,0.05);
+	}
+
+	.open-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--accent);
+		opacity: 0.55;
+		transition: opacity 0.18s;
+	}
+
+	.tool-card:hover .open-link { opacity: 1; }
+
+	/* ─── Footer ─── */
+	footer {
+		border-top: 1px solid rgba(255,255,255,0.05);
+		padding: 18px 40px;
+	}
+
+	.footer-inner {
+		max-width: 1100px;
+		margin: 0 auto;
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 40px;
 	}
 
-	.footer-links {
+	.footer-left {
 		display: flex;
-		gap: 32px;
+		align-items: center;
+		gap: 12px;
 	}
 
-	.footer-links a {
-		color: var(--text-2);
-		font-size: 0.9rem;
-		font-weight: 500;
+	.logo.small { font-size: 0.82rem; }
+	.small-icon { width: 22px; height: 22px; }
+
+	.footer-sep { color: rgba(232,232,240,0.18); }
+
+	.footer-note {
+		font-size: 0.76rem;
+		color: rgba(232,232,240,0.22);
 	}
 
-	.footer-links a:hover { color: var(--text); }
-
-	.footer-bottom {
-		text-align: center;
-		color: var(--text-3);
-		font-size: 0.85rem;
+	.footer-right {
+		display: flex;
+		gap: 20px;
 	}
 
+	.footer-right a {
+		font-size: 0.78rem;
+		color: rgba(232,232,240,0.28);
+		text-decoration: none;
+		transition: color 0.18s;
+	}
+
+	.footer-right a:hover { color: rgba(232,232,240,0.65); }
+
+	/* ─── Responsive ─── */
 	@media (max-width: 900px) {
-		.hero-content { grid-template-columns: 1fr; text-align: center; gap: 40px; }
-		.hero-text p { margin: 0 auto 40px; }
-		.hero-actions { justify-content: center; }
-		.hero-visual { transform: none; max-width: 600px; margin: 0 auto; }
-		.preview-card { transform: none; }
-		.footer-top { flex-direction: column; gap: 30px; }
+		nav { padding: 16px 20px; }
+		.hero { padding: 64px 20px 52px; }
+		.tools-section { padding: 0 20px 60px; }
+		footer { padding: 16px 20px; }
+		.tools-grid { grid-template-columns: repeat(2, 1fr); }
+	}
+
+	@media (max-width: 560px) {
+		nav { padding: 14px 16px; }
+		.nav-pill span { display: none; }
+		.hero { padding: 48px 16px 40px; }
+		h1 { font-size: 2rem; letter-spacing: -0.035em; }
+		.hero-sub { font-size: 0.9rem; }
+		.tools-section { padding: 0 16px 48px; }
+		.tools-grid { grid-template-columns: 1fr; gap: 8px; }
+		footer { padding: 14px 16px; }
+		.footer-inner { flex-direction: column; gap: 10px; text-align: center; }
+		.footer-left { flex-direction: column; gap: 4px; }
 	}
 </style>

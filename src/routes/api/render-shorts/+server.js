@@ -38,9 +38,9 @@ const BGM_MAP = {
 // Subtitle Style Definitions for 9:16
 // ------------------------------------------------------------------
 const SUBTITLE_STYLES = {
-	'viral-yellow': { fontName: 'Montserrat', fontSize: 78, primaryColor: 'FFFFFF', outlineColor: '000000', shadowColor: '000000', outlineSize: 5, shadow: 3, bold: true, alignment: 2, marginV: 160 },
-	'mrbeast-bold': { fontName: 'Impact',     fontSize: 88, primaryColor: 'FFFFFF', outlineColor: '000000', shadowColor: '000000', outlineSize: 6, shadow: 4, bold: true, alignment: 2, marginV: 180 },
-	minimal:        { fontName: 'Outfit',      fontSize: 68, primaryColor: 'FFFFFF', outlineColor: '000000', shadowColor: '000000', outlineSize: 4, shadow: 2, bold: true, alignment: 2, marginV: 150 }
+	'viral-yellow': { fontName: 'Arial Black', fontSize: 72, primaryColor: 'FFE800', outlineColor: '000000', shadowColor: '000000', outlineSize: 7, shadow: 3, bold: true, alignment: 2, marginV: 280 },
+	'mrbeast-bold': { fontName: 'Impact',     fontSize: 80, primaryColor: 'FFFFFF', outlineColor: '000000', shadowColor: '000000', outlineSize: 8, shadow: 4, bold: true, alignment: 2, marginV: 280 },
+	minimal:        { fontName: 'Arial Black', fontSize: 66, primaryColor: 'FFFFFF', outlineColor: '000000', shadowColor: '000000', outlineSize: 5, shadow: 2, bold: true, alignment: 2, marginV: 280 }
 };
 
 // ------------------------------------------------------------------
@@ -421,9 +421,99 @@ async function renderSceneClip(scene, idx, sessionDir, vtbAvail) {
 }
 
 // ------------------------------------------------------------------
-// Build ASS Subtitle File: Sentence-Level (NOT word-by-word)
-// Shows full scene narration as 1-2 lines during entire scene duration.
 // ------------------------------------------------------------------
+// Build ASS Subtitle File: Punchy Single-Line Sync for Shorts (9:16)
+// Displays 2-3 words per burst with audio-synced timing. No text overflow.
+// ------------------------------------------------------------------
+function calculateAudioSyncedWordTimings(words, totalDuration) {
+	if (!words || words.length === 0) return [];
+	const startBound = 0.08;
+	const endBound = Math.max(startBound + 0.4, totalDuration - 0.12);
+	const speechSpan = Math.max(0.3, endBound - startBound);
+	const weights = words.map((w) => {
+		const clean = w.replace(/[^a-zA-Z0-9]/g, '');
+		let wt = Math.max(2, clean.length);
+		if (/[.,!?;:]$/.test(w)) wt += 2.5; // Natural pause weight on punctuation
+		return wt;
+	});
+	const totalWeight = weights.reduce((sum, val) => sum + val, 0);
+	let currentCursor = startBound;
+	return words.map((word, idx) => {
+		const wordDuration = (weights[idx] / totalWeight) * speechSpan;
+		const start = Number(currentCursor.toFixed(2));
+		const end = Number((currentCursor + wordDuration).toFixed(2));
+		currentCursor += wordDuration;
+		return { word, start, end };
+	});
+}
+
+function chunkWordsForShorts(wordTimings, maxWords = 3, maxChars = 24) {
+	if (!wordTimings || wordTimings.length === 0) return [];
+	const chunks = [];
+	let current = [];
+	let currentLen = 0;
+
+	for (let i = 0; i < wordTimings.length; i++) {
+		const item = wordTimings[i];
+		const word = item.word.trim();
+		const wordLen = word.length;
+		const projectedLen = currentLen === 0 ? wordLen : currentLen + 1 + wordLen;
+		const hasPunctuation = /[.,!?;:—"]$/.test(word);
+		const remaining = wordTimings.length - (i + 1);
+
+		// Avoid leaving a lone orphan word at the end if it fits
+		const wouldOrphan = remaining === 1 && (projectedLen + 1 + wordTimings[i + 1].word.length <= maxChars + 4);
+
+		if (current.length > 0 && !wouldOrphan && (projectedLen > maxChars || current.length >= maxWords)) {
+			chunks.push({
+				words: current,
+				text: current.map(w => w.word).join(' '),
+				start: current[0].start,
+				end: current[current.length - 1].end
+			});
+			current = [];
+			currentLen = 0;
+		}
+
+		current.push(item);
+		currentLen += (currentLen === 0 ? wordLen : 1 + wordLen);
+
+		if (hasPunctuation && !wouldOrphan && (current.length >= 2 || remaining <= 2)) {
+			chunks.push({
+				words: current,
+				text: current.map(w => w.word).join(' '),
+				start: current[0].start,
+				end: current[current.length - 1].end
+			});
+			current = [];
+			currentLen = 0;
+		}
+	}
+
+	if (current.length > 0) {
+		if (current.length === 1 && chunks.length > 0) {
+			const prev = chunks[chunks.length - 1];
+			const combinedText = prev.text + ' ' + current[0].word;
+			if (combinedText.length <= maxChars + 6 && prev.words.length < 4) {
+				prev.words.push(...current);
+				prev.text = combinedText;
+				prev.end = current[0].end;
+				current = [];
+			}
+		}
+		if (current.length > 0) {
+			chunks.push({
+				words: current,
+				text: current.map(w => w.word).join(' '),
+				start: current[0].start,
+				end: current[current.length - 1].end
+			});
+		}
+	}
+
+	return chunks;
+}
+
 function buildShortsASS(scenes, style = 'viral-yellow') {
 	const st = SUBTITLE_STYLES[style] || SUBTITLE_STYLES['viral-yellow'];
 
@@ -440,28 +530,10 @@ function buildShortsASS(scenes, style = 'viral-yellow') {
 		return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(cs).padStart(2,'0')}`;
 	}
 
-	// Wrap text into max 2 lines of ~32 chars each (suitable for 9:16 narrow layout)
-	function wrapText(text, maxChars = 32) {
-		const words = text.split(/\s+/).filter(Boolean);
-		const lines = [];
-		let current = '';
-		for (const w of words) {
-			if ((current + (current ? ' ' : '') + w).length > maxChars && current) {
-				lines.push(current.trim());
-				current = w;
-				if (lines.length >= 2) { current = words.slice(words.indexOf(w)).join(' '); break; }
-			} else {
-				current += (current ? ' ' : '') + w;
-			}
-		}
-		if (current) lines.push(current.trim());
-		return lines.slice(0, 2).join('\\N');
-	}
-
 	const primary  = `&H00${hexBgr(st.primaryColor)}`;
 	const outline  = `&H00${hexBgr(st.outlineColor)}`;
-	const shadow   = `&HAA${hexBgr(st.shadowColor)}`;
-	const boxBg    = '&H99000000';
+	const shadow   = `&H80${hexBgr(st.shadowColor)}`;
+	const boxBg    = '&H00000000';
 
 	const header = [
 		'[Script Info]',
@@ -469,12 +541,12 @@ function buildShortsASS(scenes, style = 'viral-yellow') {
 		'ScriptType: v4.00+',
 		`PlayResX: ${W}`,
 		`PlayResY: ${H}`,
-		'WrapStyle: 1',
+		'WrapStyle: 2',
 		'ScaledBorderAndShadow: yes',
 		'',
 		'[V4+ Styles]',
 		'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-		`Style: Default,${st.fontName},${st.fontSize},${primary},${primary},${outline},${boxBg},${st.bold ? -1 : 0},0,0,0,100,100,1.5,0,3,${st.outlineSize},${st.shadow},${st.alignment},60,60,${st.marginV},1`,
+		`Style: Default,${st.fontName},${st.fontSize},${primary},${primary},${outline},${boxBg},${st.bold ? -1 : 0},0,0,0,100,100,1.2,0,1,${st.outlineSize},${st.shadow},${st.alignment},80,80,${st.marginV},1`,
 		'',
 		'[Events]',
 		'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text'
@@ -488,22 +560,29 @@ function buildShortsASS(scenes, style = 'viral-yellow') {
 		const text = (scene.spokenText || '').trim();
 		if (!text) { cursor += dur; continue; }
 
-		const start = cursor;
-		const end = cursor + dur - 0.05; // small gap before next scene
+		const words = text.split(/\s+/).filter(Boolean);
+		if (words.length === 0) { cursor += dur; continue; }
 
-		// Split long narration into 2 subtitle blocks if duration > 5s
-		if (dur > 5 && text.split(/\s+/).length > 14) {
-			const words = text.split(/\s+/).filter(Boolean);
-			const half = Math.floor(words.length / 2);
-			const part1 = words.slice(0, half).join(' ');
-			const part2 = words.slice(half).join(' ');
-			const mid = start + dur / 2;
+		const timings = calculateAudioSyncedWordTimings(words, dur);
+		const chunks  = chunkWordsForShorts(timings, 3, 24);
 
-			dialogues.push(`Dialogue: 0,${fmt(start)},${fmt(mid - 0.05)},Default,,0,0,0,,{\\fad(120,80)}${wrapText(part1)}`);
-			dialogues.push(`Dialogue: 0,${fmt(mid)},${fmt(end)},Default,,0,0,0,,{\\fad(80,120)}${wrapText(part2)}`);
-		} else {
-			// Show full text for short scenes
-			dialogues.push(`Dialogue: 0,${fmt(start)},${fmt(end)},Default,,0,0,0,,{\\fad(120,100)}${wrapText(text)}`);
+		for (let j = 0; j < chunks.length; j++) {
+			const c = chunks[j];
+			const start = cursor + c.start;
+			// Seamless transition: display until next chunk starts, or until near end of scene
+			let end = (j < chunks.length - 1)
+				? (cursor + chunks[j + 1].start)
+				: Math.min(cursor + dur - 0.05, cursor + c.end + 0.15);
+
+			if (end <= start) end = start + 0.3;
+
+			// Clean text (remove ASS syntax chars) and uppercase if mrbeast
+			let lineText = c.text.replace(/[{}]/g, '');
+			if (style === 'mrbeast-bold') {
+				lineText = lineText.toUpperCase();
+			}
+
+			dialogues.push(`Dialogue: 0,${fmt(start)},${fmt(end)},Default,,0,0,0,,{\\fad(40,0)}${lineText}`);
 		}
 
 		cursor += dur;
