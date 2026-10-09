@@ -81,6 +81,79 @@ function runFFmpeg(args, timeoutMs = 600000) {
 	});
 }
 
+function buildEditorASS(subtitles = [], style = 'viral-yellow', W = 1920, H = 1080, position = 'bottom', fontScale = 1.0) {
+	const fontName = style === 'mrbeast-bold' ? 'Impact' : 'Arial Black';
+	let fontSize = Math.round((H >= 1080 ? 56 : 40) * (Number(fontScale) || 1.0));
+
+	let primaryColor = '&H0000E8FF'; // Yellow BGR (FF E8 00)
+	let outlineColor = '&H00000000'; // Black
+	let backColor = '&H80000000';
+	let outlineSize = 5;
+	let shadowSize = 2;
+	let isBold = -1;
+
+	if (style === 'mrbeast-bold') {
+		primaryColor = '&H00FFFFFF';
+		outlineColor = '&H00000000';
+		outlineSize = 6;
+		shadowSize = 3;
+	} else if (style === 'minimal') {
+		primaryColor = '&H00FFFFFF';
+		outlineColor = '&H00000000';
+		outlineSize = 3;
+		shadowSize = 1;
+	}
+
+	// Alignment: 2 (Bottom-center), 5 (Middle-center), 8 (Top-center)
+	let alignment = 2;
+	let marginV = Math.round(H * 0.1);
+	if (position === 'top') {
+		alignment = 8;
+		marginV = Math.round(H * 0.08);
+	} else if (position === 'center') {
+		alignment = 5;
+		marginV = 0;
+	}
+
+	function fmt(sec) {
+		const h = Math.floor(sec / 3600);
+		const m = Math.floor((sec % 3600) / 60);
+		const s = Math.floor(sec % 60);
+		const cs = Math.floor((sec % 1) * 100);
+		return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(cs).padStart(2,'0')}`;
+	}
+
+	const header = [
+		'[Script Info]',
+		'Title: Video Editor Subtitle',
+		'ScriptType: v4.00+',
+		`PlayResX: ${W}`,
+		`PlayResY: ${H}`,
+		'WrapStyle: 2',
+		'ScaledBorderAndShadow: yes',
+		'',
+		'[V4+ Styles]',
+		'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+		`Style: Default,${fontName},${fontSize},${primaryColor},${primaryColor},${outlineColor},${backColor},${isBold},0,0,0,100,100,1.2,0,1,${outlineSize},${shadowSize},${alignment},60,60,${marginV},1`,
+		'',
+		'[Events]',
+		'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text'
+	].join('\n');
+
+	const dialogues = [];
+	for (const sub of subtitles) {
+		const start = Number(sub.start) || 0;
+		const end = Number(sub.end) || (start + Number(sub.duration || 3));
+		if (end <= start) continue;
+		let txt = (sub.text || '').replace(/[{}]/g, '').trim();
+		if (!txt) continue;
+		if (style === 'mrbeast-bold') txt = txt.toUpperCase();
+		dialogues.push(`Dialogue: 0,${fmt(start)},${fmt(end)},Default,,0,0,0,,{\\fad(50,50)}${txt}`);
+	}
+
+	return header + '\n' + dialogues.join('\n') + '\n';
+}
+
 export async function POST({ request }) {
 	const rid = `editor-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 	const tmp = path.resolve(`./static/renders/temp-${rid}`);
@@ -111,7 +184,12 @@ export async function POST({ request }) {
 				audioTracks = null,
 				aspectRatio = '16:9',
 				renderQuality = '1080p',
-				videoTitle = 'video-editor-export'
+				videoTitle = 'video-editor-export',
+				subtitles = [],
+				subtitlesEnabled = true,
+				subtitleStyle = 'viral-yellow',
+				subtitlePosition = 'bottom',
+				subtitleFontScale = 1.0,
 			} = body;
 
 			// Support both visualTracks array and flat clips array
@@ -478,6 +556,29 @@ export async function POST({ request }) {
 					currentBaseVideo = compositedVideo;
 				} catch (ovErr) {
 					console.warn('Overlay filter warning, using base video:', ovErr.message);
+				}
+			}
+
+			// Subtitle Burn-in (if enabled and subtitles provided)
+			if (subtitlesEnabled && subtitles && subtitles.length > 0) {
+				send({ progress: 80, step: 'Membakar subtitle & teks ke dalam video...' });
+				const assContent = buildEditorASS(subtitles, subtitleStyle, W, H, subtitlePosition, subtitleFontScale);
+				const assFile = path.join(tmp, 'subtitles.ass');
+				await fs.promises.writeFile(assFile, assContent, 'utf-8');
+
+				const subVideo = path.join(tmp, 'video-with-subtitles.mp4');
+				try {
+					const escapedAss = assFile.replace(/\\/g, '/').replace(/:/g, '\\:');
+					await runFFmpeg([
+						'-i', currentBaseVideo,
+						'-vf', `ass=${escapedAss}`,
+						...normCodec,
+						'-t', String(totalVideoDuration),
+						'-y', subVideo
+					], 300000);
+					currentBaseVideo = subVideo;
+				} catch (subErr) {
+					console.warn('Subtitle burn-in warning, continuing with base video:', subErr.message);
 				}
 			}
 

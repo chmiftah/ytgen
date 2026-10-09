@@ -127,6 +127,18 @@
 	let singleClipReplaceInput = $state(/** @type {HTMLInputElement|undefined} */ (undefined));
 	let targetReplaceClipIndex = $state(-1);
 
+	// Subtitles / Captions State
+	let subtitleItems = $state(/** @type {Array<{ id: string, start: number, end: number, duration: number, text: string }>} */ ([]));
+	let subtitlesEnabled = $state(true);
+	let subtitleStyle = $state('viral-yellow'); // 'viral-yellow' | 'mrbeast-bold' | 'minimal'
+	let subtitlePosition = $state('bottom'); // 'bottom' | 'center' | 'top'
+	let subtitleFontScale = $state(1.0); // 0.8 - 2.0
+	let subtitleTrackVisible = $state(true);
+	let activeSubtitleIndex = $state(-1);
+	let isGeneratingSubtitles = $state(false);
+	let activeInspectorTab = $state('clip'); // 'clip' | 'subtitle'
+	let resizingSubtitle = $state(/** @type {any} */ (null)); // { index, handle, startX, origStart, origEnd }
+
 	const STYLE_PRESETS = [
 		{
 			id: 'cartoon_2d',
@@ -336,6 +348,20 @@
 	// Overlay clips (V2, V3...) at playhead
 	let currentOverlayClips = $derived.by(() => {
 		return currentActiveLayers.filter((l) => l.trackId !== 'v1');
+	});
+
+	// Derived: Subtitle active at the current playhead time
+	let currentActiveSubtitle = $derived.by(() => {
+		if (!subtitlesEnabled || !subtitleItems.length) return null;
+		return subtitleItems.find((s) => currentTime >= s.start && currentTime <= s.end) || null;
+	});
+
+	// Derived: Active Subtitle object in Inspector
+	let activeSubtitle = $derived.by(() => {
+		if (activeSubtitleIndex >= 0 && activeSubtitleIndex < subtitleItems.length) {
+			return subtitleItems[activeSubtitleIndex];
+		}
+		return null;
 	});
 
 	// Derived: Active transition between current base clip and next clip
@@ -842,6 +868,37 @@
 			}
 		}
 
+		// 4. Auto-populate Subtitles from AI Whisper segments or scene narrations
+		if (storyboardAudioResult?.whisperSegments?.length) {
+			subtitleItems = storyboardAudioResult.whisperSegments.map((s, idx) => ({
+				id: `sub-${idx + 1}`,
+				start: Number(s.start || 0),
+				end: Number(s.end || 0),
+				duration: Number((Number(s.end || 0) - Number(s.start || 0)).toFixed(2)),
+				text: s.text || ''
+			}));
+			subtitlesEnabled = true;
+		} else if (newClips.some((c) => c.narration)) {
+			let acc = 0;
+			const generatedSubs = [];
+			newClips.forEach((c, idx) => {
+				const start = Number(acc.toFixed(2));
+				const end = Number((acc + c.duration).toFixed(2));
+				if (c.narration && c.narration.trim()) {
+					generatedSubs.push({
+						id: `sub-${idx + 1}`,
+						start,
+						end,
+						duration: Number(c.duration.toFixed(2)),
+						text: c.narration.trim()
+					});
+				}
+				acc += c.duration;
+			});
+			subtitleItems = generatedSubs;
+			subtitlesEnabled = true;
+		}
+
 		visualTracks[0].clips = newClips;
 		visualTracks = [...visualTracks];
 		audioTracks = [...audioTracks];
@@ -1188,6 +1245,166 @@
 		window.removeEventListener('mouseup', onResizeMouseUp);
 	}
 
+	// Subtitle Drag Resize Handlers
+	function startResizeSubtitle(/** @type {any} */ event, /** @type {number} */ index, /** @type {'left'|'right'} */ handle) {
+		event.stopPropagation();
+		event.preventDefault();
+		const sub = subtitleItems[index];
+		if (!sub) return;
+
+		resizingSubtitle = {
+			index,
+			handle,
+			startX: event.clientX,
+			origStart: sub.start,
+			origEnd: sub.end
+		};
+
+		window.addEventListener('mousemove', onSubtitleResizeMouseMove);
+		window.addEventListener('mouseup', onSubtitleResizeMouseUp);
+	}
+
+	function onSubtitleResizeMouseMove(/** @type {any} */ event) {
+		if (!resizingSubtitle) return;
+		const sub = subtitleItems[resizingSubtitle.index];
+		if (!sub) return;
+
+		const deltaX = event.clientX - resizingSubtitle.startX;
+		const deltaSec = deltaX / pxPerSec;
+
+		if (resizingSubtitle.handle === 'right') {
+			const newEnd = Math.max(sub.start + 0.3, Number((resizingSubtitle.origEnd + deltaSec).toFixed(2)));
+			sub.end = newEnd;
+			sub.duration = Number((newEnd - sub.start).toFixed(2));
+		} else {
+			const newStart = Math.max(0, Math.min(sub.end - 0.3, Number((resizingSubtitle.origStart + deltaSec).toFixed(2))));
+			sub.start = newStart;
+			sub.duration = Number((sub.end - newStart).toFixed(2));
+		}
+		subtitleItems = [...subtitleItems];
+	}
+
+	function onSubtitleResizeMouseUp() {
+		if (resizingSubtitle) {
+			const sub = subtitleItems[resizingSubtitle.index];
+			if (sub) {
+				showToast(`Subtitle #${resizingSubtitle.index + 1}: ${sub.start.toFixed(1)}s - ${sub.end.toFixed(1)}s`);
+			}
+			resizingSubtitle = null;
+		}
+		window.removeEventListener('mousemove', onSubtitleResizeMouseMove);
+		window.removeEventListener('mouseup', onSubtitleResizeMouseUp);
+	}
+
+	// Subtitle Helper Methods
+	function addEmptySubtitle() {
+		const start = Number(currentTime.toFixed(2));
+		const end = Number((start + 2.5).toFixed(2));
+		const newSub = {
+			id: `sub-${Date.now()}`,
+			start,
+			end,
+			duration: 2.5,
+			text: 'Teks Subtitle Baru'
+		};
+		subtitleItems = [...subtitleItems, newSub].sort((a, b) => a.start - b.start);
+		activeSubtitleIndex = subtitleItems.findIndex((s) => s.id === newSub.id);
+		activeInspectorTab = 'subtitle';
+		showToast(`➕ Subtitle ditambahkan pada ${formatTime(start)}`);
+	}
+
+	function deleteSubtitle(/** @type {number} */ index) {
+		if (index < 0 || index >= subtitleItems.length) return;
+		subtitleItems.splice(index, 1);
+		subtitleItems = [...subtitleItems];
+		if (activeSubtitleIndex >= subtitleItems.length) {
+			activeSubtitleIndex = Math.max(-1, subtitleItems.length - 1);
+		}
+		showToast('🗑️ Subtitle dihapus');
+	}
+
+	function clearAllSubtitles() {
+		if (!subtitleItems.length) return;
+		if (confirm('Yakin ingin menghapus seluruh subtitle pada timeline ini?')) {
+			subtitleItems = [];
+			activeSubtitleIndex = -1;
+			showToast('Semua subtitle telah dihapus');
+		}
+	}
+
+	async function handleGenerateSubtitles() {
+		if (isGeneratingSubtitles) return;
+		isGeneratingSubtitles = true;
+
+		try {
+			// 1. Audio track Whisper transcription
+			const mainAudio = audioTracks.find((t) => t.audioUrl && !t.isMuted) || audioTracks[0];
+
+			if (mainAudio?.audioUrl) {
+				showToast('🎙️ AI Whisper mentranskripsikan audio...');
+				const res = await fetch('/api/transcribe-audio', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ audioUrl: mainAudio.audioUrl })
+				});
+				const data = await res.json();
+				if (!res.ok || data.error) {
+					throw new Error(data.error || 'Gagal mentranskripsikan audio');
+				}
+
+				if (data.segments && data.segments.length > 0) {
+					subtitleItems = data.segments.map((seg, idx) => ({
+						id: `sub-${idx + 1}`,
+						start: Number(seg.start || 0),
+						end: Number(seg.end || 0),
+						duration: Number((Number(seg.end || 0) - Number(seg.start || 0)).toFixed(2)),
+						text: seg.text || ''
+					}));
+					subtitlesEnabled = true;
+					activeInspectorTab = 'subtitle';
+					activeSubtitleIndex = 0;
+					showToast(`✨ Berhasil membuat ${subtitleItems.length} baris subtitle dari Whisper!`);
+					return;
+				}
+			}
+
+			// 2. Fallback: Generate subtitles from visual narration
+			const clipsWithNarration = visualTracks[0]?.clips.filter((c) => c.narration && c.narration.trim());
+			if (clipsWithNarration && clipsWithNarration.length > 0) {
+				showToast('📝 Menyusun subtitle dari narasi scene...');
+				let acc = 0;
+				const genSubs = [];
+				for (let i = 0; i < visualTracks[0].clips.length; i++) {
+					const c = visualTracks[0].clips[i];
+					const dur = Number(c.duration || 3);
+					if (c.narration && c.narration.trim()) {
+						genSubs.push({
+							id: `sub-${genSubs.length + 1}`,
+							start: Number(acc.toFixed(2)),
+							end: Number((acc + dur).toFixed(2)),
+							duration: dur,
+							text: c.narration.trim()
+						});
+					}
+					acc += dur;
+				}
+				subtitleItems = genSubs;
+				subtitlesEnabled = true;
+				activeInspectorTab = 'subtitle';
+				activeSubtitleIndex = 0;
+				showToast(`✨ Berhasil membuat ${subtitleItems.length} subtitle dari narasi visual!`);
+				return;
+			}
+
+			showToast('⚠️ Unggah audio di Track A1 atau masukkan narasi pada storyboard scene!');
+		} catch (err) {
+			console.error('Error generating subtitles:', err);
+			showToast(`❌ Gagal generate subtitle: ${err.message}`);
+		} finally {
+			isGeneratingSubtitles = false;
+		}
+	}
+
 	// Load Demo Multi-layer Project
 	function loadDemoProject() {
 		const demoSlides = [
@@ -1266,10 +1483,20 @@
 		audioTracks[1].volume = 0.8;
 		audioTracks = [...audioTracks];
 
+		// Subtitles demo
+		subtitleItems = [
+			{ id: 'sub-1', start: 0.5, end: 3.8, duration: 3.3, text: 'Selamat datang di video editor interaktif multi-track.' },
+			{ id: 'sub-2', start: 4.2, end: 7.8, duration: 3.6, text: 'Setiap layer visual dan audio tersinkronisasi presisi.' },
+			{ id: 'sub-3', start: 8.2, end: 11.5, duration: 3.3, text: 'Auto-caption AI meningkatkan engagement penonton!' },
+			{ id: 'sub-4', start: 12.2, end: 15.6, duration: 3.4, text: 'Ubah teks, tata letak, dan gaya subtitle secara real-time.' },
+			{ id: 'sub-5', start: 16.2, end: 19.8, duration: 3.6, text: 'Siap render ke MP4 berkualitas tinggi dalam sekejap.' }
+		];
+		subtitlesEnabled = true;
+
 		activeVisualTrackId = 'v1';
 		activeClipIndex = 0;
 		seekTo(0);
-		showToast('Contoh Multi-Layer (2 Track Visual + 2 Track Audio) dimuat!');
+		showToast('Contoh Multi-Layer (Visual, Audio & Subtitle) dimuat!');
 	}
 
 	// Trigger Multi-Layer Render Request to backend
@@ -1322,7 +1549,12 @@
 					})),
 				aspectRatio,
 				renderQuality,
-				videoTitle
+				videoTitle,
+				subtitles: subtitleItems,
+				subtitlesEnabled,
+				subtitleStyle,
+				subtitlePosition,
+				subtitleFontScale
 			};
 
 			const response = await fetch('/api/render-video-editor', {
@@ -1711,6 +1943,18 @@
 						</div>
 					{/if}
 
+					<!-- Live Subtitle Overlay Preview -->
+					{#if subtitlesEnabled && currentActiveSubtitle}
+						<div class="player-subtitle-overlay pos-{subtitlePosition}">
+							<div
+								class="subtitle-badge-display style-{subtitleStyle}"
+								style="transform: scale({subtitleFontScale});"
+							>
+								<span>{subtitleStyle === 'mrbeast-bold' ? currentActiveSubtitle.text.toUpperCase() : currentActiveSubtitle.text}</span>
+							</div>
+						</div>
+					{/if}
+
 					<!-- Playhead Overlay Indicator -->
 					<div class="overlay-timecode">
 						<span>{formatTime(currentTime)}</span>
@@ -1779,10 +2023,300 @@
 		<aside class="inspector-panel">
 			<div class="inspector-header">
 				<Sliders size={16} />
-				<h3>Pengaturan Layer & Klip</h3>
+				<h3>Inspector</h3>
+			</div>
+
+			<div class="inspector-tabs">
+				<button
+					type="button"
+					class="insp-tab-btn {activeInspectorTab === 'clip' ? 'active' : ''}"
+					onclick={() => (activeInspectorTab = 'clip')}
+				>
+					<Layers size={13} />
+					<span>Klip Visual</span>
+				</button>
+				<button
+					type="button"
+					class="insp-tab-btn {activeInspectorTab === 'subtitle' ? 'active' : ''}"
+					onclick={() => {
+						activeInspectorTab = 'subtitle';
+						if (activeSubtitleIndex === -1 && subtitleItems.length > 0) activeSubtitleIndex = 0;
+					}}
+				>
+					<FileText size={13} />
+					<span>Subtitle ({subtitleItems.length})</span>
+				</button>
 			</div>
 
 			<div class="inspector-scroll">
+				{#if activeInspectorTab === 'subtitle'}
+					<!-- Subtitle Global Preset & Style -->
+					<div class="card-section">
+						<div class="section-title">
+							<Sparkles size={14} class="text-accent" />
+							<span>Gaya & Tampilan Subtitle</span>
+						</div>
+
+						<div class="field-group">
+							<span class="field-label">Status Subtitle:</span>
+							<div class="setting-toggle-row">
+								<span class="toggle-text">{subtitlesEnabled ? 'Subtitle Ditampilkan' : 'Subtitle Disembunyikan'}</span>
+								<button
+									type="button"
+									class="btn btn-xs {subtitlesEnabled ? 'btn-primary' : 'btn-secondary'}"
+									onclick={() => (subtitlesEnabled = !subtitlesEnabled)}
+								>
+									{subtitlesEnabled ? 'ON' : 'OFF'}
+								</button>
+							</div>
+						</div>
+
+						<div class="field-group">
+							<span class="field-label">Preset Gaya:</span>
+							<div class="style-preset-grid">
+								<button
+									type="button"
+									class="style-preset-card {subtitleStyle === 'viral-yellow' ? 'active' : ''}"
+									onclick={() => (subtitleStyle = 'viral-yellow')}
+								>
+									<span class="preset-name">🔥 Viral Yellow</span>
+									<span class="preset-desc">Kuning tebal & outline hitam tajam</span>
+								</button>
+								<button
+									type="button"
+									class="style-preset-card {subtitleStyle === 'mrbeast-bold' ? 'active' : ''}"
+									onclick={() => (subtitleStyle = 'mrbeast-bold')}
+								>
+									<span class="preset-name">⚡ MrBeast Bold</span>
+									<span class="preset-desc">Huruf besar putih tebal & stroke dinamis</span>
+								</button>
+								<button
+									type="button"
+									class="style-preset-card {subtitleStyle === 'minimal' ? 'active' : ''}"
+									onclick={() => (subtitleStyle = 'minimal')}
+								>
+									<span class="preset-name">✨ Minimal Clean</span>
+									<span class="preset-desc">Putih elegan berlatar kapsul transparan</span>
+								</button>
+							</div>
+						</div>
+
+						<div class="field-group">
+							<span class="field-label">Tata Letak (Posisi):</span>
+							<div class="ratio-pills">
+								<button
+									type="button"
+									class="ratio-pill {subtitlePosition === 'bottom' ? 'active' : ''}"
+									onclick={() => (subtitlePosition = 'bottom')}
+								>
+									Bawah
+								</button>
+								<button
+									type="button"
+									class="ratio-pill {subtitlePosition === 'center' ? 'active' : ''}"
+									onclick={() => (subtitlePosition = 'center')}
+								>
+									Tengah
+								</button>
+								<button
+									type="button"
+									class="ratio-pill {subtitlePosition === 'top' ? 'active' : ''}"
+									onclick={() => (subtitlePosition = 'top')}
+								>
+									Atas
+								</button>
+							</div>
+						</div>
+
+						<div class="field-group">
+							<div class="field-header-row">
+								<span class="field-label">Ukuran Font:</span>
+								<span class="badge-scale">{subtitleFontScale.toFixed(1)}x</span>
+							</div>
+							<input
+								type="range"
+								min="0.7"
+								max="2.0"
+								step="0.1"
+								bind:value={subtitleFontScale}
+								class="range-slider"
+							/>
+						</div>
+					</div>
+
+					<!-- Selected Subtitle Editor -->
+					<div class="card-section">
+						<div class="section-title">
+							<FileText size={14} class="text-primary" />
+							<span>{activeSubtitle ? `Edit Subtitle #${activeSubtitleIndex + 1}` : 'Detail Subtitle'}</span>
+						</div>
+
+						{#if activeSubtitle}
+							<div class="sub-edit-form">
+								<div class="field-group">
+									<label class="field-label" for="sub-text-input">Teks Subtitle:</label>
+									<textarea
+										id="sub-text-input"
+										class="prompt-textarea"
+										bind:value={activeSubtitle.text}
+										rows={3}
+										placeholder="Ketik teks kalimat subtitle di sini..."
+									></textarea>
+								</div>
+
+								<div class="field-row-split">
+									<div class="field-group">
+										<label class="field-label" for="sub-start-input">Mulai (s):</label>
+										<div class="timing-input-wrap">
+											<input
+												id="sub-start-input"
+												type="number"
+												step="0.1"
+												min="0"
+												bind:value={activeSubtitle.start}
+												onchange={() => {
+													activeSubtitle.duration = Number((activeSubtitle.end - activeSubtitle.start).toFixed(2));
+													subtitleItems = [...subtitleItems];
+												}}
+												class="dur-input"
+											/>
+										</div>
+									</div>
+
+									<div class="field-group">
+										<label class="field-label" for="sub-end-input">Selesai (s):</label>
+										<div class="timing-input-wrap">
+											<input
+												id="sub-end-input"
+												type="number"
+												step="0.1"
+												min="0.1"
+												bind:value={activeSubtitle.end}
+												onchange={() => {
+													activeSubtitle.duration = Number((activeSubtitle.end - activeSubtitle.start).toFixed(2));
+													subtitleItems = [...subtitleItems];
+												}}
+												class="dur-input"
+											/>
+										</div>
+									</div>
+								</div>
+
+								<div class="sub-actions-row">
+									<button
+										type="button"
+										class="btn btn-xs btn-secondary"
+										onclick={() => seekTo(activeSubtitle.start, true)}
+										title="Pindahkan playhead ke awal subtitle ini"
+									>
+										<Play size={11} />
+										<span>Jump to Playhead</span>
+									</button>
+									<div class="sub-nav-btns">
+										<button
+											type="button"
+											class="btn btn-xs btn-secondary"
+											disabled={activeSubtitleIndex <= 0}
+											onclick={() => {
+												activeSubtitleIndex--;
+												seekTo(subtitleItems[activeSubtitleIndex].start, true);
+											}}
+											title="Subtitle sebelumnya"
+										>
+											<ChevronLeft size={12} />
+										</button>
+										<button
+											type="button"
+											class="btn btn-xs btn-secondary"
+											disabled={activeSubtitleIndex >= subtitleItems.length - 1}
+											onclick={() => {
+												activeSubtitleIndex++;
+												seekTo(subtitleItems[activeSubtitleIndex].start, true);
+											}}
+											title="Subtitle berikutnya"
+										>
+											<ChevronRight size={12} />
+										</button>
+									</div>
+								</div>
+
+								<button
+									type="button"
+									class="btn btn-xs btn-danger-glow w-100 mt-2"
+									onclick={() => deleteSubtitle(activeSubtitleIndex)}
+								>
+									<Trash2 size={12} />
+									<span>Hapus Subtitle Ini</span>
+								</button>
+							</div>
+						{:else}
+							<div class="empty-sub-select">
+								<p>Pilih salah satu blok subtitle di timeline untuk mengedit teks atau durasi.</p>
+							</div>
+						{/if}
+					</div>
+
+					<!-- Subtitle Tools & Auto-generator -->
+					<div class="card-section">
+						<div class="section-title">
+							<Sparkles size={14} />
+							<span>Alat Cepat Subtitle</span>
+						</div>
+
+						<div class="sub-tools-actions">
+							<button type="button" class="btn btn-sm btn-primary w-100" onclick={addEmptySubtitle}>
+								<Plus size={14} />
+								<span>Tambah Subtitle di Posisi Playhead</span>
+							</button>
+
+							<button
+								type="button"
+								class="btn btn-sm btn-gradient-ai w-100"
+								onclick={handleGenerateSubtitles}
+								disabled={isGeneratingSubtitles}
+							>
+								<Sparkles size={14} class={isGeneratingSubtitles ? 'spin-icon' : ''} />
+								<span>{isGeneratingSubtitles ? 'Mentranskripsi Audio...' : 'Generate AI Whisper (Track A1)'}</span>
+							</button>
+
+							{#if subtitleItems.length > 0}
+								<button type="button" class="btn btn-xs btn-outline-danger w-100" onclick={clearAllSubtitles}>
+									<Trash2 size={12} />
+									<span>Hapus Semua Subtitle ({subtitleItems.length})</span>
+								</button>
+							{/if}
+						</div>
+					</div>
+
+					<!-- All Subtitles Mini List -->
+					{#if subtitleItems.length > 0}
+						<div class="card-section">
+							<div class="section-title">
+								<ListOrdered size={14} />
+								<span>Daftar Subtitle ({subtitleItems.length})</span>
+							</div>
+
+							<div class="sub-list-container">
+								{#each subtitleItems as sub, idx}
+									<div
+										class="sub-list-item {activeSubtitleIndex === idx ? 'active' : ''}"
+										onclick={() => {
+											activeSubtitleIndex = idx;
+											seekTo(sub.start, true);
+										}}
+										role="button"
+										tabindex="0"
+										onkeydown={(e) => { if (e.key === 'Enter') { activeSubtitleIndex = idx; seekTo(sub.start, true); } }}
+									>
+										<span class="sub-list-num">#{idx + 1}</span>
+										<span class="sub-list-time">{formatTime(sub.start)} - {formatTime(sub.end)}</span>
+										<span class="sub-list-snippet">{sub.text || '(Kosong)'}</span>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				{:else}
 				<!-- Layer Tracker Switcher -->
 				<div class="card-section">
 					<div class="section-title">
@@ -2165,6 +2699,7 @@
 						</button>
 					</div>
 				</div>
+				{/if}
 			</div>
 		</aside>
 	</div>
@@ -2201,6 +2736,29 @@
 				<button class="btn btn-sm btn-secondary" onclick={addAudioTrack}>
 					<Music size={14} />
 					<span>+ Track A</span>
+				</button>
+				<button
+					type="button"
+					class="btn btn-sm {subtitleItems.length > 0 ? 'btn-accent-subtitle-pill' : 'btn-secondary'}"
+					onclick={() => {
+						subtitleTrackVisible = true;
+						activeInspectorTab = 'subtitle';
+						if (activeSubtitleIndex === -1 && subtitleItems.length > 0) activeSubtitleIndex = 0;
+					}}
+					title="Buka Track Subtitle & Auto-Caption"
+				>
+					<FileText size={14} />
+					<span>Subtitle ({subtitleItems.length})</span>
+				</button>
+				<button
+					type="button"
+					class="btn btn-sm btn-gradient-ai"
+					onclick={handleGenerateSubtitles}
+					disabled={isGeneratingSubtitles}
+					title="Auto-Generate Subtitle dengan AI Whisper dari Audio Track A1"
+				>
+					<Sparkles size={14} class={isGeneratingSubtitles ? 'spin-icon' : ''} />
+					<span>{isGeneratingSubtitles ? 'Transcribing...' : '+ Subtitle AI'}</span>
 				</button>
 
 				{#if placeholderStats.hasPlaceholders}
@@ -2487,6 +3045,89 @@
 						</div>
 					</div>
 				</div>
+
+				<!-- Subtitle Track (Track T1) -->
+				{#if subtitleTrackVisible}
+					<div class="track-row subtitle-track">
+						<div class="track-header-fixed">
+							<div class="th-main-title">
+								<FileText size={13} class="text-accent-subtitle" />
+								<span class="th-title-text">T1 Subtitle</span>
+								<span class="sub-count-badge">{subtitleItems.length}</span>
+							</div>
+
+							<div class="th-controls">
+								<button
+									type="button"
+									class="th-icon-btn {subtitlesEnabled ? 'active' : ''}"
+									onclick={() => (subtitlesEnabled = !subtitlesEnabled)}
+									title={subtitlesEnabled ? 'Sembunyikan subtitle overlay' : 'Tampilkan subtitle overlay'}
+								>
+									{#if subtitlesEnabled}
+										<Eye size={12} />
+									{:else}
+										<EyeOff size={12} />
+									{/if}
+								</button>
+								<button
+									type="button"
+									class="th-icon-btn text-accent-btn"
+									onclick={addEmptySubtitle}
+									title="Tambah subtitle di posisi playhead"
+								>
+									<Plus size={12} />
+								</button>
+							</div>
+						</div>
+
+						<div class="track-content-flow subtitle-content-flow">
+							{#if subtitleItems.length === 0}
+								<div class="subtitle-track-empty" onclick={addEmptySubtitle} role="button" tabindex="0" onkeydown={(e) => { if (e.key === 'Enter') addEmptySubtitle(); }}>
+									<Sparkles size={13} class="text-accent" />
+									<span>Belum ada subtitle. Klik di sini atau tombol "+ Subtitle AI" untuk generate otomatis dari suara</span>
+								</div>
+							{:else}
+								{#each subtitleItems as sub, sIdx}
+									<div
+										class="subtitle-block {activeSubtitleIndex === sIdx ? 'active-sub-block' : ''} {currentTime >= sub.start && currentTime <= sub.end ? 'current-playback-sub' : ''}"
+										style="left: {sub.start * pxPerSec}px; width: {Math.max(28, (sub.end - sub.start) * pxPerSec)}px;"
+										onclick={(e) => {
+											e.stopPropagation();
+											activeSubtitleIndex = sIdx;
+											activeInspectorTab = 'subtitle';
+										}}
+										role="button"
+										tabindex="0"
+										onkeydown={(e) => { if (e.key === 'Enter') { activeSubtitleIndex = sIdx; activeInspectorTab = 'subtitle'; } }}
+									>
+										<!-- Left Drag Resize Handle -->
+										<div
+											class="sub-resize-handle handle-left"
+											onmousedown={(e) => startResizeSubtitle(e, sIdx, 'left')}
+											title="Geser waktu mulai subtitle"
+											role="separator"
+											tabindex="0"
+										></div>
+
+										<div class="subtitle-block-text" title="{sub.text} ({sub.start.toFixed(1)}s - {sub.end.toFixed(1)}s)">
+											<span class="sub-index">#{sIdx + 1}</span>
+											<span class="sub-label">{sub.text || '(Kosong)'}</span>
+										</div>
+
+										<!-- Right Drag Resize Handle -->
+										<div
+											class="sub-resize-handle handle-right"
+											onmousedown={(e) => startResizeSubtitle(e, sIdx, 'right')}
+											title="Geser waktu selesai subtitle"
+											role="separator"
+											tabindex="0"
+										></div>
+									</div>
+								{/each}
+							{/if}
+						</div>
+					</div>
+				{/if}
 
 				<!-- Multi-layer Visual Tracks (Stacked top to bottom) -->
 				{#each visualTracks as vt, vIdx}
@@ -5761,5 +6402,414 @@
 		color: #cbd5e1;
 		line-height: 1.4;
 		flex: 1;
+	}
+
+	/* =========================================================================
+	   SUBTITLE STUDIO & AUTO-CAPTIONS SYSTEM (PLAYER OVERLAY, INSPECTOR & TRACK)
+	   ========================================================================= */
+
+	/* 1. Video Player Live Overlay */
+	.player-subtitle-overlay {
+		position: absolute;
+		left: 0;
+		right: 0;
+		display: flex;
+		justify-content: center;
+		pointer-events: none;
+		z-index: 15;
+		padding: 0 24px;
+	}
+
+	.player-subtitle-overlay.pos-bottom {
+		bottom: 12%;
+	}
+
+	.player-subtitle-overlay.pos-center {
+		top: 50%;
+		transform: translateY(-50%);
+	}
+
+	.player-subtitle-overlay.pos-top {
+		top: 10%;
+	}
+
+	.subtitle-badge-display {
+		display: inline-block;
+		max-width: 90%;
+		text-align: center;
+		line-height: 1.25;
+		transition: transform 0.1s ease;
+		user-select: none;
+	}
+
+	.subtitle-badge-display.style-viral-yellow {
+		color: #facc15;
+		font-weight: 900;
+		font-size: 1.55rem;
+		text-shadow:
+			-2px -2px 0 #000,
+			2px -2px 0 #000,
+			-2px 2px 0 #000,
+			2px 2px 0 #000,
+			0 4px 8px rgba(0, 0, 0, 0.85);
+		letter-spacing: 0.5px;
+	}
+
+	.subtitle-badge-display.style-mrbeast-bold {
+		color: #ffffff;
+		font-weight: 900;
+		font-size: 1.65rem;
+		text-transform: uppercase;
+		text-shadow:
+			-3px -3px 0 #000,
+			3px -3px 0 #000,
+			-3px 3px 0 #000,
+			3px 3px 0 #000,
+			0 5px 12px rgba(0, 0, 0, 0.95);
+		letter-spacing: 1.2px;
+	}
+
+	.subtitle-badge-display.style-minimal {
+		color: #ffffff;
+		font-weight: 600;
+		font-size: 1.35rem;
+		background: rgba(15, 23, 42, 0.75);
+		backdrop-filter: blur(6px);
+		padding: 6px 18px;
+		border-radius: 8px;
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+	}
+
+	/* 2. Inspector Tabs Switcher */
+	.inspector-tabs {
+		display: flex;
+		gap: 6px;
+		padding: 8px 12px;
+		background: #090d16;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	}
+
+	.insp-tab-btn {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		padding: 6px 10px;
+		border-radius: 6px;
+		border: 1px solid transparent;
+		background: transparent;
+		color: #94a3b8;
+		font-size: 0.76rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.insp-tab-btn:hover {
+		background: rgba(255, 255, 255, 0.04);
+		color: #e2e8f0;
+	}
+
+	.insp-tab-btn.active {
+		background: rgba(168, 85, 247, 0.18);
+		border-color: rgba(168, 85, 247, 0.4);
+		color: #e9d5ff;
+	}
+
+	/* 3. Subtitle Inspector Settings */
+	.style-preset-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin-top: 4px;
+	}
+
+	.style-preset-card {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 2px;
+		padding: 8px 12px;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 6px;
+		cursor: pointer;
+		text-align: left;
+		transition: all 0.15s;
+	}
+
+	.style-preset-card:hover {
+		background: rgba(255, 255, 255, 0.06);
+		border-color: rgba(255, 255, 255, 0.15);
+	}
+
+	.style-preset-card.active {
+		background: rgba(168, 85, 247, 0.14);
+		border-color: #a855f7;
+		box-shadow: 0 0 10px rgba(168, 85, 247, 0.2);
+	}
+
+	.style-preset-card .preset-name {
+		font-size: 0.8rem;
+		font-weight: 700;
+		color: #f1f5f9;
+	}
+
+	.style-preset-card .preset-desc {
+		font-size: 0.7rem;
+		color: #94a3b8;
+	}
+
+	.badge-scale {
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: #a855f7;
+		background: rgba(168, 85, 247, 0.15);
+		padding: 1px 6px;
+		border-radius: 4px;
+	}
+
+	.sub-edit-form {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.sub-actions-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		margin-top: 2px;
+	}
+
+	.sub-nav-btns {
+		display: flex;
+		gap: 4px;
+	}
+
+	.sub-tools-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.empty-sub-select {
+		padding: 18px 12px;
+		text-align: center;
+		color: #64748b;
+		font-size: 0.78rem;
+		background: rgba(255, 255, 255, 0.02);
+		border: 1px dashed rgba(255, 255, 255, 0.08);
+		border-radius: 6px;
+	}
+
+	.sub-list-container {
+		display: flex;
+		flex-direction: column;
+		gap: 5px;
+		max-height: 220px;
+		overflow-y: auto;
+		padding-right: 4px;
+	}
+
+	.sub-list-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 10px;
+		background: rgba(255, 255, 255, 0.02);
+		border: 1px solid rgba(255, 255, 255, 0.06);
+		border-radius: 5px;
+		cursor: pointer;
+		font-size: 0.75rem;
+		transition: all 0.15s ease;
+	}
+
+	.sub-list-item:hover {
+		background: rgba(255, 255, 255, 0.05);
+		border-color: rgba(255, 255, 255, 0.12);
+	}
+
+	.sub-list-item.active {
+		background: rgba(168, 85, 247, 0.16);
+		border-color: #a855f7;
+	}
+
+	.sub-list-num {
+		font-size: 0.7rem;
+		font-weight: 700;
+		color: #facc15;
+		flex-shrink: 0;
+	}
+
+	.sub-list-time {
+		font-size: 0.68rem;
+		color: #a855f7;
+		font-family: monospace;
+		flex-shrink: 0;
+	}
+
+	.sub-list-snippet {
+		color: #cbd5e1;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		flex: 1;
+	}
+
+	/* 4. Timeline Subtitle Track (Track T1) */
+	.subtitle-track {
+		background: rgba(168, 85, 247, 0.03);
+		border-bottom: 1px solid rgba(168, 85, 247, 0.18);
+		min-height: 48px;
+		height: 48px;
+	}
+
+	.text-accent-subtitle {
+		color: #c084fc;
+	}
+
+	.sub-count-badge {
+		font-size: 0.65rem;
+		font-weight: 700;
+		background: rgba(168, 85, 247, 0.22);
+		color: #f3e8ff;
+		padding: 1px 6px;
+		border-radius: 999px;
+	}
+
+	.subtitle-content-flow {
+		position: relative;
+		height: 48px;
+		display: flex;
+		align-items: center;
+	}
+
+	.subtitle-track-empty {
+		position: absolute;
+		left: 12px;
+		top: 6px;
+		bottom: 6px;
+		right: 12px;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 0 14px;
+		background: rgba(168, 85, 247, 0.06);
+		border: 1px dashed rgba(168, 85, 247, 0.3);
+		border-radius: 6px;
+		color: #cbd5e1;
+		font-size: 0.72rem;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.subtitle-track-empty:hover {
+		background: rgba(168, 85, 247, 0.12);
+		border-color: #c084fc;
+		color: #ffffff;
+	}
+
+	.subtitle-block {
+		position: absolute;
+		top: 6px;
+		bottom: 6px;
+		background: linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(126, 34, 206, 0.4));
+		border: 1px solid rgba(192, 132, 252, 0.55);
+		border-radius: 5px;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		overflow: hidden;
+		user-select: none;
+		transition: border-color 0.15s, box-shadow 0.15s;
+	}
+
+	.subtitle-block:hover {
+		border-color: #e879f9;
+		box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);
+	}
+
+	.subtitle-block.active-sub-block {
+		background: linear-gradient(135deg, rgba(168, 85, 247, 0.55), rgba(147, 51, 234, 0.65));
+		border-color: #f0abfc;
+		box-shadow: 0 0 14px rgba(240, 171, 252, 0.6);
+		z-index: 6;
+	}
+
+	.subtitle-block.current-playback-sub {
+		outline: 1.5px dashed #facc15;
+		outline-offset: -1px;
+	}
+
+	.subtitle-block-text {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 0 8px;
+		width: 100%;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.subtitle-block-text .sub-index {
+		font-size: 0.68rem;
+		font-weight: 800;
+		color: #facc15;
+		flex-shrink: 0;
+	}
+
+	.subtitle-block-text .sub-label {
+		font-size: 0.72rem;
+		font-weight: 500;
+		color: #f8fafc;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.sub-resize-handle {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 6px;
+		cursor: ew-resize;
+		background: rgba(255, 255, 255, 0.2);
+		opacity: 0;
+		transition: opacity 0.15s;
+		z-index: 3;
+	}
+
+	.subtitle-block:hover .sub-resize-handle {
+		opacity: 0.7;
+	}
+
+	.sub-resize-handle:hover {
+		opacity: 1 !important;
+		background: #facc15 !important;
+	}
+
+	.sub-resize-handle.handle-left {
+		left: 0;
+	}
+
+	.sub-resize-handle.handle-right {
+		right: 0;
+	}
+
+	/* 5. Toolbar button pill */
+	.btn-accent-subtitle-pill {
+		background: rgba(168, 85, 247, 0.22);
+		border-color: rgba(168, 85, 247, 0.5);
+		color: #f3e8ff;
+	}
+
+	.btn-accent-subtitle-pill:hover {
+		background: rgba(168, 85, 247, 0.35);
+		border-color: #c084fc;
+		color: #ffffff;
 	}
 </style>

@@ -538,7 +538,14 @@ Return ONLY a JSON object in this exact schema:
 			audioUrl: `/renders/audio-cache/${publicFileName}`,
 			audioName: originalName,
 			totalDuration: Number(totalDuration.toFixed(2)),
-			scenes: finalScenes
+			scenes: finalScenes,
+			whisperSegments: (whisperData?.segments || []).map((seg, idx) => ({
+				id: `sub-seg-${idx + 1}`,
+				start: Math.max(0, Number(seg.start.toFixed(2))),
+				end: Math.max(0.3, Number(seg.end.toFixed(2))),
+				duration: Number((seg.end - seg.start).toFixed(2)),
+				text: seg.text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()
+			}))
 		});
 	} catch (error) {
 		console.error('[AI Audio Storyboard Error]:', error);
