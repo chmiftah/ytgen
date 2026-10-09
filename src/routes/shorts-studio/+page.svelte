@@ -219,6 +219,23 @@
 	let subtitleYPercent = $state(78); // 15% - 88%
 	let subtitleFontScale = $state(1.0); // 0.85 | 1.0 | 1.2
 	let subtitleAlign = $state('center'); // 'left' | 'center' | 'right'
+	let subtitleDisplayMode = $state('chunk'); // 'chunk' | 'word_by_word' | 'highlight'
+	let wordByWord = $state(false);
+	let previewWordTimer = $state(0);
+
+	function setSubtitleMode(mode) {
+		subtitleDisplayMode = mode;
+		wordByWord = (mode === 'word_by_word');
+	}
+
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		if (subtitleDisplayMode === 'chunk') return;
+		const interval = setInterval(() => {
+			previewWordTimer++;
+		}, 480);
+		return () => clearInterval(interval);
+	});
 
 	function setSubtitlePositionPreset(pos) {
 		subtitlePosition = pos;
@@ -614,7 +631,9 @@
 					subtitlePosition,
 					subtitleYPercent,
 					subtitleFontScale,
-					subtitleAlign
+					subtitleAlign,
+					subtitleDisplayMode,
+					wordByWord: subtitleDisplayMode === 'word_by_word' || wordByWord
 				})
 			});
 
@@ -1619,11 +1638,63 @@
 									<div class="layout-box-header">
 										<div class="layout-box-title-group">
 											<Sliders size={16} />
-											<span class="box-title">Tata Letak & Posisi Subtitle</span>
+											<span class="box-title">Tata Letak & Animasi Subtitle</span>
 										</div>
 										<span class="live-badge">
 											<span class="pulse-dot"></span> Live Preview
 										</span>
+									</div>
+
+									<!-- Mode Tampilan Kata (Word by Word) -->
+									<div class="layout-field-group">
+										<div class="mode-header-row">
+											<label class="field-label">Mode Tampilan Kata</label>
+											{#if subtitleDisplayMode === 'word_by_word'}
+												<span class="active-mode-badge highlight-mode-pop">⚡ Word by Word (1 Kata)</span>
+											{:else if subtitleDisplayMode === 'highlight'}
+												<span class="active-mode-badge highlight-mode-karaoke">🌟 Karaoke Highlight</span>
+											{:else}
+												<span class="active-mode-badge">📑 Frasa Ringkas</span>
+											{/if}
+										</div>
+										<div class="mode-pills-row">
+											<button
+												type="button"
+												class="mode-pill"
+												class:active={subtitleDisplayMode === 'chunk'}
+												onclick={() => setSubtitleMode('chunk')}
+											>
+												<span class="mode-pill-icon">📑</span>
+												<div class="mode-pill-text">
+													<strong>Frasa Standar</strong>
+													<small>2-3 kata per baris</small>
+												</div>
+											</button>
+											<button
+												type="button"
+												class="mode-pill"
+												class:active={subtitleDisplayMode === 'word_by_word'}
+												onclick={() => setSubtitleMode('word_by_word')}
+											>
+												<span class="mode-pill-icon">⚡</span>
+												<div class="mode-pill-text">
+													<strong>Word by Word</strong>
+													<small>1 kata cepat & punchy</small>
+												</div>
+											</button>
+											<button
+												type="button"
+												class="mode-pill"
+												class:active={subtitleDisplayMode === 'highlight'}
+												onclick={() => setSubtitleMode('highlight')}
+											>
+												<span class="mode-pill-icon">🌟</span>
+												<div class="mode-pill-text">
+													<strong>Karaoke</strong>
+													<small>Sorot kata aktif</small>
+												</div>
+											</button>
+										</div>
 									</div>
 
 									<!-- Preset Posisi -->
@@ -1804,7 +1875,7 @@
 							<span class="summary-label">Subtitle</span>
 							<span class="summary-value">
 								{subtitlesEnabled 
-									? `${SUBTITLE_STYLES.find(s => s.id === selectedSubtitle)?.label} · ${subtitlePosition.toUpperCase()} (${subtitleYPercent}%) · ${subtitleAlign}`
+									? `${SUBTITLE_STYLES.find(s => s.id === selectedSubtitle)?.label} · ${subtitlePosition.toUpperCase()} (${subtitleYPercent}%) · ${subtitleDisplayMode === 'word_by_word' ? '⚡ WORD BY WORD' : subtitleDisplayMode === 'highlight' ? '🌟 KARAOKE' : 'FRASA'}`
 									: 'Tanpa Subtitle'}
 							</span>
 						</div>
@@ -1931,19 +2002,41 @@
 							</div>
 						{/if}
 
-						<!-- Subtitle overlay preview (live preview with dynamic placement, font size & alignment) -->
+						<!-- Subtitle overlay preview (live preview with dynamic placement, font size, alignment & word-by-word) -->
 						{#if subtitlesEnabled}
 							{@const currentPreviewText = (previewingScene !== null && scenes[previewingScene]?.spokenText)
 								? scenes[previewingScene].spokenText
-								: (scenes[0]?.spokenText || 'CONTOH SUBTITLE VIRAL 🔥')}
+								: (scenes[0]?.spokenText || 'CONTOH SUBTITLE VIRAL WORD BY WORD 🔥')}
+							{@const previewWords = currentPreviewText.split(/\s+/).filter(Boolean)}
 							<div
 								class="phone-subtitle"
 								class:viral-yellow={selectedSubtitle === 'viral-yellow'}
 								class:mrbeast={selectedSubtitle === 'mrbeast-bold'}
 								class:minimal={selectedSubtitle === 'minimal'}
-								style="top: {subtitleYPercent}%; bottom: auto; transform: translateY(-50%); left: {subtitleAlign === 'left' ? '12px' : subtitleAlign === 'right' ? 'auto' : '10px'}; right: {subtitleAlign === 'right' ? '12px' : subtitleAlign === 'left' ? 'auto' : '10px'}; text-align: {subtitleAlign}; font-size: calc(0.76rem * {subtitleFontScale});"
+								class:mode-word={subtitleDisplayMode === 'word_by_word'}
+								style="top: {subtitleYPercent}%; bottom: auto; transform: translateY(-50%); left: {subtitleAlign === 'left' ? '12px' : subtitleAlign === 'right' ? 'auto' : '10px'}; right: {subtitleAlign === 'right' ? '12px' : subtitleAlign === 'left' ? 'auto' : '10px'}; text-align: {subtitleAlign}; font-size: calc({subtitleDisplayMode === 'word_by_word' ? '0.92rem' : '0.76rem'} * {subtitleFontScale});"
 							>
-								{getPreviewSubtitle(currentPreviewText, selectedSubtitle)}
+								{#if subtitleDisplayMode === 'word_by_word'}
+									{@const activeWord = previewWords.length > 0 ? previewWords[previewWordTimer % previewWords.length] : currentPreviewText}
+									<span class="phone-word-burst">
+										{selectedSubtitle === 'mrbeast-bold' ? activeWord.toUpperCase() : activeWord}
+									</span>
+								{:else if subtitleDisplayMode === 'highlight'}
+									{@const chunkSize = 3}
+									{@const safeWordsLen = Math.max(1, previewWords.length)}
+									{@const chunkStart = Math.floor((previewWordTimer % safeWordsLen) / chunkSize) * chunkSize}
+									{@const chunkWords = previewWords.slice(chunkStart, chunkStart + chunkSize)}
+									{@const activeInChunk = (previewWordTimer % safeWordsLen) - chunkStart}
+									<span class="phone-karaoke-chunk">
+										{#each chunkWords as w, idx}
+											<span class="karaoke-word" class:highlighted={idx === activeInChunk}>
+												{selectedSubtitle === 'mrbeast-bold' ? w.toUpperCase() : w}{' '}
+											</span>
+										{/each}
+									</span>
+								{:else}
+									{getPreviewSubtitle(currentPreviewText, selectedSubtitle)}
+								{/if}
 							</div>
 						{/if}
 
@@ -3345,6 +3438,75 @@
 		color: rgba(232, 232, 240, 0.7);
 		font-weight: 600;
 	}
+	.mode-header-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.active-mode-badge {
+		font-size: 0.7rem;
+		font-weight: 700;
+		color: rgba(232, 232, 240, 0.7);
+		background: rgba(255, 255, 255, 0.06);
+		padding: 2px 7px;
+		border-radius: 6px;
+	}
+	.active-mode-badge.highlight-mode-pop {
+		color: #facc15;
+		background: rgba(250, 204, 21, 0.15);
+		border: 1px solid rgba(250, 204, 21, 0.3);
+	}
+	.active-mode-badge.highlight-mode-karaoke {
+		color: #38bdf8;
+		background: rgba(56, 189, 248, 0.15);
+		border: 1px solid rgba(56, 189, 248, 0.3);
+	}
+	.mode-pills-row {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.5rem;
+	}
+	.mode-pill {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		gap: 0.3rem;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid rgba(167, 139, 250, 0.15);
+		border-radius: 9px;
+		padding: 0.6rem 0.4rem;
+		color: #e2e8f0;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+	.mode-pill:hover {
+		border-color: rgba(167, 139, 250, 0.35);
+		background: rgba(167, 139, 250, 0.08);
+	}
+	.mode-pill.active {
+		border-color: #a78bfa;
+		background: rgba(167, 139, 250, 0.18);
+		color: #ffffff;
+		box-shadow: 0 0 14px rgba(167, 139, 250, 0.25);
+	}
+	.mode-pill-icon {
+		font-size: 1.1rem;
+	}
+	.mode-pill-text {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+	}
+	.mode-pill-text strong {
+		font-size: 0.78rem;
+		font-weight: 700;
+	}
+	.mode-pill-text small {
+		font-size: 0.67rem;
+		color: rgba(232, 232, 240, 0.5);
+		line-height: 1.15;
+	}
 	.preset-pills {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
@@ -3852,6 +4014,41 @@
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 		letter-spacing: 0.3px;
 		text-shadow: -1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 1.5px 0 #000, 0 2px 5px rgba(0, 0, 0, 0.85);
+	}
+
+	.phone-word-burst {
+		display: inline-block;
+		animation: wordBurstPop 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+		letter-spacing: 0.5px;
+	}
+	@keyframes wordBurstPop {
+		0% { transform: scale(0.9); opacity: 0.8; }
+		50% { transform: scale(1.15); opacity: 1; }
+		100% { transform: scale(1); opacity: 1; }
+	}
+	.phone-karaoke-chunk {
+		display: inline-block;
+	}
+	.karaoke-word {
+		display: inline-block;
+		transition: all 0.12s ease;
+		margin: 0 1px;
+	}
+	.karaoke-word.highlighted {
+		transform: scale(1.14);
+		filter: drop-shadow(0 0 6px rgba(255, 232, 0, 0.8));
+	}
+	.phone-subtitle.viral-yellow .karaoke-word.highlighted {
+		color: #FFFFFF !important;
+		text-shadow: -1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 1.5px 0 #000, 0 0 10px #FFE800 !important;
+	}
+	.phone-subtitle.mrbeast .karaoke-word.highlighted {
+		color: #FFE800 !important;
+		text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 10px rgba(255, 232, 0, 0.9) !important;
+	}
+	.phone-subtitle.minimal .karaoke-word.highlighted {
+		color: #38BDF8 !important;
+		text-shadow: -1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 1.5px 0 #000, 0 0 8px #38BDF8 !important;
 	}
 
 	.phone-ui-overlay {

@@ -530,10 +530,17 @@ function buildShortsASS(scenes, style = 'viral-yellow', W = 1080, H = 1920, aspe
 		subtitlePosition = 'bottom',
 		subtitleYPercent = 78,
 		subtitleFontScale = 1.0,
-		subtitleAlign = 'center'
+		subtitleAlign = 'center',
+		subtitleDisplayMode = 'chunk', // 'chunk' | 'word_by_word' | 'highlight'
+		wordByWord = false
 	} = options;
 
+	const effectiveMode = (wordByWord && subtitleDisplayMode === 'chunk') ? 'word_by_word' : subtitleDisplayMode;
+
 	let effectiveFontSize = Math.round(st.fontSize * (Number(subtitleFontScale) || 1.0));
+	if (effectiveMode === 'word_by_word') {
+		effectiveFontSize = Math.round(effectiveFontSize * 1.12); // Slightly larger for punchy single-word display
+	}
 
 	if (aspectRatio === '16:9') {
 		effectiveFontSize = Math.round(effectiveFontSize * 0.72);
@@ -615,25 +622,73 @@ function buildShortsASS(scenes, style = 'viral-yellow', W = 1080, H = 1920, aspe
 		} else {
 			timings = calculateAudioSyncedWordTimings(words, dur);
 		}
-		const chunks  = chunkWordsForShorts(timings, 3, 24);
 
-		for (let j = 0; j < chunks.length; j++) {
-			const c = chunks[j];
-			const start = cursor + c.start;
-			// Seamless transition: display until next chunk starts, or until near end of scene
-			let end = (j < chunks.length - 1)
-				? (cursor + chunks[j + 1].start)
-				: Math.min(cursor + dur - 0.05, cursor + c.end + 0.15);
+		if (effectiveMode === 'word_by_word') {
+			// Single Word Burst (Viral TikTok / Alex Hormozi style)
+			for (let k = 0; k < timings.length; k++) {
+				const t = timings[k];
+				const start = cursor + t.start;
+				let end = (k < timings.length - 1)
+					? (cursor + timings[k + 1].start)
+					: Math.min(cursor + dur - 0.05, cursor + t.end + 0.15);
 
-			if (end <= start) end = start + 0.3;
+				if (end <= start) end = start + 0.2;
 
-			// Clean text (remove ASS syntax chars) and uppercase if mrbeast
-			let lineText = c.text.replace(/[{}]/g, '');
-			if (style === 'mrbeast-bold') {
-				lineText = lineText.toUpperCase();
+				let wordText = t.word.replace(/[{}]/g, '');
+				if (style === 'mrbeast-bold') {
+					wordText = wordText.toUpperCase();
+				}
+
+				// ASS pop animation effect (instant punch then settle)
+				dialogues.push(`Dialogue: 0,${fmt(start)},${fmt(end)},Default,,0,0,0,,{\\fscx112\\fscy112\\t(0,60,\\fscx100\\fscy100)}${wordText}`);
 			}
+		} else if (effectiveMode === 'highlight') {
+			// Karaoke highlight word-by-word within compact 2-3 word chunks
+			const chunks = chunkWordsForShorts(timings, 3, 24);
+			const hlColor = style === 'viral-yellow' ? '&H00FFFFFF&' : '&H0000E8FF&';
 
-			dialogues.push(`Dialogue: 0,${fmt(start)},${fmt(end)},Default,,0,0,0,,{\\fad(40,0)}${lineText}`);
+			for (let j = 0; j < chunks.length; j++) {
+				const c = chunks[j];
+				for (let wIdx = 0; wIdx < c.words.length; wIdx++) {
+					const wItem = c.words[wIdx];
+					const start = cursor + wItem.start;
+					let end = (wIdx < c.words.length - 1)
+						? (cursor + c.words[wIdx + 1].start)
+						: ((j < chunks.length - 1) ? (cursor + chunks[j + 1].start) : Math.min(cursor + dur - 0.05, cursor + wItem.end + 0.15));
+
+					if (end <= start) end = start + 0.2;
+
+					const lineFormatted = c.words.map((w, i) => {
+						let txt = w.word.replace(/[{}]/g, '');
+						if (style === 'mrbeast-bold') txt = txt.toUpperCase();
+						if (i === wIdx) {
+							return `{\\c${hlColor}\\fscx108\\fscy108}${txt}{\\c${primary}\\fscx100\\fscy100}`;
+						}
+						return txt;
+					}).join(' ');
+
+					dialogues.push(`Dialogue: 0,${fmt(start)},${fmt(end)},Default,,0,0,0,,${lineFormatted}`);
+				}
+			}
+		} else {
+			// Standard 2-3 word phrase chunk
+			const chunks = chunkWordsForShorts(timings, 3, 24);
+			for (let j = 0; j < chunks.length; j++) {
+				const c = chunks[j];
+				const start = cursor + c.start;
+				let end = (j < chunks.length - 1)
+					? (cursor + chunks[j + 1].start)
+					: Math.min(cursor + dur - 0.05, cursor + c.end + 0.15);
+
+				if (end <= start) end = start + 0.3;
+
+				let lineText = c.text.replace(/[{}]/g, '');
+				if (style === 'mrbeast-bold') {
+					lineText = lineText.toUpperCase();
+				}
+
+				dialogues.push(`Dialogue: 0,${fmt(start)},${fmt(end)},Default,,0,0,0,,{\\fad(40,0)}${lineText}`);
+			}
 		}
 
 		cursor += dur;
@@ -689,6 +744,8 @@ export async function POST({ request }) {
 		subtitleYPercent = 78,
 		subtitleFontScale = 1.0,
 		subtitleAlign = 'center',
+		subtitleDisplayMode = 'chunk',
+		wordByWord = false,
 	} = body;
 
 	let targetW = 1080;
@@ -819,7 +876,9 @@ export async function POST({ request }) {
 						subtitlePosition,
 						subtitleYPercent,
 						subtitleFontScale,
-						subtitleAlign
+						subtitleAlign,
+						subtitleDisplayMode: (wordByWord && subtitleDisplayMode === 'chunk') ? 'word_by_word' : subtitleDisplayMode,
+						wordByWord: Boolean(wordByWord || subtitleDisplayMode === 'word_by_word')
 					});
 					assPath = path.join(sessionDir, 'subtitles.ass');
 					await fs.promises.writeFile(assPath, assContent, 'utf8');
