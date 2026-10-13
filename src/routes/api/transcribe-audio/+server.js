@@ -96,6 +96,7 @@ export async function POST({ request }) {
 				form.append('model', modelId);
 				form.append('response_format', 'verbose_json');
 				form.append('timestamp_granularities[]', 'segment');
+				form.append('timestamp_granularities[]', 'word');
 
 				const controller = new AbortController();
 				const timeout = setTimeout(() => controller.abort(), 45000);
@@ -129,28 +130,72 @@ export async function POST({ request }) {
 			try { fs.unlinkSync(sourceAudioPath); } catch {}
 		}
 
-		if (!whisperData || !whisperData.segments || whisperData.segments.length === 0) {
+		if (!whisperData || (!whisperData.segments?.length && !whisperData.words?.length)) {
 			throw new Error(lastError?.message || 'Tidak ada segmen suara yang terdeteksi oleh Whisper.');
 		}
 
-		// Convert segments to clean subtitle blocks
-		const subtitles = whisperData.segments.map((seg, idx) => {
-			const start = Math.max(0, Number(seg.start.toFixed(2)));
-			const end = Math.max(start + 0.3, Number(seg.end.toFixed(2)));
-			const duration = Number((end - start).toFixed(2));
-			return {
-				id: `sub-${idx + 1}-${Date.now().toString(36)}`,
-				start,
-				end,
-				duration,
-				text: seg.text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()
-			};
-		}).filter(s => s.text.length > 0);
+		// Convert to 1-line subtitle blocks with maximum 5 words, non-overlapping
+		const MAX_WORDS = 5;
+		const subtitles = [];
+
+		if (Array.isArray(whisperData.words) && whisperData.words.length > 0) {
+			const validWords = whisperData.words.filter((w) => (w.word || '').trim().length > 0);
+			for (let i = 0; i < validWords.length; i += MAX_WORDS) {
+				const slice = validWords.slice(i, i + MAX_WORDS);
+				const start = Math.max(0, Number(slice[0].start.toFixed(2)));
+				const end = Math.max(start + 0.3, Number(slice[slice.length - 1].end.toFixed(2)));
+				const text = slice.map((w) => w.word.trim()).join(' ').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+				if (text) {
+					subtitles.push({
+						id: `sub-${subtitles.length + 1}-${Date.now().toString(36)}`,
+						start,
+						end,
+						duration: Number((end - start).toFixed(2)),
+						text
+					});
+				}
+			}
+		} else if (Array.isArray(whisperData.segments) && whisperData.segments.length > 0) {
+			for (const seg of whisperData.segments) {
+				const clean = (seg.text || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+				if (!clean) continue;
+				const words = clean.split(' ').filter(Boolean);
+				const segStart = Math.max(0, Number(seg.start.toFixed(2)));
+				const segEnd = Math.max(segStart + 0.3, Number(seg.end.toFixed(2)));
+				const segDur = Math.max(0.3, segEnd - segStart);
+				const totalWords = words.length;
+
+				for (let i = 0; i < totalWords; i += MAX_WORDS) {
+					const slice = words.slice(i, i + MAX_WORDS);
+					const cStart = Number((segStart + (i / totalWords) * segDur).toFixed(2));
+					const cEnd = Number((segStart + ((i + slice.length) / totalWords) * segDur).toFixed(2));
+					const start = Math.max(0, cStart);
+					const end = Math.max(start + 0.25, cEnd);
+					subtitles.push({
+						id: `sub-${subtitles.length + 1}-${Date.now().toString(36)}`,
+						start,
+						end,
+						duration: Number((end - start).toFixed(2)),
+						text: slice.join(' ')
+					});
+				}
+			}
+		}
+
+		// Ensure strictly sequential and non-overlapping timestamps
+		subtitles.sort((a, b) => a.start - b.start);
+		for (let i = 0; i < subtitles.length - 1; i++) {
+			if (subtitles[i].end > subtitles[i + 1].start) {
+				subtitles[i].end = subtitles[i + 1].start;
+				subtitles[i].duration = Number(Math.max(0.1, subtitles[i].end - subtitles[i].start).toFixed(2));
+			}
+		}
 
 		return json({
 			success: true,
 			totalSubtitles: subtitles.length,
-			subtitles
+			subtitles,
+			segments: subtitles
 		});
 	} catch (err) {
 		console.error('[Transcribe Audio Error]:', err);

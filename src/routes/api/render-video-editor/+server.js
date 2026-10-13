@@ -141,11 +141,50 @@ function buildEditorASS(subtitles = [], style = 'viral-yellow', W = 1920, H = 10
 	].join('\n');
 
 	const dialogues = [];
+	// Chunk subtitles to max 5 words, 1 line, non-overlapping
+	const MAX_WORDS = 5;
+	const safeSubs = [];
+
 	for (const sub of subtitles) {
+		const start = Math.max(0, Number(sub.start) || 0);
+		const rawEnd = Number(sub.end) || (start + Number(sub.duration || 3));
+		const end = Math.max(start + 0.3, rawEnd);
+		const rawTxt = (sub.text || '').replace(/[{}]/g, '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+		if (!rawTxt) continue;
+
+		const words = rawTxt.split(' ').filter(Boolean);
+		if (words.length <= MAX_WORDS) {
+			safeSubs.push({ start, end, text: rawTxt });
+			continue;
+		}
+
+		const totalWords = words.length;
+		const dur = end - start;
+		for (let i = 0; i < totalWords; i += MAX_WORDS) {
+			const slice = words.slice(i, i + MAX_WORDS);
+			const cStart = Number((start + (i / totalWords) * dur).toFixed(2));
+			const cEnd = Number((start + ((i + slice.length) / totalWords) * dur).toFixed(2));
+			safeSubs.push({
+				start: Math.max(0, cStart),
+				end: Math.max(cStart + 0.25, cEnd),
+				text: slice.join(' ')
+			});
+		}
+	}
+
+	// Strictly sequential and non-overlapping
+	safeSubs.sort((a, b) => a.start - b.start);
+	for (let i = 0; i < safeSubs.length - 1; i++) {
+		if (safeSubs[i].end > safeSubs[i + 1].start) {
+			safeSubs[i].end = safeSubs[i + 1].start;
+		}
+	}
+
+	for (const sub of safeSubs) {
 		const start = Number(sub.start) || 0;
-		const end = Number(sub.end) || (start + Number(sub.duration || 3));
+		const end = Number(sub.end) || (start + 1);
 		if (end <= start) continue;
-		let txt = (sub.text || '').replace(/[{}]/g, '').trim();
+		let txt = (sub.text || '').trim();
 		if (!txt) continue;
 		if (style === 'mrbeast-bold') txt = txt.toUpperCase();
 		dialogues.push(`Dialogue: 0,${fmt(start)},${fmt(end)},Default,,0,0,0,,{\\fad(50,50)}${txt}`);

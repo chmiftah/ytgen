@@ -533,19 +533,51 @@ Return ONLY a JSON object in this exact schema:
 			};
 		});
 
+		// Convert whisper segments to max 5 words, 1 line, non-overlapping
+		const MAX_WORDS = 5;
+		const whisperSegments = [];
+		const rawSegments = whisperData?.segments || [];
+
+		for (const seg of rawSegments) {
+			const clean = (seg.text || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+			if (!clean) continue;
+			const words = clean.split(' ').filter(Boolean);
+			const segStart = Math.max(0, Number(seg.start.toFixed(2)));
+			const segEnd = Math.max(segStart + 0.3, Number(seg.end.toFixed(2)));
+			const segDur = Math.max(0.3, segEnd - segStart);
+			const totalWords = words.length;
+
+			for (let i = 0; i < totalWords; i += MAX_WORDS) {
+				const slice = words.slice(i, i + MAX_WORDS);
+				const cStart = Number((segStart + (i / totalWords) * segDur).toFixed(2));
+				const cEnd = Number((segStart + ((i + slice.length) / totalWords) * segDur).toFixed(2));
+				const start = Math.max(0, cStart);
+				const end = Math.max(start + 0.25, cEnd);
+				whisperSegments.push({
+					id: `sub-seg-${whisperSegments.length + 1}`,
+					start,
+					end,
+					duration: Number((end - start).toFixed(2)),
+					text: slice.join(' ')
+				});
+			}
+		}
+
+		whisperSegments.sort((a, b) => a.start - b.start);
+		for (let i = 0; i < whisperSegments.length - 1; i++) {
+			if (whisperSegments[i].end > whisperSegments[i + 1].start) {
+				whisperSegments[i].end = whisperSegments[i + 1].start;
+				whisperSegments[i].duration = Number(Math.max(0.1, whisperSegments[i].end - whisperSegments[i].start).toFixed(2));
+			}
+		}
+
 		return json({
 			success: true,
 			audioUrl: `/renders/audio-cache/${publicFileName}`,
 			audioName: originalName,
 			totalDuration: Number(totalDuration.toFixed(2)),
 			scenes: finalScenes,
-			whisperSegments: (whisperData?.segments || []).map((seg, idx) => ({
-				id: `sub-seg-${idx + 1}`,
-				start: Math.max(0, Number(seg.start.toFixed(2))),
-				end: Math.max(0.3, Number(seg.end.toFixed(2))),
-				duration: Number((seg.end - seg.start).toFixed(2)),
-				text: seg.text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()
-			}))
+			whisperSegments
 		});
 	} catch (error) {
 		console.error('[AI Audio Storyboard Error]:', error);

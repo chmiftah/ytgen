@@ -364,6 +364,9 @@
 		return null;
 	});
 
+	// Derived: Word count of the active subtitle
+	let activeSubWordCount = $derived((activeSubtitle?.text || '').trim().split(/\s+/).filter(Boolean).length);
+
 	// Derived: Active transition between current base clip and next clip
 	let currentTransitionInfo = $derived.by(() => {
 		if (!currentBaseClip?.clip) return null;
@@ -822,6 +825,72 @@
 		});
 	}
 
+	/**
+	 * Memecah subtitle menjadi maksimal maxWords (default 5) kata per item,
+	 * 1 baris saja (tanpa newline), dan mendistribusikan durasi secara proporsional
+	 * tanpa ada overlap waktu antar-item.
+	 * @param {Array<any>} items
+	 * @param {number} [maxWords]
+	 */
+	function chunkSubtitles(items, maxWords = 5) {
+		if (!items || !items.length) return [];
+		const result = [];
+
+		for (let i = 0; i < items.length; i++) {
+			const item = items[i];
+			const cleanText = (item.text || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+			if (!cleanText) continue;
+
+			const words = cleanText.split(' ').filter(Boolean);
+			const totalWords = words.length;
+			const start = Math.max(0, Number(item.start || 0));
+			const rawEnd = Number(item.end || (start + Number(item.duration || 2.5)));
+			const end = Math.max(start + 0.3, rawEnd);
+			const totalDuration = end - start;
+
+			if (totalWords <= maxWords) {
+				result.push({
+					id: item.id || `sub-${result.length + 1}`,
+					start: Number(start.toFixed(2)),
+					end: Number(end.toFixed(2)),
+					duration: Number((end - start).toFixed(2)),
+					text: cleanText
+				});
+				continue;
+			}
+
+			// Pecah menjadi grup kelipatan maxWords
+			for (let w = 0; w < totalWords; w += maxWords) {
+				const slice = words.slice(w, w + maxWords);
+				const chunkStart = Number((start + (w / totalWords) * totalDuration).toFixed(2));
+				const chunkEnd = Number((start + ((w + slice.length) / totalWords) * totalDuration).toFixed(2));
+				const cStart = Math.max(0, chunkStart);
+				const cEnd = Math.max(cStart + 0.25, chunkEnd);
+
+				result.push({
+					id: `sub-${result.length + 1}-${Date.now().toString(36)}`,
+					start: cStart,
+					end: cEnd,
+					duration: Number((cEnd - cStart).toFixed(2)),
+					text: slice.join(' ')
+				});
+			}
+		}
+
+		// Urutkan berdasarkan waktu mulai
+		result.sort((a, b) => a.start - b.start);
+
+		// Eliminasi total overlap waktu antar-subtitle
+		for (let i = 0; i < result.length - 1; i++) {
+			if (result[i].end > result[i + 1].start) {
+				result[i].end = result[i + 1].start;
+				result[i].duration = Number(Math.max(0.1, result[i].end - result[i].start).toFixed(2));
+			}
+		}
+
+		return result;
+	}
+
 	function applyStoryboardToTimeline() {
 		if (!generatedStoryboard || !generatedStoryboard.length) {
 			showToast('Belum ada storyboard yang di-generate!');
@@ -868,19 +937,13 @@
 			}
 		}
 
-		// 4. Auto-populate Subtitles from AI Whisper segments or scene narrations
+		// 4. Auto-populate Subtitles (1 baris & maks 5 kata per item, tidak overlap)
 		if (storyboardAudioResult?.whisperSegments?.length) {
-			subtitleItems = storyboardAudioResult.whisperSegments.map((s, idx) => ({
-				id: `sub-${idx + 1}`,
-				start: Number(s.start || 0),
-				end: Number(s.end || 0),
-				duration: Number((Number(s.end || 0) - Number(s.start || 0)).toFixed(2)),
-				text: s.text || ''
-			}));
+			subtitleItems = chunkSubtitles(storyboardAudioResult.whisperSegments, 5);
 			subtitlesEnabled = true;
 		} else if (newClips.some((c) => c.narration)) {
 			let acc = 0;
-			const generatedSubs = [];
+			const generatedSubs = /** @type {Array<any>} */ ([]);
 			newClips.forEach((c, idx) => {
 				const start = Number(acc.toFixed(2));
 				const end = Number((acc + c.duration).toFixed(2));
@@ -895,7 +958,7 @@
 				}
 				acc += c.duration;
 			});
-			subtitleItems = generatedSubs;
+			subtitleItems = chunkSubtitles(generatedSubs, 5);
 			subtitlesEnabled = true;
 		}
 
@@ -1273,11 +1336,19 @@
 		const deltaSec = deltaX / pxPerSec;
 
 		if (resizingSubtitle.handle === 'right') {
-			const newEnd = Math.max(sub.start + 0.3, Number((resizingSubtitle.origEnd + deltaSec).toFixed(2)));
+			// Cegah overlap dengan subtitle berikutnya
+			const nextSub = subtitleItems[resizingSubtitle.index + 1];
+			const maxAllowed = nextSub ? nextSub.start : Infinity;
+			const targetEnd = Number((resizingSubtitle.origEnd + deltaSec).toFixed(2));
+			const newEnd = Math.min(maxAllowed, Math.max(sub.start + 0.3, targetEnd));
 			sub.end = newEnd;
 			sub.duration = Number((newEnd - sub.start).toFixed(2));
 		} else {
-			const newStart = Math.max(0, Math.min(sub.end - 0.3, Number((resizingSubtitle.origStart + deltaSec).toFixed(2))));
+			// Cegah overlap dengan subtitle sebelumnya
+			const prevSub = subtitleItems[resizingSubtitle.index - 1];
+			const minAllowed = prevSub ? prevSub.end : 0;
+			const targetStart = Number((resizingSubtitle.origStart + deltaSec).toFixed(2));
+			const newStart = Math.max(minAllowed, Math.min(sub.end - 0.3, targetStart));
 			sub.start = newStart;
 			sub.duration = Number((sub.end - newStart).toFixed(2));
 		}
@@ -1299,18 +1370,42 @@
 	// Subtitle Helper Methods
 	function addEmptySubtitle() {
 		const start = Number(currentTime.toFixed(2));
-		const end = Number((start + 2.5).toFixed(2));
+		// Cari subtitle berikutnya agar tidak saling tumpang tindih
+		const nextSub = subtitleItems.filter((s) => s.start > start).sort((a, b) => a.start - b.start)[0];
+		const maxEnd = nextSub ? nextSub.start : start + 2.5;
+		const end = Number(Math.max(start + 0.5, Math.min(start + 2.5, maxEnd)).toFixed(2));
 		const newSub = {
 			id: `sub-${Date.now()}`,
 			start,
 			end,
-			duration: 2.5,
+			duration: Number((end - start).toFixed(2)),
 			text: 'Teks Subtitle Baru'
 		};
 		subtitleItems = [...subtitleItems, newSub].sort((a, b) => a.start - b.start);
 		activeSubtitleIndex = subtitleItems.findIndex((s) => s.id === newSub.id);
 		activeInspectorTab = 'subtitle';
-		showToast(`➕ Subtitle ditambahkan pada ${formatTime(start)}`);
+		showToast(`➕ Subtitle ditambahkan pada ${formatTime(start)} (maks 5 kata)`);
+	}
+
+	function splitActiveSubtitle(/** @type {number} */ index) {
+		if (index < 0 || index >= subtitleItems.length) return;
+		const target = subtitleItems[index];
+		const chunked = chunkSubtitles([target], 5);
+		if (chunked.length > 0) {
+			subtitleItems.splice(index, 1, ...chunked);
+			subtitleItems = [...subtitleItems];
+			activeSubtitleIndex = index;
+			showToast(`✨ Subtitle dipecah menjadi ${chunked.length} baris (masing-masing maks 5 kata tanpa overlap)!`);
+		}
+	}
+
+	function formatAllSubtitles() {
+		if (!subtitleItems.length) return;
+		subtitleItems = chunkSubtitles(subtitleItems, 5);
+		if (activeSubtitleIndex >= subtitleItems.length) {
+			activeSubtitleIndex = Math.max(0, subtitleItems.length - 1);
+		}
+		showToast(`✨ Semua subtitle dirapikan: 1 baris & maks 5 kata tanpa overlap (${subtitleItems.length} item)!`);
 	}
 
 	function deleteSubtitle(/** @type {number} */ index) {
@@ -1352,18 +1447,13 @@
 					throw new Error(data.error || 'Gagal mentranskripsikan audio');
 				}
 
-				if (data.segments && data.segments.length > 0) {
-					subtitleItems = data.segments.map((seg, idx) => ({
-						id: `sub-${idx + 1}`,
-						start: Number(seg.start || 0),
-						end: Number(seg.end || 0),
-						duration: Number((Number(seg.end || 0) - Number(seg.start || 0)).toFixed(2)),
-						text: seg.text || ''
-					}));
+				const incoming = data.subtitles || data.segments || [];
+				if (incoming.length > 0) {
+					subtitleItems = chunkSubtitles(incoming, 5);
 					subtitlesEnabled = true;
 					activeInspectorTab = 'subtitle';
 					activeSubtitleIndex = 0;
-					showToast(`✨ Berhasil membuat ${subtitleItems.length} baris subtitle dari Whisper!`);
+					showToast(`✨ Berhasil membuat ${subtitleItems.length} baris subtitle (maks 5 kata) dari Whisper!`);
 					return;
 				}
 			}
@@ -1373,13 +1463,13 @@
 			if (clipsWithNarration && clipsWithNarration.length > 0) {
 				showToast('📝 Menyusun subtitle dari narasi scene...');
 				let acc = 0;
-				const genSubs = [];
+				const rawSubs = [];
 				for (let i = 0; i < visualTracks[0].clips.length; i++) {
 					const c = visualTracks[0].clips[i];
 					const dur = Number(c.duration || 3);
 					if (c.narration && c.narration.trim()) {
-						genSubs.push({
-							id: `sub-${genSubs.length + 1}`,
+						rawSubs.push({
+							id: `sub-${rawSubs.length + 1}`,
 							start: Number(acc.toFixed(2)),
 							end: Number((acc + dur).toFixed(2)),
 							duration: dur,
@@ -1388,11 +1478,11 @@
 					}
 					acc += dur;
 				}
-				subtitleItems = genSubs;
+				subtitleItems = chunkSubtitles(rawSubs, 5);
 				subtitlesEnabled = true;
 				activeInspectorTab = 'subtitle';
 				activeSubtitleIndex = 0;
-				showToast(`✨ Berhasil membuat ${subtitleItems.length} subtitle dari narasi visual!`);
+				showToast(`✨ Berhasil membuat ${subtitleItems.length} subtitle (maks 5 kata) dari narasi!`);
 				return;
 			}
 
@@ -1483,13 +1573,13 @@
 		audioTracks[1].volume = 0.8;
 		audioTracks = [...audioTracks];
 
-		// Subtitles demo
+		// Subtitles demo (1 baris saja & maksimal 5 kata, tanpa overlap)
 		subtitleItems = [
-			{ id: 'sub-1', start: 0.5, end: 3.8, duration: 3.3, text: 'Selamat datang di video editor interaktif multi-track.' },
-			{ id: 'sub-2', start: 4.2, end: 7.8, duration: 3.6, text: 'Setiap layer visual dan audio tersinkronisasi presisi.' },
-			{ id: 'sub-3', start: 8.2, end: 11.5, duration: 3.3, text: 'Auto-caption AI meningkatkan engagement penonton!' },
-			{ id: 'sub-4', start: 12.2, end: 15.6, duration: 3.4, text: 'Ubah teks, tata letak, dan gaya subtitle secara real-time.' },
-			{ id: 'sub-5', start: 16.2, end: 19.8, duration: 3.6, text: 'Siap render ke MP4 berkualitas tinggi dalam sekejap.' }
+			{ id: 'demo-sub-1', start: 0.5, end: 3.5, duration: 3.0, text: 'Selamat datang di video editor' },
+			{ id: 'demo-sub-2', start: 4.0, end: 7.0, duration: 3.0, text: 'Sinkronisasi visual dan audio presisi' },
+			{ id: 'demo-sub-3', start: 7.5, end: 10.5, duration: 3.0, text: 'Auto-caption AI tingkatkan viewer' },
+			{ id: 'demo-sub-4', start: 11.0, end: 14.0, duration: 3.0, text: 'Ubah gaya subtitle secara instan' },
+			{ id: 'demo-sub-5', start: 14.5, end: 17.5, duration: 3.0, text: 'Siap render ke format MP4' }
 		];
 		subtitlesEnabled = true;
 
@@ -2154,14 +2244,37 @@
 						{#if activeSubtitle}
 							<div class="sub-edit-form">
 								<div class="field-group">
-									<label class="field-label" for="sub-text-input">Teks Subtitle:</label>
-									<textarea
+									<div class="field-label-header">
+										<label class="field-label" for="sub-text-input">Teks Subtitle (1 Baris, Maks 5 Kata):</label>
+										<span class="sub-word-counter {activeSubWordCount > 5 ? 'counter-warning' : 'counter-ok'}">
+											{activeSubWordCount}/5 kata
+										</span>
+									</div>
+									<input
 										id="sub-text-input"
-										class="prompt-textarea"
+										type="text"
+										class="prompt-input"
 										bind:value={activeSubtitle.text}
-										rows={3}
-										placeholder="Ketik teks kalimat subtitle di sini..."
-									></textarea>
+										oninput={() => {
+											activeSubtitle.text = (activeSubtitle.text || '').replace(/[\r\n]+/g, ' ');
+											subtitleItems = [...subtitleItems];
+										}}
+										placeholder="Ketik teks subtitle (maks 5 kata, 1 baris saja)..."
+									/>
+									{#if activeSubWordCount > 5}
+										<div class="sub-split-hint">
+											<span>⚠️ Melebihi 5 kata (risiko overlap)</span>
+											<button
+												type="button"
+												class="btn btn-xs btn-accent-glow"
+												onclick={() => splitActiveSubtitle(activeSubtitleIndex)}
+												title="Pecah menjadi beberapa subtitle maks 5 kata"
+											>
+												<Sparkles size={11} />
+												<span>Pecah Otomatis (Maks 5 Kata)</span>
+											</button>
+										</div>
+									{/if}
 								</div>
 
 								<div class="field-row-split">
@@ -2280,6 +2393,16 @@
 							</button>
 
 							{#if subtitleItems.length > 0}
+								<button
+									type="button"
+									class="btn btn-sm btn-outline-warning w-100"
+									onclick={formatAllSubtitles}
+									title="Rapikan semua subtitle menjadi 1 baris & maksimal 5 kata tanpa overlap"
+								>
+									<Sparkles size={13} />
+									<span>⚡ Rapikan Semua Subtitle (1 Baris & Maks 5 Kata)</span>
+								</button>
+
 								<button type="button" class="btn btn-xs btn-outline-danger w-100" onclick={clearAllSubtitles}>
 									<Trash2 size={12} />
 									<span>Hapus Semua Subtitle ({subtitleItems.length})</span>
@@ -6435,9 +6558,12 @@
 
 	.subtitle-badge-display {
 		display: inline-block;
-		max-width: 90%;
+		max-width: 92%;
 		text-align: center;
 		line-height: 1.25;
+		white-space: nowrap; /* 1 baris saja, tidak melipat ke baris baru */
+		overflow: hidden;
+		text-overflow: ellipsis;
 		transition: transform 0.1s ease;
 		user-select: none;
 	}
@@ -6479,6 +6605,89 @@
 		border-radius: 8px;
 		border: 1px solid rgba(255, 255, 255, 0.14);
 		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+	}
+
+	/* Subtitle Inspector Elements */
+	.field-label-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 4px;
+	}
+
+	.sub-word-counter {
+		font-size: 0.68rem;
+		font-weight: 700;
+		padding: 2px 6px;
+		border-radius: 4px;
+	}
+
+	.sub-word-counter.counter-ok {
+		background: rgba(34, 197, 94, 0.15);
+		color: #4ade80;
+		border: 1px solid rgba(34, 197, 94, 0.3);
+	}
+
+	.sub-word-counter.counter-warning {
+		background: rgba(239, 68, 68, 0.18);
+		color: #f87171;
+		border: 1px solid rgba(239, 68, 68, 0.4);
+	}
+
+	.sub-split-hint {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		margin-top: 6px;
+		padding: 6px 8px;
+		border-radius: 6px;
+		background: rgba(239, 68, 68, 0.1);
+		border: 1px dashed rgba(239, 68, 68, 0.35);
+		font-size: 0.72rem;
+		color: #fca5a5;
+	}
+
+	.prompt-input {
+		width: 100%;
+		background: #0f172a;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 6px;
+		padding: 8px 10px;
+		font-size: 0.8rem;
+		color: #e2e8f0;
+		font-family: inherit;
+		box-sizing: border-box;
+	}
+
+	.prompt-input:focus {
+		outline: none;
+		border-color: #a855f7;
+		box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.25);
+	}
+
+	.btn-accent-glow {
+		background: linear-gradient(135deg, #a855f7, #7c3aed);
+		color: #ffffff;
+		border: none;
+		box-shadow: 0 2px 8px rgba(168, 85, 247, 0.35);
+	}
+
+	.btn-accent-glow:hover {
+		background: linear-gradient(135deg, #c084fc, #9333ea);
+		box-shadow: 0 3px 12px rgba(192, 132, 252, 0.5);
+	}
+
+	.btn-outline-warning {
+		background: rgba(234, 179, 8, 0.1);
+		border: 1px solid rgba(234, 179, 8, 0.4);
+		color: #facc15;
+	}
+
+	.btn-outline-warning:hover {
+		background: rgba(234, 179, 8, 0.22);
+		border-color: #facc15;
+		color: #ffffff;
 	}
 
 	/* 2. Inspector Tabs Switcher */
